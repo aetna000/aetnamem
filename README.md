@@ -59,16 +59,57 @@ m.inspect("user-1")                  # full evidence dump, incl. audit chain che
 
 The six verbs — `remember`, `recall`, `list`, `forget`, `inspect`, `audit` —
 plus `promote` (quarantine release), `log_action` (agent audit events),
-`checkpoint`, and `verify` are the entire API. A minimal CLI ships with the
-package:
+`checkpoint`, and `verify` are the entire API. Every verb is also a CLI
+command, so any process that can run a shell command is a client:
 
 ```bash
+aetnamem remember   ./memories.db user-1 "My preferred airport is SFO." --session s1
+aetnamem recall     ./memories.db user-1 "Which airport should I book from?"
+aetnamem forget     ./memories.db user-1 --utterance "Forget my preferred airport."
+aetnamem list       ./memories.db user-1 --all
+aetnamem promote    ./memories.db user-1 rec_...
+aetnamem log-action ./memories.db user-1 tool_call --payload '{"tool":"calendar"}'
 aetnamem inspect    ./memories.db user-1
 aetnamem audit      ./memories.db user-1
 aetnamem checkpoint ./memories.db ./checkpoints.jsonl   # anchor this file externally
 aetnamem verify     ./memories.db --checkpoints ./checkpoints.jsonl
 python tools/verify_audit.py ./memories.db --checkpoints ./checkpoints.jsonl  # no aetnamem import
 ```
+
+## Use from agents (MCP)
+
+`aetnamem mcp` serves the verbs as MCP tools over stdio — newline-delimited
+JSON-RPC implemented with the standard library only, so the zero-dependency
+promise holds. Defaults: database at `~/.aetnamem/memories.db` (override
+with `--db` or `$AETNAMEM_DB`) and subject `default` (`--subject`), so
+single-user personal agents need no per-call subject wiring.
+
+**Claude Code:**
+
+```bash
+claude mcp add aetnamem -- aetnamem mcp
+```
+
+**Claude Desktop / any host with JSON MCP config** (OpenClaw's MCP bridge
+takes the same command + args shape):
+
+```json
+{
+  "mcpServers": {
+    "aetnamem": {
+      "command": "aetnamem",
+      "args": ["mcp", "--db", "/home/you/.aetnamem/memories.db"]
+    }
+  }
+}
+```
+
+The agent gets `memory_remember`, `memory_recall`, `memory_list`,
+`memory_forget`, `memory_promote`, `memory_audit`, `memory_verify`, and
+`memory_log_action`. The policy gates run server-side, so a hostile webpage
+summarized by the agent still cannot plant durable memory, deletion still
+returns receipts, and you can independently audit the same SQLite file with
+`aetnamem verify` or `tools/verify_audit.py` while the agent uses it.
 
 ## Compliance posture
 
