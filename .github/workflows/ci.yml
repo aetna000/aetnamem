@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  benchmark-gate:
+    # The public credibility story: a change only merges at 33/33 on
+    # MemoryStackBench's seven_sins_v0_1 suite.
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: aetnamem
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clone MemoryStackBench
+        run: git clone --depth 1 https://github.com/aetna000/MemoryStackBench.git
+      - name: Overlay aetnamem adapter (until upstreamed)
+        run: |
+          cp aetnamem/bench/targets/aetnamem.yaml MemoryStackBench/targets/
+          cp aetnamem/bench/adapters/aetnamem.py MemoryStackBench/memorybench/adapters/
+      - name: Install benchmark
+        run: pip install -e ./MemoryStackBench
+      - name: Run seven_sins_v0_1
+        working-directory: MemoryStackBench
+        run: |
+          python -m memorybench.cli run \
+            --target targets/aetnamem.yaml \
+            --suite suites/seven_sins_v0_1 \
+            --out /tmp/bench-run
+      - name: Require 33/33
+        run: |
+          python - <<'EOF'
+          import json
+          overall = json.load(open("/tmp/bench-run/scorecard.json"))["overall"]
+          print(overall)
+          assert overall["passed"] == overall["total"] == 33, "benchmark gate failed"
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-run
+          path: /tmp/bench-run

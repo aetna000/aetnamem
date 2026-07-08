@@ -1,0 +1,24 @@
+[project]
+name = "aetnamem"
+version = "0.0.1"
+description = "Auditable memory engine for agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+authors = [{ name = "aetnamem contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+aetnamem = "aetnamem.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aetnamem*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,14 @@
+id: aetnamem_local
+framework: aetnamem
+mode: white_box
+description: aetnamem embedded SQLite auditable memory engine.
+package_path: ../aetnamem
+adapter:
+  module: memorybench.adapters.aetnamem
+  class: AetnamemAdapter
+capabilities:
+  inspect_memory: true
+  delete_memory: true
+  retrieval_log: true
+  multi_user: true
+  multi_tenant: false
