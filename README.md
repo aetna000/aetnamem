@@ -103,6 +103,18 @@ of the same policy gates — see [plan.md](plan.md). The policy gates in
 [aetnamem/core/policy.py](aetnamem/core/policy.py) are the product; nothing
 in the engine may reference the vocabulary of a benchmark scenario.
 
+## Documentation
+
+- **[docs/auditing-guide.md](docs/auditing-guide.md)** — how to *use* the
+  auditability: checkpoint cadence and anchoring recipes, verifying after an
+  incident, handling erasure/access/rectification requests with receipts,
+  reviewing quarantine, logging agent actions onto the same chain, and what
+  to hand an external auditor.
+- **[docs/audit-log-spec.md](docs/audit-log-spec.md)** — the frozen wire
+  format: canonical serialization, hash preimages, chain/checkpoint/receipt
+  verification rules, and the threat-model table.
+- **[plan.md](plan.md)** — architecture plan and roadmap.
+
 ## Benchmark
 
 Development is gated on
