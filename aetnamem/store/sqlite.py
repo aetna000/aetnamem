@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
 import json
 from pathlib import Path
 import sqlite3
 from typing import Any
 import uuid
+
+from aetnamem.core.canonical import canonical_json, sha256_hex
 
 
 class SQLiteStore:
@@ -188,11 +189,17 @@ class SQLiteStore:
                 )
                 self._delete_fts(record_id)
 
-    def tombstone_records(self, *, subject_id: str, record_ids: list[str]) -> list[str]:
-        """Tombstone + purge records. Applies to active and quarantined
-        records alike — deletion must also empty the quarantine."""
+    def tombstone_records(
+        self, *, subject_id: str, record_ids: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """Tombstone + purge records; returns (record_ids, episode_ids) purged.
+
+        Applies to active and quarantined records alike — deletion must also
+        empty the quarantine. Purging clears content *and* fact_key, since the
+        fact slot name itself can reveal what was stored.
+        """
         if not record_ids:
-            return []
+            return [], []
         deleted_at = utc_now()
         changed: list[str] = []
         with self._conn:
@@ -212,6 +219,7 @@ class SQLiteStore:
                     UPDATE records
                     SET status = 'tombstoned',
                         content = '',
+                        fact_key = NULL,
                         updated_at = ?,
                         deleted_at = ?,
                         raw = ?
@@ -221,21 +229,29 @@ class SQLiteStore:
                 )
                 self._delete_fts(record_id)
                 changed.append(record_id)
+            episode_ids: list[str] = []
             if changed:
                 placeholders = ",".join("?" for _ in changed)
+                episode_rows = self._conn.execute(
+                    f"""
+                    SELECT DISTINCT episode_id FROM records
+                    WHERE subject_id = ? AND id IN ({placeholders})
+                      AND episode_id IS NOT NULL
+                    """,
+                    (subject_id, *changed),
+                ).fetchall()
+                episode_ids = [row["episode_id"] for row in episode_rows]
+            if episode_ids:
+                placeholders = ",".join("?" for _ in episode_ids)
                 self._conn.execute(
                     f"""
                     UPDATE episodes
                     SET message = '[purged]', raw = ?
-                    WHERE subject_id = ?
-                      AND id IN (
-                        SELECT DISTINCT episode_id FROM records
-                        WHERE subject_id = ? AND id IN ({placeholders})
-                      )
+                    WHERE subject_id = ? AND id IN ({placeholders})
                     """,
-                    (_json({"purged": True}), subject_id, subject_id, *changed),
+                    (_json({"purged": True}), subject_id, *episode_ids),
                 )
-        return changed
+        return changed, episode_ids
 
     def list_records(
         self,
@@ -275,6 +291,7 @@ class SQLiteStore:
         subject_id: str,
         session_id: str | None,
         query: str,
+        query_sha256: str,
         candidates: list[dict[str, Any]],
         returned_ids: list[str],
     ) -> str:
@@ -284,16 +301,17 @@ class SQLiteStore:
             self._conn.execute(
                 """
                 INSERT INTO retrieval_events (
-                  id, subject_id, session_id, query, candidates, returned_ids,
-                  created_at, raw
+                  id, subject_id, session_id, query, query_sha256, candidates,
+                  returned_ids, created_at, raw
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
                     subject_id,
                     session_id,
                     query,
+                    query_sha256,
                     _json(candidates),
                     _json(returned_ids),
                     created_at,
@@ -424,6 +442,44 @@ class SQLiteStore:
         ).fetchall()
         return [_audit_from_row(row) for row in rows]
 
+    def get_audit_event(self, subject_id: str, event_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT * FROM audit_log WHERE subject_id = ? AND event_id = ?",
+            (subject_id, event_id),
+        ).fetchone()
+        return _audit_from_row(row) if row else None
+
+    def event_at_sequence(self, subject_id: str, sequence: int) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT * FROM audit_log WHERE subject_id = ? AND sequence = ?",
+            (subject_id, sequence),
+        ).fetchone()
+        return _audit_from_row(row) if row else None
+
+    def chain_heads(self) -> dict[str, dict[str, Any]]:
+        """Latest audit event per subject: {subject_id: {sequence, event_hash,
+        event_count}}. This is what a checkpoint anchors."""
+        rows = self._conn.execute(
+            """
+            SELECT a.subject_id, a.sequence, a.event_hash,
+                   (SELECT COUNT(*) FROM audit_log b
+                    WHERE b.subject_id = a.subject_id) AS event_count
+            FROM audit_log a
+            WHERE a.sequence = (
+              SELECT MAX(c.sequence) FROM audit_log c
+              WHERE c.subject_id = a.subject_id
+            )
+            """
+        ).fetchall()
+        return {
+            row["subject_id"]: {
+                "sequence": row["sequence"],
+                "event_hash": row["event_hash"],
+                "event_count": row["event_count"],
+            }
+            for row in rows
+        }
+
     def verify_audit_chain(self, subject_id: str) -> bool:
         previous_hash: str | None = None
         for event in self.list_audit_events(subject_id):
@@ -499,6 +555,7 @@ class SQLiteStore:
                   subject_id TEXT NOT NULL,
                   session_id TEXT,
                   query TEXT NOT NULL,
+                  query_sha256 TEXT,
                   candidates TEXT NOT NULL DEFAULT '[]',
                   returned_ids TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL,
@@ -525,6 +582,7 @@ class SQLiteStore:
                 """
             )
             self._ensure_column("records", "fact_key", "TEXT")
+            self._ensure_column("retrieval_events", "query_sha256", "TEXT")
             self._migrate_fts()
 
     def _ensure_column(self, table: str, column: str, column_type: str) -> None:
@@ -590,7 +648,7 @@ def _new_id(prefix: str) -> str:
 
 
 def _json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return canonical_json(value)
 
 
 def _load_json(value: str | None, default: Any) -> Any:
@@ -603,8 +661,7 @@ def _load_json(value: str | None, default: Any) -> Any:
 
 
 def _event_hash(event: dict[str, Any]) -> str:
-    encoded = _json(event).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return sha256_hex(_json(event))
 
 
 def _record_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -653,6 +710,7 @@ def _retrieval_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "subject_id": row["subject_id"],
         "session_id": row["session_id"],
         "query": row["query"],
+        "query_sha256": row["query_sha256"],
         "candidates": _load_json(row["candidates"], []),
         "returned_ids": _load_json(row["returned_ids"], []),
         "memory_ids": _load_json(row["returned_ids"], []),

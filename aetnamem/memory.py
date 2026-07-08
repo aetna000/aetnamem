@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
+from aetnamem.core.canonical import canonical_json, sha256_hex
 from aetnamem.core.policy import (
     classify_source,
     find_duplicate,
@@ -14,6 +15,7 @@ from aetnamem.core.policy import (
 from aetnamem.extract import extract_facts
 from aetnamem.retrieve import query_tokens, rank_records
 from aetnamem.store import SQLiteStore
+from aetnamem.store.sqlite import utc_now
 
 
 class Memory:
@@ -25,11 +27,19 @@ class Memory:
     - untrusted extractions are quarantined until explicitly promoted,
     - updates supersede (keyed on the extracted fact slot), never overwrite,
     - deletion tombstones *and* purges, including the source episode,
-    - every mutation and every recall lands in the hash-linked audit log.
+    - every mutation and every recall lands in the hash-linked audit log,
+    - the audit plane stores digests and structural metadata, never message
+      text, fact values, or query text (unless `retain_query_text=True`).
     """
 
-    def __init__(self, path: str | Path = ":memory:") -> None:
+    def __init__(
+        self,
+        path: str | Path = ":memory:",
+        *,
+        retain_query_text: bool = False,
+    ) -> None:
         self.store = SQLiteStore(path)
+        self.retain_query_text = retain_query_text
 
     def close(self) -> None:
         self.store.close()
@@ -207,7 +217,8 @@ class Memory:
         retrieval_id = self.store.insert_retrieval_event(
             subject_id=subject_id,
             session_id=session_id,
-            query=query,
+            query=query if self.retain_query_text else "",
+            query_sha256=_sha256(query),
             candidates=candidates_payload,
             returned_ids=returned_ids,
         )
@@ -277,7 +288,7 @@ class Memory:
                 turn_id=turn,
                 payload={"reason": "empty selector"},
             )
-            return {"deleted": False, "record_ids": []}
+            return {"deleted": False, "record_ids": [], "receipt": None}
 
         needle = contains.lower()
         candidates = [
@@ -289,22 +300,42 @@ class Memory:
         ]
 
         record_ids = [record["id"] for record in candidates]
-        purged_ids = self.store.tombstone_records(
+        selector_sha256 = _sha256(needle)
+        purged_ids, purged_episode_ids = self.store.tombstone_records(
             subject_id=subject_id, record_ids=record_ids
         )
-        self.store.append_audit_event(
+        # The audit event carries the selector digest, never its text — the
+        # needle usually names exactly the thing being erased.
+        event_id = self.store.append_audit_event(
             subject_id=subject_id,
             event_type="memory.forget",
             actor=actor,
             session_id=session_id,
             turn_id=turn,
             payload={
-                "selector": {"contains": contains},
+                "selector_sha256": selector_sha256,
                 "purged_record_ids": purged_ids,
+                "purged_episode_ids": purged_episode_ids,
                 "purged_count": len(purged_ids),
             },
         )
-        return {"deleted": bool(purged_ids), "record_ids": purged_ids}
+        event = self.store.get_audit_event(subject_id, event_id)
+        receipt = {
+            "format": "aetnamem-deletion-receipt-v1",
+            "subject_id": subject_id,
+            "created_at": event["created_at"],
+            "selector_sha256": selector_sha256,
+            "purged_record_ids": purged_ids,
+            "purged_episode_ids": purged_episode_ids,
+            "audit_event_id": event_id,
+            "audit_event_hash": event["event_hash"],
+        }
+        receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
+        return {
+            "deleted": bool(purged_ids),
+            "record_ids": purged_ids,
+            "receipt": receipt,
+        }
 
     def promote(
         self,
@@ -348,6 +379,88 @@ class Memory:
             },
         )
         return self.store.get_record(subject_id, record_id)
+
+    def checkpoint(
+        self,
+        *,
+        sink_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Snapshot every subject's audit-chain head for external anchoring.
+
+        The checkpoint pins each chain's latest (sequence, event_hash), so any
+        later tail truncation is detectable — the chain alone cannot prove
+        events were not deleted from its end. Write the returned document (or
+        the JSONL `sink_path`) somewhere the database owner cannot rewrite:
+        WORM/object-lock storage, a transparency log, or an RFC 3161
+        timestamping service.
+        """
+        document = {
+            "format": "aetnamem-checkpoint-v1",
+            "created_at": utc_now(),
+            "subjects": self.store.chain_heads(),
+        }
+        document["checkpoint_sha256"] = sha256_hex(canonical_json(document))
+        if sink_path is not None:
+            with Path(sink_path).open("a", encoding="utf-8") as sink:
+                sink.write(canonical_json(document) + "\n")
+        return document
+
+    def verify(
+        self,
+        subject_id: str | None = None,
+        *,
+        checkpoints_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Verify audit-chain integrity, optionally against anchored checkpoints.
+
+        Chain verification alone detects edits and in-place tampering;
+        checkpoint containment additionally detects tail truncation since the
+        checkpoint was anchored.
+        """
+        heads = self.store.chain_heads()
+        subject_ids = [subject_id] if subject_id is not None else sorted(heads)
+        subjects: dict[str, Any] = {
+            sid: {
+                "chain_valid": self.store.verify_audit_chain(sid),
+                "checkpoints_checked": 0,
+                "failures": [],
+            }
+            for sid in subject_ids
+        }
+
+        for document in _load_checkpoints(checkpoints_path):
+            recomputed = dict(document)
+            claimed_digest = recomputed.pop("checkpoint_sha256", None)
+            if sha256_hex(canonical_json(recomputed)) != claimed_digest:
+                for sid in subjects:
+                    subjects[sid]["failures"].append(
+                        {"checkpoint": document.get("created_at"), "reason": "checkpoint digest mismatch"}
+                    )
+                continue
+            for sid, pinned in document.get("subjects", {}).items():
+                if sid not in subjects:
+                    continue
+                subjects[sid]["checkpoints_checked"] += 1
+                event = self.store.event_at_sequence(sid, pinned["sequence"])
+                if event is None:
+                    subjects[sid]["failures"].append(
+                        {
+                            "checkpoint": document.get("created_at"),
+                            "reason": f"pinned event at sequence {pinned['sequence']} is missing (tail truncated?)",
+                        }
+                    )
+                elif event["event_hash"] != pinned["event_hash"]:
+                    subjects[sid]["failures"].append(
+                        {
+                            "checkpoint": document.get("created_at"),
+                            "reason": f"event hash at sequence {pinned['sequence']} does not match checkpoint",
+                        }
+                    )
+
+        valid = all(
+            item["chain_valid"] and not item["failures"] for item in subjects.values()
+        )
+        return {"valid": valid, "subjects": subjects}
 
     def inspect(self, subject_id: str) -> dict[str, Any]:
         return {
@@ -414,4 +527,16 @@ def _selector_contains(selector: dict[str, Any] | str | None) -> str | None:
 
 
 def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return sha256_hex(value)
+
+
+def _load_checkpoints(path: str | Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    documents: list[dict[str, Any]] = []
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                documents.append(json.loads(line))
+    return documents

@@ -16,10 +16,24 @@ makes is verifiable from the outside.
 - **Deletion actually deletes.** `forget()` tombstones matching records,
   purges their content *and* the source episode text, and the result is
   verifiable via `inspect()`.
-- **The audit log is tamper-evident.** Every mutation and every recall is an
-  event in a per-subject SHA-256 hash chain; `audit()` re-verifies the chain
-  on read. Agent actions (tool calls, decisions) can join the same chain via
+- **The audit log is tamper-evident — and independently verifiable.** Every
+  mutation and every recall is an event in a per-subject SHA-256 hash chain.
+  The format is frozen in [docs/audit-log-spec.md](docs/audit-log-spec.md),
+  and [tools/verify_audit.py](tools/verify_audit.py) is a standalone,
+  stdlib-only verifier that checks a database without importing aetnamem.
+  Agent actions (tool calls, decisions) can join the same chain via
   `log_action()`.
+- **The audit plane holds digests, not data.** Recall queries, forget
+  selectors, and ingested messages appear in the log only as SHA-256 digests
+  (opt in to raw queries with `retain_query_text=True`), so the immutable
+  chain never blocks erasure: `forget()` purges content, fact keys, and
+  source episodes, and returns a **deletion receipt** cryptographically bound
+  to the chain.
+- **Checkpoints defeat tail truncation.** A hash chain alone cannot prove
+  events weren't deleted from its end. `checkpoint()` pins every chain head
+  to a document you anchor externally (WORM storage, a transparency log, an
+  RFC 3161 timestamp); `verify(checkpoints_path=...)` then detects
+  truncation and database replacement, not just edits.
 
 ## Install & use
 
@@ -44,13 +58,31 @@ m.inspect("user-1")                  # full evidence dump, incl. audit chain che
 ```
 
 The six verbs — `remember`, `recall`, `list`, `forget`, `inspect`, `audit` —
-plus `promote` (quarantine release) and `log_action` (agent audit events) are
-the entire API. A minimal CLI ships with the package:
+plus `promote` (quarantine release), `log_action` (agent audit events),
+`checkpoint`, and `verify` are the entire API. A minimal CLI ships with the
+package:
 
 ```bash
-aetnamem inspect ./memories.db user-1
-aetnamem audit   ./memories.db user-1
+aetnamem inspect    ./memories.db user-1
+aetnamem audit      ./memories.db user-1
+aetnamem checkpoint ./memories.db ./checkpoints.jsonl   # anchor this file externally
+aetnamem verify     ./memories.db --checkpoints ./checkpoints.jsonl
+python tools/verify_audit.py ./memories.db --checkpoints ./checkpoints.jsonl  # no aetnamem import
 ```
+
+## Compliance posture
+
+The architecture separates the **erasable data plane** (`records`,
+`episodes` — purged by `forget()`) from the **immutable audit plane**
+(digests and structural metadata only). That split is what lets deletion be
+real (GDPR Art. 17, CCPA, FTC deception standards for "we delete your data"
+claims) while the audit trail stays append-only and hash-chained (GDPR
+Art. 5(2) accountability; EU AI Act Art. 12/19 logging for high-risk
+systems). Deletion receipts give controllers evidence to answer data-subject
+requests. Still on the roadmap: crypto-shredding of content at rest,
+retention policies, and special-category (Art. 9) flagging — see
+[docs/audit-log-spec.md](docs/audit-log-spec.md) for the exact threat model
+of what today's design does and does not detect.
 
 ## How recall works
 
