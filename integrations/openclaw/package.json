@@ -1,0 +1,17 @@
+{
+  "name": "openclaw-memory-aetnamem",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: auditable agent memory backed by the aetnamem engine",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "5.6"
+  }
+}

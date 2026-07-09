@@ -104,9 +104,15 @@ takes the same command + args shape):
 }
 ```
 
-The agent gets `memory_remember`, `memory_recall`, `memory_list`,
-`memory_forget`, `memory_promote`, `memory_audit`, `memory_verify`, and
-`memory_log_action`. The policy gates run server-side, so a hostile webpage
+The agent gets `memory_remember`, `memory_recall`, `memory_recall_block`
+(bounded prompt-injection block), `memory_capture` (auto-capture with
+digest-only assistant/tool logging), `memory_list`, `memory_forget`,
+`memory_promote`, `memory_audit`, `memory_verify`, and `memory_log_action`.
+
+**OpenClaw users**: [integrations/openclaw](integrations/openclaw) is a
+native plugin that adds automatic memory — auto-recall injection before
+every prompt and auto-capture after every turn — on top of the same engine
+and audit chain. The policy gates run server-side, so a hostile webpage
 summarized by the agent still cannot plant durable memory, deletion still
 returns receipts, and you can independently audit the same SQLite file with
 `aetnamem verify` or `tools/verify_audit.py` while the agent uses it.

@@ -80,6 +80,13 @@ def main() -> None:
     log_action_parser.add_argument("--session", default=None)
     log_action_parser.add_argument("--turn", default=None)
 
+    consolidate_parser = subparsers.add_parser(
+        "consolidate",
+        help="Deterministic cleanup: collapse duplicate actives, repair fact-key conflicts",
+    )
+    consolidate_parser.add_argument("path")
+    consolidate_parser.add_argument("subject_id")
+
     inspect_parser = subparsers.add_parser(
         "inspect", help="Dump a subject's records, episodes, and audit trail"
     )
@@ -188,6 +195,8 @@ def main() -> None:
             turn_id=args.turn,
         )
         _print({"event_id": event_id})
+    elif args.command == "consolidate":
+        _print(memory.consolidate(args.subject_id))
     elif args.command == "inspect":
         _print(memory.inspect(args.subject_id))
     elif args.command == "audit":

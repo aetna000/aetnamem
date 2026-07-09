@@ -18,7 +18,13 @@ import sys
 from typing import Any, Callable, TextIO
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_VERSION = "0.0.1"
+
+try:
+    from importlib.metadata import version as _pkg_version
+
+    SERVER_VERSION = _pkg_version("aetnamem")
+except Exception:  # not installed (e.g. run from a checkout)
+    SERVER_VERSION = "0.1.0"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -118,6 +124,8 @@ class MCPServer:
         handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "memory_remember": self._tool_remember,
             "memory_recall": self._tool_recall,
+            "memory_recall_block": self._tool_recall_block,
+            "memory_capture": self._tool_capture,
             "memory_list": self._tool_list,
             "memory_forget": self._tool_forget,
             "memory_promote": self._tool_promote,
@@ -170,6 +178,26 @@ class MCPServer:
             session_id=arguments.get("session_id"),
             limit=int(arguments.get("limit", 10)),
             min_score=arguments.get("min_score"),
+        )
+
+    def _tool_recall_block(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.build_recall_block(
+            self._subject(arguments),
+            arguments["query"],
+            session_id=arguments.get("session_id"),
+            max_records=int(arguments.get("max_records", 5)),
+            max_chars=int(arguments.get("max_chars", 2000)),
+            min_score=float(arguments.get("min_score", 0.3)),
+        )
+
+    def _tool_capture(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.capture(
+            self._subject(arguments),
+            arguments["role"],
+            arguments["content"],
+            session_id=arguments.get("session_id"),
+            turn_id=arguments.get("turn_id"),
+            tool_name=arguments.get("tool_name"),
         )
 
     def _tool_list(self, arguments: dict[str, Any]) -> Any:
@@ -248,6 +276,40 @@ class MCPServer:
                     **_SESSION_PROPERTIES,
                 },
                 required=["query"],
+            ),
+            _tool(
+                "memory_recall_block",
+                "Build a bounded <relevant_memories> block for prompt "
+                "injection: top matches only (lexical match required), hard "
+                "record/char budgets, and an audit event naming exactly "
+                "which record IDs entered the context.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "query": {"type": "string"},
+                    "max_records": {"type": "integer", "default": 5},
+                    "max_chars": {"type": "integer", "default": 2000},
+                    "min_score": {"type": "number", "default": 0.3},
+                    **_SESSION_PROPERTIES,
+                },
+                required=["query"],
+            ),
+            _tool(
+                "memory_capture",
+                "Auto-capture a conversation event. role=user runs the full "
+                "write pipeline; role=assistant/tool_call/tool_result are "
+                "logged to the audit chain as digests and never become "
+                "memory records.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "role": {
+                        "type": "string",
+                        "enum": ["user", "assistant", "tool_call", "tool_result"],
+                    },
+                    "content": {"type": "string"},
+                    "tool_name": {"type": "string"},
+                    **_SESSION_PROPERTIES,
+                },
+                required=["role", "content"],
             ),
             _tool(
                 "memory_list",

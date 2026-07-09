@@ -1,0 +1,57 @@
+{
+  "id": "memory-aetnamem",
+  "name": "Memory (aetnamem)",
+  "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
+  "commandAliases": ["memory-aetnamem"],
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["aetnamem_search", "aetnamem_forget"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "command": {
+        "type": "string",
+        "default": "aetnamem",
+        "description": "Executable that serves the engine (absolute path if not on PATH, e.g. /path/to/venv/bin/aetnamem). Use a python binary together with commandArgs [\"-m\",\"aetnamem.cli\",\"mcp\",...] as an alternative."
+      },
+      "commandArgs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Override the full argument list. Default: [\"mcp\", \"--db\", <dbPath>, \"--subject\", <subject>]"
+      },
+      "dbPath": {
+        "type": "string",
+        "default": "~/.aetnamem/memories.db",
+        "description": "SQLite database path (also auditable from outside OpenClaw via `aetnamem verify`)"
+      },
+      "subject": {
+        "type": "string",
+        "default": "default",
+        "description": "Subject id used for all memory operations (single-user assistant)"
+      },
+      "recall": {
+        "type": "object",
+        "description": "Auto-recall injection before each prompt",
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "maxRecords": { "type": "number", "default": 5, "description": "Max memories injected per turn" },
+          "maxChars": { "type": "number", "default": 2000, "description": "Total character budget for the injected block" },
+          "minScore": { "type": "number", "default": 0.3, "description": "Minimum relevance score; 0.3 requires a lexical match (priors alone never inject)" },
+          "timeoutMs": { "type": "number", "default": 4000, "description": "Recall timeout; on timeout the turn proceeds without injection" }
+        }
+      },
+      "capture": {
+        "type": "object",
+        "description": "Auto-capture after each turn",
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "captureAssistant": { "type": "boolean", "default": true, "description": "Log assistant replies to the audit chain (digest only, never stored as memory)" }
+        }
+      }
+    }
+  }
+}

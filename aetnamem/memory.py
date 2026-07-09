@@ -10,6 +10,7 @@ from aetnamem.core.policy import (
     find_duplicate,
     forget_needle,
     initial_status,
+    normalize_content,
     records_to_supersede,
 )
 from aetnamem.extract import extract_facts
@@ -336,6 +337,183 @@ class Memory:
             "record_ids": purged_ids,
             "receipt": receipt,
         }
+
+    def capture(
+        self,
+        subject_id: str,
+        role: str,
+        content: str,
+        *,
+        session_id: str | None = None,
+        turn_id: str | int | None = None,
+        tool_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Host-adapter entry point for automatic conversation capture.
+
+        User turns run the full write pipeline (extraction + policy gates).
+        Assistant output and tool traffic are agent-generated — they are
+        logged to the audit chain as digests, never stored as memory records,
+        so auto-capture cannot become a self-poisoning loop.
+        """
+        if role == "user":
+            result = self.remember(
+                subject_id, content, session_id=session_id, turn_id=turn_id
+            )
+            return {"kind": "remembered", **result}
+        if role == "assistant":
+            event_id = self.log_action(
+                subject_id,
+                "agent.response_shown",
+                {"response_sha256": _sha256(content), "chars": len(content)},
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            return {"kind": "logged", "event_id": event_id}
+        if role == "tool_call":
+            event_id = self.log_action(
+                subject_id,
+                "agent.tool_call",
+                {"tool": tool_name, "args_sha256": _sha256(content)},
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            return {"kind": "logged", "event_id": event_id}
+        if role == "tool_result":
+            event_id = self.log_action(
+                subject_id,
+                "agent.tool_result",
+                {
+                    "tool": tool_name,
+                    "result_sha256": _sha256(content),
+                    "chars": len(content),
+                },
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            return {"kind": "logged", "event_id": event_id}
+        raise ValueError(f"unknown capture role: {role}")
+
+    def build_recall_block(
+        self,
+        subject_id: str,
+        query: str,
+        *,
+        session_id: str | None = None,
+        max_records: int = 5,
+        max_chars: int = 2000,
+        min_score: float = 0.3,
+    ) -> dict[str, Any]:
+        """Deterministic, bounded <relevant_memories> block for prompt injection.
+
+        Uses recall() (so every candidate lands in retrieval_events), applies
+        hard budgets, and writes a memory.context_injected audit event naming
+        exactly which record IDs entered the agent's context. The default
+        min_score of 0.3 requires a lexical match — trust/recency priors
+        alone never inject.
+        """
+        records = self.recall(
+            subject_id,
+            query,
+            session_id=session_id,
+            limit=max_records,
+            min_score=min_score,
+        )
+        lines: list[str] = []
+        included: list[str] = []
+        used = 0
+        for record in records:
+            line = f"- [{record['id']}] {record['content']}"
+            if used + len(line) + 1 > max_chars:
+                break
+            lines.append(line)
+            included.append(record["id"])
+            used += len(line) + 1
+
+        if not lines:
+            return {"block": "", "record_ids": [], "count": 0}
+
+        block = "<relevant_memories>\n" + "\n".join(lines) + "\n</relevant_memories>"
+        self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="memory.context_injected",
+            actor="system",
+            session_id=session_id,
+            payload={
+                "record_ids": included,
+                "block_sha256": _sha256(block),
+                "query_sha256": _sha256(query),
+            },
+        )
+        return {"block": block, "record_ids": included, "count": len(included)}
+
+    def consolidate(
+        self,
+        subject_id: str,
+        *,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Deterministic consolidation pass (no LLM).
+
+        1. Exact-duplicate active contents collapse: the newest copy stays
+           active, older copies become superseded (provenance intact).
+        2. fact_key repair: if several active records share a fact slot, the
+           newest supersedes the rest.
+
+        Every change is recorded in a memory.consolidated audit event.
+        """
+        active = self.list(subject_id)
+
+        duplicate_ids: list[str] = []
+        survivors: list[dict[str, Any]] = []
+        by_content: dict[str, list[dict[str, Any]]] = {}
+        for record in active:
+            key = normalize_content(str(record.get("content") or ""))
+            by_content.setdefault(key, []).append(record)
+        for group in by_content.values():
+            group.sort(key=lambda r: (str(r["created_at"]), str(r["id"])))
+            keeper = group[-1]
+            older_ids = [record["id"] for record in group[:-1]]
+            if older_ids:
+                self.store.supersede_records(
+                    subject_id=subject_id,
+                    record_ids=older_ids,
+                    superseded_by_id=keeper["id"],
+                )
+                duplicate_ids.extend(older_ids)
+            survivors.append(keeper)
+
+        repaired_ids: list[str] = []
+        by_key: dict[str, list[dict[str, Any]]] = {}
+        for record in survivors:
+            if record.get("fact_key"):
+                by_key.setdefault(str(record["fact_key"]), []).append(record)
+        for group in by_key.values():
+            if len(group) < 2:
+                continue
+            group.sort(key=lambda r: (str(r["created_at"]), str(r["id"])))
+            keeper = group[-1]
+            older_ids = [record["id"] for record in group[:-1]]
+            self.store.supersede_records(
+                subject_id=subject_id,
+                record_ids=older_ids,
+                superseded_by_id=keeper["id"],
+            )
+            repaired_ids.extend(older_ids)
+
+        report = {
+            "duplicates_superseded": duplicate_ids,
+            "fact_key_repaired": repaired_ids,
+            "active_before": len(active),
+            "active_after": len(self.list(subject_id)),
+        }
+        self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="memory.consolidated",
+            actor="system",
+            session_id=session_id,
+            payload=report,
+        )
+        return report
 
     def promote(
         self,
