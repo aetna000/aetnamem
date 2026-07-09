@@ -153,6 +153,9 @@ in the engine may reference the vocabulary of a benchmark scenario.
   server reference (transport, flags, tool catalog, host configs for
   Claude Code / Claude Desktop / OpenClaw-style bridges, security
   properties, troubleshooting).
+- **[docs/openclaw-setup.md](docs/openclaw-setup.md)** — visual (Mermaid)
+  walkthrough of wiring aetnamem into OpenClaw or any MCP host: setup flow,
+  runtime sequence, the quarantine gate, and the external audit loop.
 - **[docs/auditing-guide.md](docs/auditing-guide.md)** — how to *use* the
   auditability: checkpoint cadence and anchoring recipes, verifying after an
   incident, handling erasure/access/rectification requests with receipts,

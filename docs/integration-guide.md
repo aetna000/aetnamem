@@ -186,7 +186,8 @@ claude mcp add aetnamem -- aetnamem mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`) — and any host that takes
-the standard `command`/`args` JSON shape, including OpenClaw's MCP bridge:
+the standard `command`/`args` JSON shape, including OpenClaw's MCP bridge
+(diagrammed step by step in [openclaw-setup.md](openclaw-setup.md)):
 
 ```json
 {
