@@ -102,6 +102,3 @@ write tools after auth, rate limits, and audit anchoring are in place.
 
 
 
-Do not claim native Grok app integration unless a dedicated Grok app/plugin
-surface is built. The accurate claim is tool-calling integration now, Remote
-MCP deployment next.
