@@ -36,8 +36,9 @@ reader.on("line", (line) => {
   if (!line.trim()) return;
   const message = JSON.parse(line);
   if (message.id !== undefined && pending.has(message.id)) {
-    const { resolve } = pending.get(message.id);
+    const { resolve, timer } = pending.get(message.id);
     pending.delete(message.id);
+    clearTimeout(timer);
     resolve(message);
   }
 });
@@ -45,10 +46,10 @@ reader.on("line", (line) => {
 function request(method, params) {
   const id = nextId++;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve });
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (pending.delete(id)) reject(new Error(`${method} timed out`));
     }, 10_000);
+    pending.set(id, { resolve, timer });
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   });
 }

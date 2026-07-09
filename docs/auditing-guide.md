@@ -111,7 +111,9 @@ The receipt is the artifact you retain (and can show the requester or a
 regulator): it names the purged record and episode IDs, carries the selector
 only as a digest, and binds to the `memory.forget` audit event by ID and
 hash — so it is exactly as tamper-evident as the chain. Store receipts with
-the request ticket.
+the request ticket. If the caller used a natural-language `utterance`, that
+request text is not stored as an episode; the audit event stores only
+`utterance_sha256`.
 
 To *prove* erasure afterwards:
 

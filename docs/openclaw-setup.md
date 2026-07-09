@@ -1,9 +1,11 @@
-# Wiring aetnamem into OpenClaw
+# Wiring aetnamem into OpenClaw via MCP
 
 Visual walkthrough for giving an OpenClaw assistant persistent, auditable
-memory via the MCP server. The same flow applies to any MCP-capable host
-(Claude Code, Claude Desktop, …) — details in the
-[integration guide](integration-guide.md).
+memory tools via the MCP server. The same flow applies to any MCP-capable
+host (Claude Code, Claude Desktop, …) — details in the
+[integration guide](integration-guide.md). For OpenClaw-native auto-recall
+and auto-capture hooks, use the plugin in
+[../integrations/openclaw](../integrations/openclaw).
 
 ## 1. Setup flow
 
@@ -37,7 +39,9 @@ shape):
 ```
 
 `--subject you` means the agent never has to pass `subject_id` — right for a
-single-user personal assistant.
+single-user personal assistant. With the MCP bridge, the host exposes memory
+tools; with the native OpenClaw plugin, recall and capture can also run
+automatically on hooks.
 
 ## 2. What happens at runtime
 

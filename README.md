@@ -38,6 +38,8 @@ makes is verifiable from the outside.
 ## Install & use
 
 ```bash
+pip install aetnamem
+# or, from a checkout:
 pip install -e .
 ```
 
@@ -57,10 +59,11 @@ m.forget("user-1", utterance="Forget my preferred airport.")
 m.inspect("user-1")                  # full evidence dump, incl. audit chain check
 ```
 
-The six verbs — `remember`, `recall`, `list`, `forget`, `inspect`, `audit` —
+The core verbs — `remember`, `recall`, `list`, `forget`, `inspect`, `audit` —
 plus `promote` (quarantine release), `log_action` (agent audit events),
-`checkpoint`, and `verify` are the entire API. Every verb is also a CLI
-command, so any process that can run a shell command is a client:
+`consolidate`, `persona`, `scenes`, `propose`, `checkpoint`, and `verify`
+are available from Python and the CLI, so any process that can run a shell
+command is a client:
 
 ```bash
 aetnamem remember   ./memories.db user-1 "My preferred airport is SFO." --session s1
@@ -69,6 +72,9 @@ aetnamem forget     ./memories.db user-1 --utterance "Forget my preferred airpor
 aetnamem list       ./memories.db user-1 --all
 aetnamem promote    ./memories.db user-1 rec_...
 aetnamem log-action ./memories.db user-1 tool_call --payload '{"tool":"calendar"}'
+aetnamem consolidate ./memories.db user-1
+aetnamem persona    ./memories.db user-1
+aetnamem scenes     ./memories.db user-1
 aetnamem inspect    ./memories.db user-1
 aetnamem audit      ./memories.db user-1
 aetnamem checkpoint ./memories.db ./checkpoints.jsonl   # anchor this file externally
@@ -119,6 +125,67 @@ returns receipts, and you can independently audit the same SQLite file with
 Full tool catalog, host configs, and troubleshooting:
 [docs/integration-guide.md](docs/integration-guide.md).
 
+## Integrating with other agent frameworks
+
+The rule is: **MCP first, native adapter only when it adds lifecycle hooks.**
+Do not fork the memory semantics per host. `aetnamem` should stay the
+auditable engine; framework integrations should be thin wrappers that call
+the same MCP/Python verbs and preserve the same audit trail.
+
+For any MCP-capable host, start with:
+
+```bash
+aetnamem mcp --db ~/.aetnamem/memories.db --subject you
+```
+
+Then configure the host to expose the `memory_*` tools. This is the right
+first path for Hermes-style agents, Claude Desktop, Claude Code, and any
+framework that can launch a stdio MCP server.
+
+Build a native adapter only when the framework gives useful hooks:
+
+| hook point | aetnamem call | purpose |
+|---|---|---|
+| before prompt/context build | `memory_persona` + `memory_recall_block` | inject bounded, audited context |
+| after user/agent turn | `memory_capture` | capture user facts; log assistant/tool output as digests |
+| before history write | strip `<user_persona>` / `<relevant_memories>` | prevent recall feedback loops |
+| explicit agent tools | `memory_recall`, `memory_forget`, `memory_audit`, `memory_verify` | search, erase, and prove memory behavior |
+
+Native adapters should pass the host's `session_id` and `turn_id` whenever
+available, so memory reads, writes, tool calls, forgets, and user-visible
+responses line up in one audit timeline.
+
+Priority targets:
+
+| framework / host | first integration | native adapter shape |
+|---|---|---|
+| OpenClaw | implemented plugin in [integrations/openclaw](integrations/openclaw) | hook-based auto-recall/capture |
+| Hermes | MCP setup guide first | memory-provider/plugin wrapper if its provider API is stable |
+| LangGraph | Python helper node/store | recall node before model call, capture node after turn |
+| OpenAI Agents SDK | tools + runner/session wrapper | pre-run context builder and post-run capture |
+| CrewAI | external memory tools | memory adapter if its memory API can preserve receipts/audit IDs |
+| Microsoft Agent Framework / Semantic Kernel | plugin/tools | context provider plus action logging |
+| LlamaIndex / Haystack | tool/component wrapper | long-term memory component, not replacement for short-term chat state |
+
+The adapter directory should stay organized by host:
+
+```text
+integrations/
+  openclaw/
+  hermes/
+  langgraph/
+  openai-agents/
+  crewai/
+  microsoft-agent-framework/
+  llamaindex/
+  haystack/
+```
+
+Each adapter should document the same guarantees: untrusted content stays
+quarantined, deletion returns receipts, recall injection is bounded and
+audited, and the SQLite database can still be verified externally with
+`aetnamem verify` or `tools/verify_audit.py`.
+
 ## Compliance posture
 
 The architecture separates the **erasable data plane** (`records`,
@@ -136,7 +203,7 @@ of what today's design does and does not detect.
 ## Memory layers
 
 - **L0 — episodes**: raw turns, append-only, purged by deletion.
-- **L1 — records**: extracted facts with provenance (the six verbs).
+- **L1 — records**: extracted facts with provenance.
 - **L2 — scenes**: deterministic per-session view (`aetnamem scenes`).
 - **L3 — persona**: live-derived snapshot of active facts
   (`aetnamem persona`, MCP `memory_persona`) — never stored, so it can
@@ -158,11 +225,14 @@ Pass `min_score=` to drop weak matches.
 
 v0 extraction is deterministic (generic sentence patterns: "my X is Y",
 "use Y as my X", "remember that …", "I avoid …") so that policy failures are
-debuggable, not probabilistic. LLM-backed extraction, vector similarity,
-consolidation, the HTTP server, and the MCP server are planned layers on top
-of the same policy gates — see [plan.md](plan.md). The policy gates in
-[aetnamem/core/policy.py](aetnamem/core/policy.py) are the product; nothing
-in the engine may reference the vocabulary of a benchmark scenario.
+debuggable, not probabilistic. The local Python API, CLI, MCP server,
+deterministic consolidation, persona snapshots, scenes, checkpoints, and
+independent verifier are implemented. LLM-backed extraction, vector
+similarity, HTTP/server deployments, and additional storage backends remain
+roadmap layers on top of the same policy gates — see [plan.md](plan.md).
+The policy gates in [aetnamem/core/policy.py](aetnamem/core/policy.py) are
+the product; nothing in the engine may reference the vocabulary of a
+benchmark scenario.
 
 ## Documentation
 
@@ -196,6 +266,9 @@ vocabulary to keep the score honest.
 ```bash
 git clone https://github.com/aetna000/MemoryStackBench.git
 cd MemoryStackBench
+cp /path/to/aetnamem/bench/adapters/aetnamem.py memorybench/adapters/aetnamem.py
+cp /path/to/aetnamem/bench/targets/aetnamem.yaml targets/aetnamem.yaml
+PYTHONPATH=/path/to/aetnamem:$PWD \
 python -m memorybench.cli run \
   --target targets/aetnamem.yaml \
   --suite suites/seven_sins_v0_1 \

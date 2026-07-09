@@ -198,9 +198,11 @@ class Memory:
             active_records,
             fts_scores=fts_scores if fts_scores else None,
         )
+        all_scored = scored
         if min_score is not None:
             scored = [item for item in scored if item.score >= min_score]
         returned = scored[:limit]
+        returned_ids = [item.record["id"] for item in returned]
 
         candidates_payload = [
             {
@@ -211,10 +213,11 @@ class Memory:
                 "recency_score": item.recency_score,
                 "status": item.record["status"],
                 "source_type": item.record["source_type"],
+                "above_threshold": min_score is None or item.score >= min_score,
+                "returned": item.record["id"] in returned_ids,
             }
-            for item in scored[:50]
+            for item in all_scored[:50]
         ]
-        returned_ids = [item.record["id"] for item in returned]
         retrieval_id = self.store.insert_retrieval_event(
             subject_id=subject_id,
             session_id=session_id,
@@ -231,6 +234,9 @@ class Memory:
             payload={
                 "retrieval_id": retrieval_id,
                 "returned_ids": returned_ids,
+                "candidate_count": len(all_scored),
+                "min_score": min_score,
+                "limit": limit,
             },
         )
         return [item.record for item in returned]
@@ -256,38 +262,22 @@ class Memory:
     ) -> dict[str, Any]:
         turn = _turn_id(turn_id)
         contains = _selector_contains(selector)
+        utterance_sha256 = _sha256(utterance) if utterance else None
         if utterance:
-            episode_id = self.store.insert_episode(
-                subject_id=subject_id,
-                session_id=session_id,
-                turn_id=turn,
-                message=utterance,
-                source_type="user_message",
-                raw={},
-            )
-            self.store.append_audit_event(
-                subject_id=subject_id,
-                event_type="episode.ingested",
-                actor=actor,
-                session_id=session_id,
-                turn_id=turn,
-                payload={
-                    "episode_id": episode_id,
-                    "source_type": "user_message",
-                    "message_sha256": _sha256(utterance),
-                },
-            )
             contains = contains or forget_needle(utterance)
 
         if not contains:
             # Refuse to interpret an empty selector as "delete everything".
+            payload = {"reason": "empty selector"}
+            if utterance_sha256 is not None:
+                payload["utterance_sha256"] = utterance_sha256
             self.store.append_audit_event(
                 subject_id=subject_id,
                 event_type="memory.forget_rejected",
                 actor=actor,
                 session_id=session_id,
                 turn_id=turn,
-                payload={"reason": "empty selector"},
+                payload=payload,
             )
             return {"deleted": False, "record_ids": [], "receipt": None}
 
@@ -307,18 +297,21 @@ class Memory:
         )
         # The audit event carries the selector digest, never its text — the
         # needle usually names exactly the thing being erased.
+        payload = {
+            "selector_sha256": selector_sha256,
+            "purged_record_ids": purged_ids,
+            "purged_episode_ids": purged_episode_ids,
+            "purged_count": len(purged_ids),
+        }
+        if utterance_sha256 is not None:
+            payload["utterance_sha256"] = utterance_sha256
         event_id = self.store.append_audit_event(
             subject_id=subject_id,
             event_type="memory.forget",
             actor=actor,
             session_id=session_id,
             turn_id=turn,
-            payload={
-                "selector_sha256": selector_sha256,
-                "purged_record_ids": purged_ids,
-                "purged_episode_ids": purged_episode_ids,
-                "purged_count": len(purged_ids),
-            },
+            payload=payload,
         )
         event = self.store.get_audit_event(subject_id, event_id)
         receipt = {

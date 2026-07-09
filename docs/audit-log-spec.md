@@ -54,10 +54,11 @@ its preimage.
 Audit events and retrieval events store **digests and structural metadata
 only**: `message_sha256` for ingested episodes, `query_sha256` for recall
 queries (`retrieval_events.query` is empty unless the engine was constructed
-with `retain_query_text=True`), `selector_sha256` for forget selectors, and
-record/episode IDs. Fact *slot names* (`fact_key`, e.g. "backup email")
-appear in payloads for debuggability; fact *values* and message text never
-do. Purging a record clears its content and its `fact_key`.
+with `retain_query_text=True`), `selector_sha256` for forget selectors,
+`utterance_sha256` for natural-language forget requests, and record/episode
+IDs. Fact *slot names* (`fact_key`, e.g. "backup email") may appear in
+non-deletion payloads for debuggability; fact *values* and message text
+never do. Purging a record clears its content and its `fact_key`.
 
 This is what lets the chain be immutable while erasure (GDPR Art. 17 etc.)
 stays real: the erasable data lives in `records`/`episodes`, which

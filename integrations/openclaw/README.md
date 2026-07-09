@@ -1,11 +1,11 @@
 # OpenClaw plugin: memory-aetnamem
 
-Gives an OpenClaw assistant TencentDB-style automatic memory — auto-recall
-before every prompt, auto-capture after every turn, agent-callable search —
-while every policy decision stays inside the aetnamem engine: untrusted
-content quarantines, updates supersede, deletion purges and returns a
-receipt, and everything lands in a hash-chained audit log you can verify
-from outside OpenClaw.
+Gives an OpenClaw assistant automatic, auditable memory: auto-recall before
+every prompt, auto-capture after every turn, and agent-callable search and
+forget tools. Every policy decision stays inside the aetnamem engine:
+untrusted content quarantines, updates supersede, deletion purges and
+returns a receipt, and everything lands in a hash-chained audit log you can
+verify from outside OpenClaw.
 
 ## How it works
 

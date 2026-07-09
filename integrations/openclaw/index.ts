@@ -2,7 +2,7 @@
  * memory-aetnamem: auditable memory plugin for OpenClaw.
  *
  * A thin shell over the aetnamem engine (Python, spawned as an MCP child
- * process over stdio). The plugin adds TencentDB-style ergonomics —
+ * process over stdio). The plugin adds automatic memory ergonomics —
  * auto-recall injection, auto-capture, agent-callable search — while every
  * policy decision (quarantine, supersession, deletion, receipts, audit
  * chain) stays server-side in the engine, where a prompt-injected agent
@@ -138,12 +138,12 @@ export default function register(api: OpenClawPluginApi): void {
 
   // ---- auto-recall: persona + bounded, audited recall injection ---------
   api.on("before_prompt_build", async (event: BeforePromptBuildEvent, ctx) => {
-    if (!cfg.recall.enabled && !cfg.persona.enabled) return;
     const userText = event.prompt;
     if (!userText) return;
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
+    if (!cfg.recall.enabled && !cfg.persona.enabled) return;
 
     const parts: string[] = [];
     try {
@@ -265,15 +265,20 @@ export default function register(api: OpenClawPluginApi): void {
         },
         required: ["query"],
       },
-      async execute(_toolCallId, params) {
+      async execute(toolCallId, params) {
+        const sessionId = `openclaw-tool:${toolCallId}`;
         const records = (await client.callTool("memory_recall", {
           query: String(params.query ?? ""),
+          session_id: sessionId,
           limit: Math.min(Math.max(Number(params.limit) || 5, 1), 20),
         })) as Array<{ id: string; content: string }>;
         const text = records.length
           ? records.map((record) => `- [${record.id}] ${record.content}`).join("\n")
           : "No matching memories.";
-        return { content: [{ type: "text", text }], details: { count: records.length } };
+        return {
+          content: [{ type: "text", text }],
+          details: { count: records.length, sessionId },
+        };
       },
     },
     { name: "aetnamem_search" },
@@ -298,14 +303,20 @@ export default function register(api: OpenClawPluginApi): void {
         },
         required: ["utterance"],
       },
-      async execute(_toolCallId, params) {
+      async execute(toolCallId, params) {
+        const sessionId = `openclaw-tool:${toolCallId}`;
         const result = (await client.callTool("memory_forget", {
           utterance: String(params.utterance ?? ""),
+          session_id: sessionId,
+          turn_id: toolCallId,
         })) as { deleted: boolean; record_ids: string[]; receipt?: unknown };
         const text = result.deleted
           ? `Deleted ${result.record_ids.length} memorie(s). Receipt: ${JSON.stringify(result.receipt)}`
           : "No matching memories found to delete.";
-        return { content: [{ type: "text", text }], details: { deleted: result.deleted } };
+        return {
+          content: [{ type: "text", text }],
+          details: { deleted: result.deleted, sessionId },
+        };
       },
     },
     { name: "aetnamem_forget" },

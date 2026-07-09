@@ -47,6 +47,31 @@ def test_forget_audit_event_carries_digest_not_selector_text() -> None:
     assert forget_event["payload"]["selector_sha256"] == sha256_hex("backup email")
 
 
+def test_forget_request_text_is_not_persisted() -> None:
+    memory = Memory(":memory:")
+    memory.remember(
+        "user-1",
+        "Remember that my backup email is private-backup@example.com.",
+        session_id="s1",
+    )
+    memory.forget(
+        "user-1", utterance="Forget private-backup@example.com.", session_id="s2"
+    )
+
+    inspected = memory.inspect("user-1")
+    dumped = json.dumps(inspected, sort_keys=True)
+    assert "private-backup@example.com" not in dumped
+
+    [forget_event] = [
+        event
+        for event in inspected["audit_log"]
+        if event["event_type"] == "memory.forget"
+    ]
+    assert forget_event["payload"]["utterance_sha256"] == sha256_hex(
+        "Forget private-backup@example.com."
+    )
+
+
 def test_tombstoned_record_has_no_fact_key() -> None:
     memory = Memory(":memory:")
     memory.remember("user-1", "My backup email is a@b.com.", session_id="s1")

@@ -84,7 +84,9 @@ def test_forget_purges_record_and_episode_content() -> None:
         "Remember that my backup email is private-backup@example.com.",
         session_id="s1",
     )
-    result = memory.forget("user-1", utterance="Forget my backup email.", session_id="s2")
+    result = memory.forget(
+        "user-1", utterance="Forget private-backup@example.com.", session_id="s2"
+    )
 
     assert result["deleted"] is True
     assert memory.recall("user-1", "Are you allowed to use my backup email?") == []
@@ -138,6 +140,30 @@ def test_retrieval_events_log_candidates_with_scores() -> None:
     assert all("score" in candidate for candidate in event["candidates"])
     scores = [candidate["score"] for candidate in event["candidates"]]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_retrieval_events_log_below_threshold_candidates() -> None:
+    memory = Memory(":memory:")
+
+    memory.remember("user-1", "My favorite color is teal.", session_id="s1")
+    memory.remember("user-1", "My home city is Sydney.", session_id="s1")
+    records = memory.recall(
+        "user-1", "What is my favorite color?", session_id="s2", min_score=999
+    )
+
+    assert records == []
+    [event] = memory.get_retrieval_log("user-1")
+    assert len(event["candidates"]) == 2
+    assert event["returned_ids"] == []
+    assert all(candidate["above_threshold"] is False for candidate in event["candidates"])
+
+    [recall_event] = [
+        item
+        for item in memory.audit("user-1")["audit_log"]
+        if item["event_type"] == "memory.recall"
+    ]
+    assert recall_event["payload"]["candidate_count"] == 2
+    assert recall_event["payload"]["min_score"] == 999
 
 
 def test_untrusted_extraction_is_quarantined_until_promoted() -> None:

@@ -96,6 +96,8 @@ source episode text. `--utterance` accepts natural language
 (`"Forget my preferred airport."`) and reduces it to the selector;
 `--contains` is the exact substring form. Exactly one is required — an
 empty selector is refused rather than interpreted as "delete everything".
+The forget request text itself is not stored as an episode; the audit event
+keeps only `utterance_sha256` and `selector_sha256`.
 
 ```bash
 $ aetnamem forget ./mem.db user-1 --utterance "Forget my preferred airport."
@@ -126,6 +128,34 @@ against the audit chain forever (rules in
 Activates a quarantined record after the user has explicitly confirmed it
 (trust tier becomes `user_confirmed`; supersession applies). Errors if the
 record is not quarantined. Find candidates with `list --all`.
+
+### `aetnamem consolidate <db> <subject>`
+
+Runs the deterministic cleanup pass: exact duplicate active records collapse
+to the newest copy, and fact-key conflicts are repaired by superseding older
+records. The pass writes a `memory.consolidated` audit event.
+
+### `aetnamem persona <db> <subject> [--max-chars N]`
+
+Builds a live-derived `<user_persona>` snapshot from active records. It is
+not stored as memory; every line carries the source record id, and the build
+is audited as `memory.persona_built`.
+
+### `aetnamem scenes <db> <subject>`
+
+Returns the deterministic L2 scene view: sessions with their episode IDs and
+record IDs. This is derived from stored evidence and does not create new
+memory.
+
+### `aetnamem propose <db> <subject> [--proposer NAME]`
+
+Reads a JSON array of derived fact proposals from stdin. Proposals must cite
+existing evidence IDs and land `quarantined`; they only become active after
+`promote`.
+
+```bash
+cat proposals.json | aetnamem propose ./mem.db user-1 --proposer nightly-job
+```
 
 ### `aetnamem log-action <db> <subject> <action_type> [--payload JSON] [--session S] [--turn T]`
 
@@ -223,7 +253,7 @@ not as protocol errors, so the agent can read and recover.
 | `memory_persona` | — | `subject_id`, `max_chars` (1500), `session_id` | `{block, record_ids, count}` — live-derived `<user_persona>` snapshot, audited |
 | `memory_capture` | `role`, `content` | `subject_id`, `tool_name`, `session_id`, `turn_id` | user → full pipeline; assistant/tool\_\* → digest-only audit event |
 | `memory_list` | — | `subject_id`, `include_inactive` (false) | array of records |
-| `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id` | `{deleted, record_ids, receipt}` |
+| `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id`, `turn_id` | `{deleted, record_ids, receipt}` |
 | `memory_promote` | `record_id` | `subject_id`, `session_id` | the activated record |
 | `memory_audit` | — | `subject_id` | `{audit_log, retrieval_events, audit_chain_valid}` |
 | `memory_verify` | — | `subject_id`, `checkpoints_path` | `{valid, subjects}` |
@@ -268,7 +298,7 @@ What actually crosses stdio (one line per message):
 
 ```
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"aetnamem","version":"0.0.1"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"aetnamem","version":"<version>"}}}
 → {"jsonrpc":"2.0","method":"notifications/initialized"}
 → {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_remember","arguments":{"message":"My favorite tea is oolong."}}}
 ← {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{ …remember payload… }"}],"isError":false}}

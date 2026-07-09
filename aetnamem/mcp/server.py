@@ -220,6 +220,7 @@ class MCPServer:
             selector=arguments.get("contains"),
             utterance=arguments.get("utterance"),
             session_id=arguments.get("session_id"),
+            turn_id=arguments.get("turn_id"),
         )
 
     def _tool_promote(self, arguments: dict[str, Any]) -> Any:
