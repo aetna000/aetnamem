@@ -1,11 +1,31 @@
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "aetnamem"
-version = "0.0.1"
+version = "0.1.0"
 description = "Auditable memory engine for agents."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-only"
-authors = [{ name = "aetnamem contributors" }]
+license-files = ["LICENSE"]
+authors = [{ name = "aetna000", email = "aetna000@gmail.com" }]
+maintainers = [{ name = "aetna000", email = "aetna000@gmail.com" }]
+keywords = ["agent-memory", "audit", "mcp", "provenance", "sqlite"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
 
 [project.optional-dependencies]
@@ -15,6 +35,12 @@ dev = [
 
 [project.scripts]
 aetnamem = "aetnamem.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/aetna000/aetnamem"
+Repository = "https://github.com/aetna000/aetnamem"
+Issues = "https://github.com/aetna000/aetnamem/issues"
+Documentation = "https://github.com/aetna000/aetnamem#readme"
 
 [tool.setuptools.packages.find]
 include = ["aetnamem*"]
