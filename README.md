@@ -110,6 +110,8 @@ The agent gets `memory_remember`, `memory_recall`, `memory_list`,
 summarized by the agent still cannot plant durable memory, deletion still
 returns receipts, and you can independently audit the same SQLite file with
 `aetnamem verify` or `tools/verify_audit.py` while the agent uses it.
+Full tool catalog, host configs, and troubleshooting:
+[docs/integration-guide.md](docs/integration-guide.md).
 
 ## Compliance posture
 
@@ -146,6 +148,11 @@ in the engine may reference the vocabulary of a benchmark scenario.
 
 ## Documentation
 
+- **[docs/integration-guide.md](docs/integration-guide.md)** — full CLI
+  reference (every command, flags, output shapes, exit codes) and MCP
+  server reference (transport, flags, tool catalog, host configs for
+  Claude Code / Claude Desktop / OpenClaw-style bridges, security
+  properties, troubleshooting).
 - **[docs/auditing-guide.md](docs/auditing-guide.md)** — how to *use* the
   auditability: checkpoint cadence and anchoring recipes, verifying after an
   incident, handling erasure/access/rectification requests with receipts,
