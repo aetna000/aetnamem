@@ -87,6 +87,27 @@ def main() -> None:
     consolidate_parser.add_argument("path")
     consolidate_parser.add_argument("subject_id")
 
+    persona_parser = subparsers.add_parser(
+        "persona", help="Deterministic L3 persona snapshot derived from active records"
+    )
+    persona_parser.add_argument("path")
+    persona_parser.add_argument("subject_id")
+    persona_parser.add_argument("--max-chars", type=int, default=1500)
+
+    scenes_parser = subparsers.add_parser(
+        "scenes", help="Deterministic L2 scene view: sessions with their episodes/records"
+    )
+    scenes_parser.add_argument("path")
+    scenes_parser.add_argument("subject_id")
+
+    propose_parser = subparsers.add_parser(
+        "propose",
+        help="Submit derived fact proposals (JSON array on stdin); they land quarantined with evidence",
+    )
+    propose_parser.add_argument("path")
+    propose_parser.add_argument("subject_id")
+    propose_parser.add_argument("--proposer", default="llm")
+
     inspect_parser = subparsers.add_parser(
         "inspect", help="Dump a subject's records, episodes, and audit trail"
     )
@@ -197,6 +218,17 @@ def main() -> None:
         _print({"event_id": event_id})
     elif args.command == "consolidate":
         _print(memory.consolidate(args.subject_id))
+    elif args.command == "persona":
+        _print(memory.build_persona(args.subject_id, max_chars=args.max_chars))
+    elif args.command == "scenes":
+        _print(memory.scenes(args.subject_id))
+    elif args.command == "propose":
+        proposals = json.load(sys.stdin)
+        _print(
+            memory.propose_facts(
+                args.subject_id, proposals, proposer=args.proposer
+            )
+        )
     elif args.command == "inspect":
         _print(memory.inspect(args.subject_id))
     elif args.command == "audit":

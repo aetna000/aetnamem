@@ -125,6 +125,7 @@ class MCPServer:
             "memory_remember": self._tool_remember,
             "memory_recall": self._tool_recall,
             "memory_recall_block": self._tool_recall_block,
+            "memory_persona": self._tool_persona,
             "memory_capture": self._tool_capture,
             "memory_list": self._tool_list,
             "memory_forget": self._tool_forget,
@@ -188,6 +189,13 @@ class MCPServer:
             max_records=int(arguments.get("max_records", 5)),
             max_chars=int(arguments.get("max_chars", 2000)),
             min_score=float(arguments.get("min_score", 0.3)),
+        )
+
+    def _tool_persona(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.build_persona(
+            self._subject(arguments),
+            session_id=arguments.get("session_id"),
+            max_chars=int(arguments.get("max_chars", 1500)),
         )
 
     def _tool_capture(self, arguments: dict[str, Any]) -> Any:
@@ -292,6 +300,18 @@ class MCPServer:
                     **_SESSION_PROPERTIES,
                 },
                 required=["query"],
+            ),
+            _tool(
+                "memory_persona",
+                "Deterministic persona snapshot (<user_persona> block) "
+                "derived live from active records: stable fact slots first, "
+                "then recent facts, under a character budget. Every line "
+                "carries the source record id; building it is audited.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "max_chars": {"type": "integer", "default": 1500},
+                    **_SESSION_PROPERTIES,
+                },
             ),
             _tool(
                 "memory_capture",

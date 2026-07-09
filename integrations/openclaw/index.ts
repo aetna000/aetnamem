@@ -26,7 +26,8 @@ import type {
 } from "./src/types.js";
 
 const TAG = "[memory-aetnamem]";
-const INJECT_RE = /<relevant_memories>[\s\S]*?<\/relevant_memories>\s*/g;
+const INJECT_RE =
+  /<(relevant_memories|user_persona)>[\s\S]*?<\/(relevant_memories|user_persona)>\s*/g;
 const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface PluginConfig {
@@ -41,6 +42,7 @@ interface PluginConfig {
     minScore: number;
     timeoutMs: number;
   };
+  persona: { enabled: boolean; maxChars: number; ttlSeconds: number };
   capture: { enabled: boolean; captureAssistant: boolean };
 }
 
@@ -61,6 +63,11 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
       maxChars: Number(cfg.recall?.maxChars ?? 2000),
       minScore: Number(cfg.recall?.minScore ?? 0.3),
       timeoutMs: Number(cfg.recall?.timeoutMs ?? 4000),
+    },
+    persona: {
+      enabled: cfg.persona?.enabled !== false,
+      maxChars: Number(cfg.persona?.maxChars ?? 1200),
+      ttlSeconds: Number(cfg.persona?.ttlSeconds ?? 300),
     },
     capture: {
       enabled: cfg.capture?.enabled !== false,
@@ -103,6 +110,10 @@ export default function register(api: OpenClawPluginApi): void {
   // without the injected memory block.
   const pendingPrompts = new Map<string, { text: string; ts: number }>();
 
+  // L3 persona cache: rebuilt on TTL expiry and invalidated when capture
+  // writes new memory, so the snapshot never lags a correction.
+  let personaCache: { block: string; ts: number } | null = null;
+
   const sweep = () => {
     const now = Date.now();
     for (const [key, value] of pendingPrompts) {
@@ -110,32 +121,58 @@ export default function register(api: OpenClawPluginApi): void {
     }
   };
 
-  // ---- auto-recall: bounded, audited injection --------------------------
+  async function personaBlock(sessionKey: string): Promise<string> {
+    if (!cfg.persona.enabled) return "";
+    const now = Date.now();
+    if (personaCache && now - personaCache.ts < cfg.persona.ttlSeconds * 1000) {
+      return personaCache.block;
+    }
+    const result = (await client.callTool(
+      "memory_persona",
+      { session_id: sessionKey, max_chars: cfg.persona.maxChars },
+      cfg.recall.timeoutMs,
+    )) as { block?: string };
+    personaCache = { block: result?.block ?? "", ts: now };
+    return personaCache.block;
+  }
+
+  // ---- auto-recall: persona + bounded, audited recall injection ---------
   api.on("before_prompt_build", async (event: BeforePromptBuildEvent, ctx) => {
-    if (!cfg.recall.enabled) return;
+    if (!cfg.recall.enabled && !cfg.persona.enabled) return;
     const userText = event.prompt;
     if (!userText) return;
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
 
+    const parts: string[] = [];
     try {
-      const result = (await client.callTool(
-        "memory_recall_block",
-        {
-          query: userText,
-          session_id: sessionKey,
-          max_records: cfg.recall.maxRecords,
-          max_chars: cfg.recall.maxChars,
-          min_score: cfg.recall.minScore,
-        },
-        cfg.recall.timeoutMs,
-      )) as { block?: string; count?: number };
-      if (result?.block) {
-        api.logger.info(
-          `${TAG} injected ${result.count} memories (${result.block.length} chars)`,
-        );
-        return { prependContext: result.block + "\n\n" };
+      const persona = await personaBlock(sessionKey);
+      if (persona) parts.push(persona);
+    } catch (error) {
+      api.logger.warn(
+        `${TAG} persona skipped: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    try {
+      if (cfg.recall.enabled) {
+        const result = (await client.callTool(
+          "memory_recall_block",
+          {
+            query: userText,
+            session_id: sessionKey,
+            max_records: cfg.recall.maxRecords,
+            max_chars: cfg.recall.maxChars,
+            min_score: cfg.recall.minScore,
+          },
+          cfg.recall.timeoutMs,
+        )) as { block?: string; count?: number };
+        if (result?.block) {
+          api.logger.info(
+            `${TAG} injected ${result.count} memories (${result.block.length} chars)`,
+          );
+          parts.push(result.block);
+        }
       }
     } catch (error) {
       // Never block the turn on recall problems.
@@ -143,6 +180,7 @@ export default function register(api: OpenClawPluginApi): void {
         `${TAG} auto-recall skipped: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    if (parts.length) return { prependContext: parts.join("\n\n") + "\n\n" };
   });
 
   // ---- auto-capture: user turn through the pipeline, assistant as digest -
@@ -161,6 +199,7 @@ export default function register(api: OpenClawPluginApi): void {
           content: userText,
           session_id: sessionKey,
         });
+        personaCache = null; // new memory may change the persona
       }
       if (cfg.capture.captureAssistant) {
         const messages = Array.isArray(event.messages) ? event.messages : [];
@@ -190,8 +229,10 @@ export default function register(api: OpenClawPluginApi): void {
   api.on("before_message_write", (event) => {
     const message = event.message;
     if (message.role !== "user") return;
+    const hasInjection = (text: string) =>
+      text.includes("<relevant_memories>") || text.includes("<user_persona>");
     if (typeof message.content === "string") {
-      if (!message.content.includes("<relevant_memories>")) return;
+      if (!hasInjection(message.content)) return;
       const cleaned = message.content.replace(INJECT_RE, "").trim();
       return { message: { ...message, content: cleaned } };
     }
@@ -199,7 +240,7 @@ export default function register(api: OpenClawPluginApi): void {
       let changed = false;
       const parts = (message.content as Array<Record<string, unknown>>).map((part) => {
         if (part.type !== "text" || typeof part.text !== "string") return part;
-        if (!part.text.includes("<relevant_memories>")) return part;
+        if (!hasInjection(part.text)) return part;
         changed = true;
         return { ...part, text: part.text.replace(INJECT_RE, "").trim() };
       });

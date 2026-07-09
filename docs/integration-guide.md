@@ -220,6 +220,7 @@ not as protocol errors, so the agent can read and recover.
 | `memory_remember` | `message` | `subject_id`, `source_type`, `session_id`, `turn_id` | `{episode_id, records, duplicate_ids}` |
 | `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id` | array of records, best first |
 | `memory_recall_block` | `query` | `subject_id`, `max_records` (5), `max_chars` (2000), `min_score` (0.3), `session_id` | `{block, record_ids, count}` — bounded `<relevant_memories>` block; injection is audited |
+| `memory_persona` | — | `subject_id`, `max_chars` (1500), `session_id` | `{block, record_ids, count}` — live-derived `<user_persona>` snapshot, audited |
 | `memory_capture` | `role`, `content` | `subject_id`, `tool_name`, `session_id`, `turn_id` | user → full pipeline; assistant/tool\_\* → digest-only audit event |
 | `memory_list` | — | `subject_id`, `include_inactive` (false) | array of records |
 | `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id` | `{deleted, record_ids, receipt}` |

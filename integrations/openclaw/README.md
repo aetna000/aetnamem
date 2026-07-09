@@ -14,6 +14,7 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 
 | OpenClaw hook | engine call | behavior |
 |---|---|---|
+| `before_prompt_build` | `memory_persona` | injects a `<user_persona>` snapshot (stable fact slots first, provenance ids on every line), cached with a TTL and invalidated whenever new memory is captured |
 | `before_prompt_build` | `memory_recall_block` | injects a bounded `<relevant_memories>` block; a lexical match is required (`minScore` 0.3), and the engine audits exactly which record IDs entered context |
 | `agent_end` | `memory_capture` | the clean user turn runs the full write pipeline; the assistant reply is logged as a **digest only** (never becomes memory) |
 | `before_message_write` | — | strips injected blocks from persisted history so recalls don't feed back |

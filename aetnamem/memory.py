@@ -446,6 +446,187 @@ class Memory:
         )
         return {"block": block, "record_ids": included, "count": len(included)}
 
+    def build_persona(
+        self,
+        subject_id: str,
+        *,
+        session_id: str | None = None,
+        max_chars: int = 1500,
+    ) -> dict[str, Any]:
+        """L3: deterministic persona snapshot derived from active records.
+
+        Keyed facts (stable slots like "preferred airport") come first,
+        then unkeyed facts newest-first, under a hard character budget.
+        No LLM, no stored copy — the persona is always derived live from
+        L1, so it can never go stale, and every line carries the source
+        record id. Building one writes a memory.persona_built audit event.
+        """
+        active = self.list(subject_id)
+        keyed = sorted(
+            (r for r in active if r.get("fact_key")),
+            key=lambda r: (str(r["fact_key"]), str(r["created_at"])),
+        )
+        unkeyed = sorted(
+            (r for r in active if not r.get("fact_key")),
+            key=lambda r: str(r["created_at"]),
+            reverse=True,
+        )
+
+        lines: list[str] = []
+        included: list[str] = []
+        used = 0
+        for record in [*keyed, *unkeyed]:
+            line = f"- [{record['id']}] {record['content']}"
+            if used + len(line) + 1 > max_chars:
+                break
+            lines.append(line)
+            included.append(record["id"])
+            used += len(line) + 1
+
+        if not lines:
+            return {"block": "", "record_ids": [], "count": 0}
+
+        block = "<user_persona>\n" + "\n".join(lines) + "\n</user_persona>"
+        self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="memory.persona_built",
+            actor="system",
+            session_id=session_id,
+            payload={
+                "record_ids": included,
+                "persona_sha256": _sha256(block),
+            },
+        )
+        return {"block": block, "record_ids": included, "count": len(included)}
+
+    def scenes(self, subject_id: str) -> list[dict[str, Any]]:
+        """L2: deterministic scene view — one scene per session.
+
+        Groups the episodic log by session with the records each session
+        produced. Purely derived (nothing stored), provenance is the
+        episode/record ids themselves. LLM-clustered scenes can layer on
+        later via propose_facts-style derivation.
+        """
+        episodes = self.store.list_episodes(subject_id)
+        records = self.list(subject_id, include_inactive=True)
+
+        by_session: dict[str, dict[str, Any]] = {}
+        for episode in episodes:
+            key = episode.get("session_id") or "(no session)"
+            scene = by_session.setdefault(
+                key,
+                {
+                    "scene_id": f"session:{key}",
+                    "session_id": episode.get("session_id"),
+                    "started_at": episode["created_at"],
+                    "ended_at": episode["created_at"],
+                    "episode_ids": [],
+                    "record_ids": [],
+                },
+            )
+            scene["episode_ids"].append(episode["id"])
+            scene["started_at"] = min(scene["started_at"], episode["created_at"])
+            scene["ended_at"] = max(scene["ended_at"], episode["created_at"])
+        for record in records:
+            key = record.get("source_session_id") or "(no session)"
+            if key in by_session:
+                by_session[key]["record_ids"].append(record["id"])
+
+        return sorted(
+            by_session.values(), key=lambda scene: str(scene["ended_at"]), reverse=True
+        )
+
+    def propose_facts(
+        self,
+        subject_id: str,
+        proposals: list[dict[str, Any]],
+        *,
+        proposer: str = "llm",
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Entry point for async LLM consolidation jobs.
+
+        Any external job (an LLM batch, a human review, a migration) may
+        propose candidate facts, but they land as *quarantined* derived
+        records, each required to cite evidence — existing episode or
+        record ids for this subject. Proposals without valid evidence are
+        rejected. Nothing becomes active except through promote().
+        """
+        episodes = {e["id"] for e in self.store.list_episodes(subject_id)}
+        record_ids = {
+            r["id"] for r in self.list(subject_id, include_inactive=True)
+        }
+        visible = self.store.list_records(
+            subject_id, statuses=("active", "quarantined")
+        )
+
+        quarantined: list[dict[str, Any]] = []
+        duplicates: list[str] = []
+        rejected: list[dict[str, Any]] = []
+        for proposal in proposals:
+            content = str(proposal.get("content") or "").strip()
+            evidence = list(proposal.get("evidence") or [])
+            if not content:
+                rejected.append({"proposal": proposal, "reason": "empty content"})
+                continue
+            unknown = [
+                item
+                for item in evidence
+                if item not in episodes and item not in record_ids
+            ]
+            if not evidence or unknown:
+                rejected.append(
+                    {
+                        "proposal": proposal,
+                        "reason": "missing or unknown evidence"
+                        + (f": {unknown}" if unknown else ""),
+                    }
+                )
+                continue
+            duplicate = find_duplicate(content, visible)
+            if duplicate is not None:
+                duplicates.append(duplicate["id"])
+                continue
+
+            fact_key = proposal.get("fact_key")
+            record_id = self.store.insert_record(
+                subject_id=subject_id,
+                content=content,
+                source_type="derived",
+                trust_tier="derived",
+                source_session_id=session_id,
+                source_turn_id=None,
+                episode_id=None,
+                confidence=float(proposal.get("confidence", 0.5)),
+                scope="user_private",
+                status="quarantined",
+                fact_key=str(fact_key).lower().strip() if fact_key else None,
+                raw={"evidence": evidence, "proposer": proposer},
+            )
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="memory.record_quarantined",
+                actor=proposer,
+                session_id=session_id,
+                record_id=record_id,
+                payload={
+                    "source_type": "derived",
+                    "trust_tier": "derived",
+                    "status": "quarantined",
+                    "evidence": evidence,
+                    "content_sha256": _sha256(content),
+                },
+            )
+            record = self.store.get_record(subject_id, record_id)
+            quarantined.append(record)
+            visible.append(record)
+
+        return {
+            "quarantined": quarantined,
+            "duplicate_ids": duplicates,
+            "rejected": rejected,
+        }
+
     def consolidate(
         self,
         subject_id: str,

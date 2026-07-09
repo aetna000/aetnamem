@@ -44,6 +44,15 @@
           "timeoutMs": { "type": "number", "default": 4000, "description": "Recall timeout; on timeout the turn proceeds without injection" }
         }
       },
+      "persona": {
+        "type": "object",
+        "description": "L3 persona snapshot injected alongside recall",
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "maxChars": { "type": "number", "default": 1200, "description": "Character budget for the <user_persona> block" },
+          "ttlSeconds": { "type": "number", "default": 300, "description": "Persona cache lifetime; also invalidated whenever new memory is captured" }
+        }
+      },
       "capture": {
         "type": "object",
         "description": "Auto-capture after each turn",

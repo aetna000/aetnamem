@@ -133,6 +133,18 @@ retention policies, and special-category (Art. 9) flagging — see
 [docs/audit-log-spec.md](docs/audit-log-spec.md) for the exact threat model
 of what today's design does and does not detect.
 
+## Memory layers
+
+- **L0 — episodes**: raw turns, append-only, purged by deletion.
+- **L1 — records**: extracted facts with provenance (the six verbs).
+- **L2 — scenes**: deterministic per-session view (`aetnamem scenes`).
+- **L3 — persona**: live-derived snapshot of active facts
+  (`aetnamem persona`, MCP `memory_persona`) — never stored, so it can
+  never go stale; every line carries its source record id.
+- **Derived proposals**: external LLM/batch jobs submit candidates via
+  `aetnamem propose` / `Memory.propose_facts()`; they land *quarantined*
+  with mandatory evidence links and only activate through `promote()`.
+
 ## How recall works
 
 Recall has top-k semantics, like a vector store: every *active* record is
