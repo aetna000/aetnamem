@@ -115,6 +115,12 @@ The agent gets `memory_remember`, `memory_recall`, `memory_recall_block`
 digest-only assistant/tool logging), `memory_list`, `memory_forget`,
 `memory_promote`, `memory_audit`, `memory_verify`, and `memory_log_action`.
 
+**Grok/xAI users**: [docs/grok-xai.md](docs/grok-xai.md) shows how to expose
+`aetnamem` as xAI function-calling tools today, with a local playground that
+lets Grok search, capture, forget, and audit memory while the engine keeps
+provenance and deletion receipts. xAI Remote MCP is the deployment path once
+the local stdio MCP server is exposed behind an HTTP/SSE gateway.
+
 **OpenClaw users**: [integrations/openclaw](integrations/openclaw) is a
 native plugin that adds automatic memory — auto-recall injection before
 every prompt and auto-capture after every turn — on top of the same engine
@@ -244,6 +250,8 @@ benchmark scenario.
 - **[docs/openclaw-setup.md](docs/openclaw-setup.md)** — visual (Mermaid)
   walkthrough of wiring aetnamem into OpenClaw or any MCP host: setup flow,
   runtime sequence, the quarantine gate, and the external audit loop.
+- **[docs/grok-xai.md](docs/grok-xai.md)** — Grok/xAI function-calling
+  quickstart, local playground, and Remote MCP deployment notes.
 - **[docs/auditing-guide.md](docs/auditing-guide.md)** — how to *use* the
   auditability: checkpoint cadence and anchoring recipes, verifying after an
   incident, handling erasure/access/rectification requests with receipts,
