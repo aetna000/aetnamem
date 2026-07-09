@@ -100,19 +100,7 @@ Use `allowed_tools` deliberately. For a first public demo, expose only
 `memory_recall`, `memory_forget`, `memory_audit`, and `memory_verify`; add
 write tools after auth, rate limits, and audit anchoring are in place.
 
-## How to describe it on X
 
-Short version:
-
-> Grok-ready via xAI tool calling today: memory search, capture, forget, and
-> audit are exposed as tools while `aetnamem` keeps provenance, quarantine,
-> deletion receipts, and a verifiable audit chain.
-
-Careful version:
-
-> `aetnamem` integrates with Grok through xAI function calling today. Remote
-> MCP is the deployment path once the local MCP server is exposed behind an
-> HTTP/SSE gateway.
 
 Do not claim native Grok app integration unless a dedicated Grok app/plugin
 surface is built. The accurate claim is tool-calling integration now, Remote
