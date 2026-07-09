@@ -14,6 +14,9 @@ venv/
 *.db-wal
 *.db-shm
 .DS_Store
+.env
+.env.*
+!.env.example
 
 # Claude Code personal settings
 .claude/settings.local.json
