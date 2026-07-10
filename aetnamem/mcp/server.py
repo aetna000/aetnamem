@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.1.0"
+    SERVER_VERSION = "0.2.0"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
