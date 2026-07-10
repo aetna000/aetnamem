@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, Iterator
 import uuid
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
@@ -15,16 +16,70 @@ class SQLiteStore:
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path)
+        # Autocommit mode keeps transaction ownership explicit. Public write
+        # methods enter ``transaction()``; an outer engine operation can wrap
+        # several of them in one atomic unit without an inner method committing
+        # early through sqlite3.Connection.__exit__.
+        self._conn = sqlite3.connect(self.path, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
+        self._transaction_depth = 0
         self._fts_enabled = False
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
+        if self.path != ":memory:":
+            try:
+                self._conn.execute("PRAGMA journal_mode = WAL")
+            except sqlite3.OperationalError as exc:
+                # Concurrent first-open calls can race while one connection
+                # changes the persistent journal mode. BEGIN IMMEDIATE still
+                # provides correct serialization; the winning connection has
+                # already made WAL persistent for subsequent opens.
+                if "locked" not in str(exc).lower():
+                    raise
         self._migrate()
 
     def close(self) -> None:
         self._conn.close()
 
+    @contextmanager
+    def transaction(self, *, immediate: bool = True) -> Iterator["SQLiteStore"]:
+        """Join or open one explicit SQLite unit of work.
+
+        The outermost scope owns BEGIN/COMMIT/ROLLBACK. Nested store calls only
+        join it, which is what makes a semantic mutation and its audit event
+        atomic. ``BEGIN IMMEDIATE`` is the write default: it also serializes
+        the per-subject audit-head read with the following append so two
+        connections cannot derive competing events from the same head.
+        """
+        if self._transaction_depth:
+            self._transaction_depth += 1
+            try:
+                yield self
+            finally:
+                self._transaction_depth -= 1
+            return
+
+        self._conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
+        self._transaction_depth = 1
+        try:
+            yield self
+        except BaseException:
+            self._conn.rollback()
+            raise
+        else:
+            self._conn.commit()
+        finally:
+            self._transaction_depth = 0
+
     def reset_subject(self, subject_id: str) -> None:
-        with self._conn:
+        with self.transaction():
+            action_table = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'action_transactions'"
+            ).fetchone()
+            if action_table is not None:
+                self._conn.execute(
+                    "DELETE FROM action_transactions WHERE subject_id = ?", (subject_id,)
+                )
             if self._fts_enabled:
                 self._conn.execute("DELETE FROM records_fts WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM records WHERE subject_id = ?", (subject_id,))
@@ -44,7 +99,7 @@ class SQLiteStore:
     ) -> str:
         episode_id = _new_id("ep")
         created_at = utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO episodes (
@@ -85,7 +140,7 @@ class SQLiteStore:
     ) -> str:
         record_id = _new_id("rec")
         created_at = utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO records (
@@ -135,7 +190,7 @@ class SQLiteStore:
         """Activate a quarantined record. Returns the record, or None if it
         was not quarantined (promotion is only meaningful from quarantine)."""
         updated_at = utc_now()
-        with self._conn:
+        with self.transaction():
             row = self._conn.execute(
                 """
                 SELECT * FROM records
@@ -166,7 +221,7 @@ class SQLiteStore:
         if not record_ids:
             return
         updated_at = utc_now()
-        with self._conn:
+        with self.transaction():
             for record_id in record_ids:
                 row = self._conn.execute(
                     """
@@ -202,7 +257,7 @@ class SQLiteStore:
             return [], []
         deleted_at = utc_now()
         changed: list[str] = []
-        with self._conn:
+        with self.transaction():
             for record_id in record_ids:
                 row = self._conn.execute(
                     """
@@ -297,7 +352,7 @@ class SQLiteStore:
     ) -> str:
         event_id = _new_id("ret")
         created_at = utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO retrieval_events (
@@ -355,31 +410,31 @@ class SQLiteStore:
         event_id = _new_id("aud")
         created_at = utc_now()
         payload_json = _json(payload or {})
-        previous = self._conn.execute(
-            """
-            SELECT event_hash FROM audit_log
-            WHERE subject_id = ?
-            ORDER BY sequence DESC
-            LIMIT 1
-            """,
-            (subject_id,),
-        ).fetchone()
-        prev_hash = previous["event_hash"] if previous else None
-        event_hash = _event_hash(
-            {
-                "event_id": event_id,
-                "subject_id": subject_id,
-                "event_type": event_type,
-                "created_at": created_at,
-                "actor": actor,
-                "session_id": session_id,
-                "turn_id": turn_id,
-                "record_id": record_id,
-                "payload": json.loads(payload_json),
-                "prev_hash": prev_hash,
-            }
-        )
-        with self._conn:
+        with self.transaction(immediate=True):
+            previous = self._conn.execute(
+                """
+                SELECT event_hash FROM audit_log
+                WHERE subject_id = ?
+                ORDER BY sequence DESC
+                LIMIT 1
+                """,
+                (subject_id,),
+            ).fetchone()
+            prev_hash = previous["event_hash"] if previous else None
+            event_hash = _event_hash(
+                {
+                    "event_id": event_id,
+                    "subject_id": subject_id,
+                    "event_type": event_type,
+                    "created_at": created_at,
+                    "actor": actor,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "record_id": record_id,
+                    "payload": json.loads(payload_json),
+                    "prev_hash": prev_hash,
+                }
+            )
             self._conn.execute(
                 """
                 INSERT INTO audit_log (
@@ -503,10 +558,7 @@ class SQLiteStore:
         return True
 
     def _migrate(self) -> None:
-        with self._conn:
-            self._conn.execute("PRAGMA foreign_keys = ON")
-            if self.path != ":memory:":
-                self._conn.execute("PRAGMA journal_mode = WAL")
+        with self.transaction():
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS episodes (

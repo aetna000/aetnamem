@@ -25,7 +25,7 @@ Table `audit_log`, one row per event:
 | `sequence` | global monotonically increasing integer (SQLite AUTOINCREMENT) |
 | `event_id` | `aud_<uuid4hex>` |
 | `subject_id` | tenant/user scope; chains are per subject |
-| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `agent.*` |
+| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `agent.*`, `action.*` |
 | `created_at` | ISO-8601 UTC timestamp |
 | `actor` | `user`, `system`, `agent`, … |
 | `session_id`, `turn_id`, `record_id` | optional context, may be null |
@@ -49,21 +49,35 @@ event's `prev_hash` is null; every later event's `prev_hash` equals the
 previous event's `event_hash`, and every `event_hash` must recompute from
 its preimage.
 
-## Content never enters the audit plane
+## Content rules for engine-generated events
 
-Audit events and retrieval events store **digests and structural metadata
-only**: `message_sha256` for ingested episodes, `query_sha256` for recall
+Core memory events and retrieval events store **digests and structural
+metadata**: `message_sha256` for ingested episodes, `query_sha256` for recall
 queries (`retrieval_events.query` is empty unless the engine was constructed
 with `retain_query_text=True`), `selector_sha256` for forget selectors,
 `utterance_sha256` for natural-language forget requests, and record/episode
 IDs. Fact *slot names* (`fact_key`, e.g. "backup email") may appear in
 non-deletion payloads for debuggability; fact *values* and message text
-never do. Purging a record clears its content and its `fact_key`.
+do not. Purging a record clears its content and its `fact_key`.
 
-This is what lets the chain be immutable while erasure (GDPR Art. 17 etc.)
-stays real: the erasable data lives in `records`/`episodes`, which
-`forget()` purges, while the chain retains only evidence *that* things
-happened.
+Guarded-action events follow the same split: plan, argument, preview,
+precondition, result, observation, error, and compensation **digests** may
+enter `action.*` payloads, while raw arguments, before-images, previews,
+provider results, and compensation material live in the erasable
+`action_payloads` table. The action tables are not part of this v1 hash
+preimage; action IDs are carried in event payloads. See
+[guarded-actions.md](guarded-actions.md).
+
+This is an engine-path convention, not a database constraint. The low-level
+`Memory.log_action()` / `memory_log_action` API accepts an arbitrary caller
+payload, and `retain_query_text=True` deliberately stores raw retrieval query
+text outside the audit table. Callers must use digests rather than raw or
+secret values in custom action payloads.
+
+This separation lets engine-generated history remain append-only while the
+live content columns in `records`, `episodes`, and `action_payloads` can be
+logically purged. It does not sanitize SQLite free pages, WAL files, backups,
+snapshots, exports, or replicas.
 
 ## Checkpoints (`aetnamem-checkpoint-v1`)
 

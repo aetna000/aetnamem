@@ -14,7 +14,7 @@ DEFAULT_MCP_DB = os.environ.get(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="aetnamem")
+    parser = argparse.ArgumentParser(prog="aetna000")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     remember_parser = subparsers.add_parser(
@@ -159,7 +159,112 @@ def main() -> None:
     )
     mcp_parser.add_argument("--retain-query-text", action="store_true")
 
+    actions_parser = subparsers.add_parser(
+        "actions", help="Stage, approve, execute, and verify guarded actions"
+    )
+    action_commands = actions_parser.add_subparsers(
+        dest="action_command", required=True
+    )
+
+    stage_parser = action_commands.add_parser(
+        "stage", help="Create a canonical hash-bound one-operation WorldPatch"
+    )
+    stage_parser.add_argument("path", help="AetnaMem SQLite database")
+    stage_parser.add_argument("subject_id")
+    stage_parser.add_argument("adapter", choices=["filesystem"])
+    stage_parser.add_argument("operation", choices=["write_text", "delete_file"])
+    stage_parser.add_argument("--args", required=True, help="Operation arguments JSON")
+    stage_parser.add_argument("--root", required=True, help="Filesystem adapter root")
+    stage_parser.add_argument("--actor", required=True)
+    stage_parser.add_argument(
+        "--mode", choices=["observe", "preview", "enforce"], default="enforce"
+    )
+    stage_parser.add_argument("--authority-id", default=None)
+    stage_parser.add_argument(
+        "--authority-digest",
+        default=None,
+        help="Digest of the host-attested user task; raw task text is not stored",
+    )
+    stage_parser.add_argument(
+        "--evidence",
+        default="[]",
+        help="Additional EvidenceRef objects as a JSON array",
+    )
+    stage_parser.add_argument("--session", default=None)
+    stage_parser.add_argument("--turn", default=None)
+
+    show_parser = action_commands.add_parser("show", help="Show a redacted action plan")
+    show_parser.add_argument("path")
+    show_parser.add_argument("transaction_id")
+
+    action_list_parser = action_commands.add_parser("list", help="List action plans")
+    action_list_parser.add_argument("path")
+    action_list_parser.add_argument("--subject", default=None)
+
+    approve_parser = action_commands.add_parser(
+        "approve", help="Sign and record approval for the exact current plan"
+    )
+    approve_parser.add_argument("path")
+    approve_parser.add_argument("transaction_id")
+    approve_parser.add_argument(
+        "--approver-label",
+        "--approver",
+        dest="approver_label",
+        required=True,
+        help="Attribution label; shared-key possession is the authenticated fact",
+    )
+    approve_parser.add_argument("--ttl", type=int, default=900)
+    approve_parser.add_argument("--approval-key-file", default=None)
+
+    commit_parser = action_commands.add_parser(
+        "commit", help="Revalidate and execute an approved plan"
+    )
+    commit_parser.add_argument("path")
+    commit_parser.add_argument("transaction_id")
+    commit_parser.add_argument("--root", required=True)
+    commit_parser.add_argument("--approval-key-file", default=None)
+
+    abort_parser = action_commands.add_parser("abort", help="Abort a pre-commit plan")
+    abort_parser.add_argument("path")
+    abort_parser.add_argument("transaction_id")
+    abort_parser.add_argument("--actor", default="user")
+
+    recover_parser = action_commands.add_parser(
+        "recover", help="Fence an interrupted external call for operator recovery"
+    )
+    recover_parser.add_argument("path")
+    recover_parser.add_argument("transaction_id")
+    recover_parser.add_argument("--actor", default="operator")
+
+    action_verify_parser = action_commands.add_parser(
+        "verify", help="Verify an action receipt and its audit-chain binding"
+    )
+    action_verify_parser.add_argument("path")
+    action_verify_parser.add_argument("transaction_id")
+    action_verify_parser.add_argument("--approval-key-file", default=None)
+
+    purge_parser = action_commands.add_parser(
+        "purge-payloads", help="Erase raw action arguments, snapshots, and results"
+    )
+    purge_parser.add_argument("path")
+    purge_parser.add_argument("transaction_id")
+    purge_parser.add_argument("--actor", default="user")
+
+    import_journal_parser = action_commands.add_parser(
+        "import-journal",
+        help="Import a compatible journal as digest-only, unverified audit evidence",
+    )
+    import_journal_parser.add_argument("path", help="AetnaMem SQLite database")
+    import_journal_parser.add_argument("subject_id")
+    import_journal_parser.add_argument("source_journal")
+    import_journal_parser.add_argument("--source-id", required=True)
+    import_journal_parser.add_argument("--actor", default="journal-importer")
+
     args = parser.parse_args()
+
+    if args.command == "actions":
+        _run_actions(args)
+        return
 
     if args.command == "mcp":
         from aetnamem.mcp import MCPServer
@@ -244,6 +349,143 @@ def main() -> None:
 
 def _print(value: object) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def _run_actions(args: argparse.Namespace) -> None:
+    from aetnamem.actions import (
+        ActionEngine,
+        ApprovalAuthority,
+        EvidenceRef,
+        FilesystemAdapter,
+        OperationProposal,
+        TransactionJournalImporter,
+        verify_action,
+    )
+
+    memory = Memory(args.path)
+    try:
+        if args.action_command == "stage":
+            evidence = [EvidenceRef(**item) for item in json.loads(args.evidence)]
+            if bool(args.authority_id) != bool(args.authority_digest):
+                raise ValueError(
+                    "--authority-id and --authority-digest must be supplied together"
+                )
+            if args.authority_id:
+                evidence.append(
+                    EvidenceRef(
+                        kind="user_task",
+                        ref_id=args.authority_id,
+                        digest=args.authority_digest,
+                        relation="authorized_by",
+                        trust_tier="trusted_user",
+                        attested=True,
+                    )
+                )
+            engine = ActionEngine(
+                memory,
+                adapters=[FilesystemAdapter(args.root)],
+                mode=args.mode,
+            )
+            patch = engine.propose(
+                args.subject_id,
+                [
+                    OperationProposal(
+                        key="operation-1",
+                        adapter=args.adapter,
+                        operation=args.operation,
+                        arguments=json.loads(args.args),
+                        evidence=tuple(evidence),
+                    )
+                ],
+                actor_id=args.actor,
+                session_id=args.session,
+                turn_id=args.turn,
+            )
+            _print(patch.to_dict())
+            return
+
+        if args.action_command == "show":
+            _print(ActionEngine(memory).get(args.transaction_id))
+            return
+        if args.action_command == "list":
+            _print(ActionEngine(memory).list(args.subject))
+            return
+        if args.action_command == "approve":
+            authority = ApprovalAuthority(_approval_secret(args.approval_key_file))
+            engine = ActionEngine(memory, approval_authority=authority)
+            transaction = engine.get(args.transaction_id)
+            approval = authority.issue(
+                transaction_id=args.transaction_id,
+                plan_hash=transaction["plan_hash"],
+                approver=args.approver_label,
+                ttl_seconds=args.ttl,
+            )
+            _print(engine.approve(approval))
+            return
+        if args.action_command == "commit":
+            authority = ApprovalAuthority(_approval_secret(args.approval_key_file))
+            engine = ActionEngine(
+                memory,
+                adapters=[FilesystemAdapter(args.root)],
+                approval_authority=authority,
+            )
+            _print(engine.commit(args.transaction_id))
+            return
+        if args.action_command == "abort":
+            _print(ActionEngine(memory).abort(args.transaction_id, actor=args.actor))
+            return
+        if args.action_command == "recover":
+            _print(ActionEngine(memory).recover(args.transaction_id, actor=args.actor))
+            return
+        if args.action_command == "verify":
+            secret = _approval_secret(args.approval_key_file, required=False)
+            authority = ApprovalAuthority(secret) if secret is not None else None
+            result = verify_action(
+                memory.store,
+                args.transaction_id,
+                approval_authority=authority,
+            )
+            _print(result)
+            if not result["valid"]:
+                raise SystemExit(1)
+            return
+        if args.action_command == "purge-payloads":
+            _print(
+                ActionEngine(memory).purge_payloads(
+                    args.transaction_id, actor=args.actor
+                )
+            )
+            return
+        if args.action_command == "import-journal":
+            _print(
+                TransactionJournalImporter(memory).import_journal(
+                    args.source_journal,
+                    subject_id=args.subject_id,
+                    source_id=args.source_id,
+                    actor=args.actor,
+                )
+            )
+            return
+        raise ValueError(f"unknown actions command: {args.action_command}")
+    finally:
+        memory.close()
+
+
+def _approval_secret(
+    key_file: str | None, *, required: bool = True
+) -> str | None:
+    if key_file:
+        value = Path(key_file).read_text(encoding="utf-8").strip()
+    else:
+        value = os.environ.get("AETNA000_APPROVAL_KEY", "").strip()
+    if not value:
+        if required:
+            raise ValueError(
+                "set AETNA000_APPROVAL_KEY or pass --approval-key-file; "
+                "keep this key outside the agent-facing process"
+            )
+        return None
+    return value
 
 
 if __name__ == "__main__":

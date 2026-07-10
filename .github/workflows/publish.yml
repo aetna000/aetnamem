@@ -10,8 +10,103 @@ permissions:
   contents: read
 
 jobs:
+  unit-tests:
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest -q
+
+  openclaw-plugin:
+    name: OpenClaw plugin checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/openclaw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: integrations/openclaw/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run smoke
+
+  build:
+    name: Build release artifacts
+    needs: [unit-tests, openclaw-plugin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip build twine
+      - name: Require tag to match package version
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+          expected = f"v{project['version']}"
+          actual = os.environ["RELEASE_TAG"]
+          if actual != expected:
+              raise SystemExit(f"release tag {actual!r} must equal {expected!r}")
+          PY
+      - name: Build distributions
+        run: python -m build
+      - name: Check distributions
+        run: python -m twine check dist/*
+      - name: Rebuild wheel from source distribution
+        run: python -m pip wheel --no-deps --wheel-dir rebuilt dist/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+
+  installed-wheel:
+    name: Python ${{ matrix.python-version }} installed wheel
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist
+      - name: Install and exercise wheel
+        run: |
+          python -m pip install --no-deps dist/*.whl
+          python -m pip check
+          cd "$RUNNER_TEMP"
+          python "$GITHUB_WORKSPACE/tools/smoke_installed_package.py"
+
   pypi:
-    name: Build and publish to PyPI
+    name: Publish tested artifacts to PyPI
+    needs: installed-wheel
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -20,15 +115,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip build twine
-      - name: Build distributions
-        run: python -m build
-      - name: Check distributions
-        run: python -m twine check dist/*
+          name: release-distributions
+          path: dist
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1

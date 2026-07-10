@@ -15,8 +15,8 @@
     "properties": {
       "command": {
         "type": "string",
-        "default": "aetnamem",
-        "description": "Executable that serves the engine (absolute path if not on PATH, e.g. /path/to/venv/bin/aetnamem). Use a python binary together with commandArgs [\"-m\",\"aetnamem.cli\",\"mcp\",...] as an alternative."
+        "default": "aetna000",
+        "description": "Executable that serves the engine (absolute path if not on PATH, e.g. /path/to/venv/bin/aetna000). Use a python binary together with commandArgs [\"-m\",\"aetnamem.cli\",\"mcp\",...] as an alternative."
       },
       "commandArgs": {
         "type": "array",
@@ -26,7 +26,7 @@
       "dbPath": {
         "type": "string",
         "default": "~/.aetnamem/memories.db",
-        "description": "SQLite database path (also auditable from outside OpenClaw via `aetnamem verify`)"
+        "description": "SQLite database path (also auditable from outside OpenClaw via `aetna000 verify`)"
       },
       "subject": {
         "type": "string",

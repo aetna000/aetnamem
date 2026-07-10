@@ -11,7 +11,7 @@ Relevant xAI docs:
 - [Function Calling](https://docs.x.ai/developers/tools/function-calling)
 - [Remote MCP Tools](https://docs.x.ai/developers/tools/remote-mcp)
 
-## What this integration proves
+## What this integration demonstrates
 
 The demo exposes four tools to Grok:
 
@@ -19,7 +19,7 @@ The demo exposes four tools to Grok:
 |---|---|---|
 | `aetnamem_capture` | `Memory.capture(..., role="user")` | user facts run the full write pipeline |
 | `aetnamem_search` | `Memory.recall()` | retrieval event logs ranked candidates and returned IDs |
-| `aetnamem_forget` | `Memory.forget()` | content is purged and a deletion receipt is returned |
+| `aetnamem_forget` | `Memory.forget()` | live memory content is logically purged and a deletion receipt is returned |
 | `aetnamem_audit` | `Memory.audit()` | chain validity and event counts are visible |
 
 This is intentionally not a separate Grok memory backend. It is Grok using
@@ -75,7 +75,7 @@ Useful environment variables:
 ## Remote MCP path
 
 xAI also supports Remote MCP tools. That path is for a deployed MCP server
-with a URL. `aetnamem mcp` is currently a local stdio MCP server, which is
+with a URL. `aetna000 mcp` is currently a local stdio MCP server, which is
 ideal for local agents and desktop hosts. To use xAI Remote MCP, deploy an
 HTTP/SSE MCP gateway in front of the same engine, then configure Grok with a
 tool like:

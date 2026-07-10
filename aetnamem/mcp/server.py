@@ -2,13 +2,13 @@
 
 Implements the subset of MCP that tool use requires — initialize, ping,
 tools/list, tools/call — as newline-delimited JSON-RPC 2.0 on stdin/stdout,
-using only the standard library so `aetnamem mcp` keeps the zero-dependency
+using only the standard library so `aetna000 mcp` keeps the zero-dependency
 promise. Diagnostics go to stderr; stdout carries protocol messages only.
 
 Any MCP-capable agent host (Claude Code, Claude Desktop, OpenClaw via its
 MCP bridge, etc.) gets persistent, auditable memory by running:
 
-    aetnamem mcp --db ~/.aetnamem/memories.db
+    aetna000 mcp --db ~/.aetnamem/memories.db
 """
 
 from __future__ import annotations

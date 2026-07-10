@@ -55,3 +55,67 @@ def test_cli_log_action(tmp_path: Path) -> None:
     audit = _run("audit", db, "user-1")
     events = json.loads(audit.stdout)["audit_log"]
     assert events[0]["event_type"] == "agent.tool_call"
+
+
+def test_aetna000_actions_cli_roundtrip(tmp_path: Path) -> None:
+    db = str(tmp_path / "mem.db")
+    secret = "approval-secret-that-is-at-least-32-bytes-long"
+    environment = {**os.environ, "PYTHONPATH": str(ROOT), "AETNA000_APPROVAL_KEY": secret}
+
+    help_result = subprocess.run(
+        [sys.executable, "-m", "aetnamem.cli", "--help"],
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert help_result.stdout.startswith("usage: aetna000 ")
+
+    staged = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "aetnamem.cli",
+            "actions",
+            "stage",
+            db,
+            "user-1",
+            "filesystem",
+            "write_text",
+            "--args",
+            '{"path":"cli.txt","content":"guarded"}',
+            "--root",
+            str(tmp_path),
+            "--actor",
+            "agent-1",
+            "--authority-id",
+            "task-1",
+            "--authority-digest",
+            "a" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert staged.returncode == 0, staged.stderr
+    transaction_id = json.loads(staged.stdout)["transaction_id"]
+
+    for command in (
+        [
+            "actions",
+            "approve",
+            db,
+            transaction_id,
+            "--approver-label",
+            "reviewer-1",
+        ],
+        ["actions", "commit", db, transaction_id, "--root", str(tmp_path)],
+        ["actions", "verify", db, transaction_id],
+    ):
+        result = subprocess.run(
+            [sys.executable, "-m", "aetnamem.cli", *command],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        assert result.returncode == 0, result.stderr
+    assert (tmp_path / "cli.txt").read_text() == "guarded"

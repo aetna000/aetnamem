@@ -1,5 +1,5 @@
 /**
- * Newline-delimited JSON-RPC 2.0 client for the `aetnamem mcp` stdio server.
+ * Newline-delimited JSON-RPC 2.0 client for the `aetna000 mcp` stdio server.
  *
  * The child process is spawned lazily on first call, the MCP initialize
  * handshake runs once, and calls are matched to responses by request id.

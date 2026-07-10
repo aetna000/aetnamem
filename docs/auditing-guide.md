@@ -7,14 +7,14 @@ For the frozen wire format and hash recipes, see
 
 ## The mental model
 
-aetnamem separates two planes:
+aetnamem separates two logical planes:
 
-- **Data plane** (`records`, `episodes`) — the actual memory content. This
-  is erasable: `forget()` purges it.
-- **Audit plane** (`audit_log`, `retrieval_events`) — append-only evidence
-  *that* things happened. It stores digests and structural metadata, never
-  message text, fact values, or query text, so it can be immutable without
-  blocking erasure.
+- **Data plane** (`records`, `episodes`, `action_payloads`) — memory content
+  and raw guarded-action material. Engine APIs can logically purge it.
+- **Audit plane** (`audit_log`, plus retrieval metadata) — engine-append-only
+  evidence *that* things happened. Core paths use digests and structural
+  metadata. Raw retrieval query text is optional, and custom `log_action()`
+  payloads are caller-controlled.
 
 Trust is layered, and each layer catches what the one below cannot:
 
@@ -55,7 +55,7 @@ m = Memory("./memories.db", retain_query_text=True)   # opt-in, off in prod
 ### 2. Checkpoint on a schedule, anchor externally
 
 ```bash
-aetnamem checkpoint ./memories.db ./checkpoints.jsonl
+aetna000 checkpoint ./memories.db ./checkpoints.jsonl
 ```
 
 Run it from cron/systemd at whatever cadence bounds your exposure — hourly
@@ -76,7 +76,7 @@ A checkpoint sitting next to the database detects accidents, not attackers.
 ### 3. Verify — routinely, and after any incident
 
 ```bash
-aetnamem verify ./memories.db --checkpoints ./checkpoints.jsonl
+aetna000 verify ./memories.db --checkpoints ./checkpoints.jsonl
 ```
 
 Exit code is 0/1, so wire it into CI or monitoring directly. From Python:
@@ -94,9 +94,9 @@ verifier, which implements the spec without importing aetnamem:
 python tools/verify_audit.py ./memories.db --checkpoints ./checkpoints.jsonl
 ```
 
-## Compliance workflows
+## Data-governance workflows
 
-### Handling an erasure request (GDPR Art. 17 / CCPA delete)
+### Handling a memory-content erasure request
 
 ```python
 result = m.forget("user-1", utterance="Forget my backup email.",
@@ -107,41 +107,47 @@ result["record_ids"]      # what was purged
 receipt = result["receipt"]
 ```
 
-The receipt is the artifact you retain (and can show the requester or a
-regulator): it names the purged record and episode IDs, carries the selector
+The receipt is the artifact you retain with the request: it names the purged
+record and episode IDs, carries the selector
 only as a digest, and binds to the `memory.forget` audit event by ID and
 hash — so it is exactly as tamper-evident as the chain. Store receipts with
 the request ticket. If the caller used a natural-language `utterance`, that
 request text is not stored as an episode; the audit event stores only
 `utterance_sha256`.
 
-To *prove* erasure afterwards:
+To verify the live database's logical purge afterwards:
 
 1. `m.recall("user-1", <related query>)` returns nothing derived from the
    purged content — retrieval never sees tombstoned records.
 2. `m.inspect("user-1")` shows the record with `status="tombstoned"`,
    `content=""`, `fact_key=None`, and the source episode as `[purged]`.
-3. The audit log still proves the fact existed and was deleted on a date —
-   without revealing what it was.
+3. The audit log records that the identified records were created and later
+   purged without retaining their fact values.
+
+This does not establish forensic erasure from SQLite free pages, WAL files,
+backups, snapshots, exports, or replicas. Those stores need separate retention
+and secure-deletion procedures.
 
 Note `forget()` refuses an empty selector rather than deleting everything,
 and forget intent embedded in webpage/tool content is ignored by design
 (deletion cannot be prompt-injected).
 
-### Handling an access/portability request (GDPR Art. 15/20)
+### Producing a memory-data export
 
-`m.inspect(subject_id)` is the export: all records (any status) with full
+`m.inspect(subject_id)` exports memory records (any status) with
 provenance, all episodes, all retrieval events, the audit log, and
-`audit_chain_valid`. Serialize it as JSON and you have a machine-readable
-disclosure of everything held on that subject, including the history of how
-it was used (`memory.recall` events show which records were surfaced when).
+`audit_chain_valid`. It does not include guarded-action payload tables,
+database free pages, backups, or external systems, so it is not by itself a
+complete organization-wide subject export.
 
-### Rectification (GDPR Art. 16)
+### Rectifying a recognized fact slot
 
-Corrections are supersession, not edits: `remember()` a corrected statement
-with the same fact slot ("Actually, use OAK as my preferred airport") and
+Corrections with a recognized matching `fact_key` use supersession, not
+in-place edits: `remember()` a corrected statement with the same fact slot
+("Actually, use OAK as my preferred airport") and
 the old record flips to `superseded`, linked via `supersedes_id`, leaving
-the correction history inspectable.
+the correction history inspectable. Unkeyed contradictions require explicit
+review.
 
 ### Reviewing quarantine
 
@@ -178,12 +184,12 @@ Conventions that keep the trail useful:
 
 - pass the **same `session_id`/`turn_id`** you pass to `remember`/`recall`,
   so memory reads and actions interleave correctly in one timeline;
-- log **digests, not payloads** — same rule as the rest of the audit plane;
+- log **digests, not payloads** — `log_action()` does not enforce this for you;
 - bare names get an `agent.` prefix (`tool_call` → `agent.tool_call`); use
   dotted names for your own taxonomy;
-- this is the shape EU AI Act Art. 12 record-keeping expects from high-risk
-  systems: automatic, timestamped, per-interaction event logs (Art. 19
-  requires keeping them ≥ 6 months — don't `reset_subject()` in production).
+- retention periods, required fields, access controls, and regulatory
+  applicability are deployment/legal decisions; do not use
+  `reset_subject()` as a production retention mechanism.
 
 Reconstruct a session:
 
@@ -195,18 +201,23 @@ events = [e for e in m.audit("user-1")["audit_log"] if e["session_id"] == "s1"]
 
 1. The database file (or a copy) and the anchored checkpoint file.
 2. [audit-log-spec.md](audit-log-spec.md) — the format they verify against.
-3. `tools/verify_audit.py` as a reference implementation they can read in
-   five minutes or reimplement.
+3. `tools/verify_audit.py` and, for guarded actions,
+   `tools/verify_actions.py` as independent standard-library implementations.
 4. Deletion receipts for any contested erasures.
 
-They do not need aetnamem installed, network access, or your word.
+They do not need aetnamem installed or network access to verify the recorded
+hash structure. Verification does not establish authorship or prove remote
+effects beyond adapter evidence.
 
 ## Known limits (roadmap)
 
-- Checkpoints and receipts are **hashed, not signed** — they prove
-  consistency, not authorship. Key-based signatures are planned.
+- Checkpoints and receipts are **hashed, not signed** — relative to a trusted
+  anchored head they support consistency checks, not authorship. Key-based
+  signatures are planned.
 - Record/episode content is plaintext at rest; **crypto-shredding**
   (per-record keys, erasure = key destruction) is the planned hardening.
+- Logical purge does not sanitize SQLite free pages, WAL, backups, exports,
+  snapshots, or replicas.
 - Timestamps trust the local clock at write time; anchor checkpoints to an
   RFC 3161 service if you need trusted time.
 - No retention policies yet (storage limitation must be enforced by the

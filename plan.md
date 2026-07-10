@@ -9,12 +9,13 @@ explainable, erasable, and independently verifiable.
 Most agent memory systems optimize for recall quality first. `aetnamem`
 optimizes for auditable trust:
 
-- every memory record has provenance;
-- untrusted webpage/tool content is quarantined, not silently activated;
-- corrections supersede old facts instead of accumulating contradictions;
-- deletion purges record content, fact keys, and source episode text;
-- every write, recall, deletion, checkpoint, and agent action can join a
-  tamper-evident per-subject audit chain.
+- extracted records link to episodes and derived proposals cite evidence IDs;
+- content classified as webpage/tool output is quarantined;
+- recognized matching fact slots supersede older active records;
+- deletion logically purges live record content, fact keys, FTS entries, and
+  source episode text;
+- engine writes, recalls, deletions, and agent actions can join a tamper-evident
+  per-subject audit chain; checkpoints anchor chain heads outside that chain.
 
 SQLite is the default because it gives the embedded developer experience a
 single local file with transactions and FTS. The audit guarantee does not
@@ -24,11 +25,14 @@ rules documented in [docs/audit-log-spec.md](docs/audit-log-spec.md).
 ## Implemented Surfaces
 
 - Python library: `from aetnamem import Memory`
-- CLI: `aetnamem remember`, `recall`, `forget`, `audit`, `verify`, and the
+- Guarded-actions library: `from aetnamem.actions import ActionEngine`
+- CLI: `aetna000 remember`, `recall`, `forget`, `audit`, `verify`, and the
   rest of the engine verbs
-- MCP server over stdio: `aetnamem mcp`
+- Guarded-actions CLI: `aetna000 actions stage/show/list/approve/commit/abort/recover/verify/import-journal`
+- MCP server over stdio: `aetna000 mcp`
 - OpenClaw plugin wrapper: automatic recall/capture on OpenClaw hooks
-- Independent verifier: [tools/verify_audit.py](tools/verify_audit.py)
+- Independent verifiers: [tools/verify_audit.py](tools/verify_audit.py) and
+  [tools/verify_actions.py](tools/verify_actions.py)
 - Benchmark adapter and target files under [bench](bench)
 
 ## Core Layers
@@ -52,21 +56,27 @@ The important tables are:
 - `retrieval_events`: recall query digests, ranked candidate scores, returned
   IDs, thresholds, and limits;
 - `audit_log`: per-subject hash-chained events for memory and agent actions.
+- `action_*`: guarded plans, operations, evidence, approvals, attempts,
+  erasable payloads, and receipts.
 
-The erasable data plane is `episodes` and `records`. The immutable audit
-plane stores digests and structural metadata, not message text or fact values.
+The logical data plane is `episodes`, `records`, and `action_payloads`. Core
+engine events use digests and structural metadata, but low-level custom action
+payloads and opt-in raw retrieval queries remain caller-controlled exceptions.
 
 ## Invariants
 
-1. All public reads and writes are scoped by `subject_id`.
-2. User-authored facts can become active; webpage/tool-derived facts land
-   `quarantined` until promoted.
+1. Memory reads and writes are scoped by `subject_id`. Action rows carry a
+   subject, while transaction lookup uses a globally unique action ID and
+   action listing may intentionally span subjects.
+2. Facts classified as user-authored can become active; records classified as
+   webpage/tool-derived land `quarantined` until promoted. Authentic source
+   attribution is a host responsibility.
 3. Recall only considers active records.
 4. Forget requests never mean "delete everything" when the selector is empty.
 5. Forget request text is not stored as an episode; only hashes enter the
    audit plane.
-6. Deletion tombstones matching active/quarantined records and purges their
-   content, fact keys, FTS rows, and source episode text.
+6. Deletion tombstones matching active/quarantined records and logically
+   purges their content, fact keys, FTS rows, and source episode text.
 7. Retrieval events preserve enough candidate scoring metadata to explain why
    a record was or was not returned.
 8. Checkpoints are required to detect tail truncation and database
@@ -112,6 +122,14 @@ score stays honest.
    Standardize conventions for model calls, tool calls, tool results,
    memory reads, memory writes, policy decisions, and user-visible responses
    so an auditor can reconstruct what the agent knew and did.
+
+7. **Expand Guarded Actions.**
+   The first production-shaped vertical slice is implemented: atomic memory
+   and audit writes, causal WorldPatch proposals, signed exact-plan approvals,
+   a durable action ledger, explicit uncertainty, verified filesystem
+   compensation, receipts, and the `aetna000 actions` CLI. Remaining adapters,
+   the MCP interception gate, asymmetric identity, and encrypted payloads are
+   tracked in [TODO.md](TODO.md).
 
 ## Non-Goals For The Current Version
 

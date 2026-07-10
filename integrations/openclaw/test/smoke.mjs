@@ -2,11 +2,11 @@
 /**
  * Protocol-level smoke test for the OpenClaw plugin's server contract.
  *
- * Spawns the real `aetnamem mcp` server and drives the exact tool calls the
+ * Spawns the real `aetna000 mcp` server and drives the exact tool calls the
  * plugin makes (memory_recall_block, memory_capture, memory_recall,
  * memory_forget), asserting the payload shapes index.ts depends on.
  *
- * Usage: node test/smoke.mjs [--command /path/to/aetnamem-or-python]
+ * Usage: node test/smoke.mjs [--command /path/to/aetna000]
  */
 
 import { spawn } from "node:child_process";
@@ -17,14 +17,14 @@ import path from "node:path";
 import assert from "node:assert/strict";
 
 const commandIndex = process.argv.indexOf("--command");
-const pythonBin = commandIndex > -1 ? process.argv[commandIndex + 1] : "python3";
+const command = commandIndex > -1 ? process.argv[commandIndex + 1] : "aetna000";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "aetnamem-smoke-"));
 const dbPath = path.join(dataDir, "mem.db");
 
 const child = spawn(
-  pythonBin,
-  ["-m", "aetnamem.cli", "mcp", "--db", dbPath, "--subject", "smoke-user"],
+  command,
+  ["mcp", "--db", dbPath, "--subject", "smoke-user"],
   { stdio: ["pipe", "pipe", "inherit"], env: process.env },
 );
 

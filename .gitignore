@@ -21,6 +21,9 @@ venv/
 # Claude Code personal settings
 .claude/settings.local.json
 
+# Local project ideation notes
+idea.md
+
 # Node (OpenClaw plugin)
 node_modules/
 integrations/openclaw/dist/

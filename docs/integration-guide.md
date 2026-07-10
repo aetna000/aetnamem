@@ -1,16 +1,18 @@
 # Integration guide: CLI and MCP
 
-aetnamem has three integration surfaces. Pick by what your host can do:
+aetnamem has four integration surfaces. Pick by what your host can do:
 
 | surface | use when | ships since |
 |---|---|---|
 | Python library (`from aetnamem import Memory`) | your agent runs Python | v0 |
-| CLI (`aetnamem <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
-| MCP server (`aetnamem mcp`) | your host speaks the Model Context Protocol (Claude Code, Claude Desktop, OpenClaw's MCP bridge, …) | v0 |
+| Guarded Actions (`from aetnamem.actions import ActionEngine`) | your Python host can enforce a protected execution boundary | v0 |
+| CLI (`aetna000 <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
+| memory MCP server (`aetna000 mcp`) | your host speaks MCP and needs memory tools | v0 |
 
-All three drive the identical engine and policy gates: trust-tiered writes
-with quarantine, fact-slot supersession, verifiable deletion with receipts,
-and the hash-chained audit log. Library API usage is covered in the
+The memory Python, CLI, and MCP surfaces drive the same `Memory` engine.
+Guarded Actions is adjacent and shares its store/audit chain, but the current
+MCP server does not intercept or mediate unrelated action tools. Library API
+usage is covered in the
 [README](../README.md); audit workflows in the
 [auditing guide](auditing-guide.md). This document specifies the CLI and
 MCP surfaces.
@@ -21,24 +23,26 @@ MCP surfaces.
 
 Conventions:
 
-- First two arguments are always `<db-path> <subject_id>` (except
-  `checkpoint`, `verify`, and `mcp`).
+- Most memory commands start with `<db-path> <subject_id>`; `checkpoint`,
+  `verify`, `mcp`, and the `actions` subcommands have command-specific forms.
 - Results print as pretty JSON on stdout; nothing else is written to stdout.
 - Exit code 0 on success; `verify` exits 1 when a chain or checkpoint fails;
   any command exits nonzero on error.
 - The database file is created on first use; `:memory:` works anywhere a
   path is accepted (useful for smoke tests, useless for persistence).
 
-### `aetnamem remember <db> <subject> <message> [--session S] [--turn T] [--source-type TYPE]`
+### `aetna000 remember <db> <subject> <message> [--session S] [--turn T] [--source-type TYPE]`
 
 Runs the full write pipeline: appends an episode, extracts at most one
 candidate fact, applies the policy gates (trust → quarantine, dedupe,
 supersession), and audits every step. `--source-type` overrides source
 classification (`user_message`, `webpage`, `tool_output`) — otherwise
 embedded `<webpage>`/`<tool_output>` tags are detected automatically.
+Because an explicit override is trusted, do not expose `--source-type` to an
+untrusted caller that can relabel tool/web content as `user_message`.
 
 ```bash
-$ aetnamem remember ./mem.db user-1 "My preferred airport is SFO." --session s1 --turn 1
+$ aetna000 remember ./mem.db user-1 "My preferred airport is SFO." --session s1 --turn 1
 {
   "duplicate_ids": [],
   "episode_id": "ep_0b0b02…",
@@ -67,7 +71,7 @@ $ aetnamem remember ./mem.db user-1 "My preferred airport is SFO." --session s1 
 instead of creating a second record. Records extracted from untrusted
 sources appear with `"status": "quarantined"`.
 
-### `aetnamem recall <db> <subject> <query> [--limit N] [--min-score X] [--session S]`
+### `aetna000 recall <db> <subject> <query> [--limit N] [--min-score X] [--session S]`
 
 Top-k retrieval over **active** records only (quarantined, superseded, and
 tombstoned records are never candidates). Prints a JSON array of records,
@@ -75,20 +79,20 @@ best first. Every call also writes a retrieval event with per-candidate
 score breakdowns — see it via `inspect`.
 
 ```bash
-aetnamem recall ./mem.db user-1 "Which airport should I book from?" --limit 3
+aetna000 recall ./mem.db user-1 "Which airport should I book from?" --limit 3
 ```
 
 With no `--min-score`, recall has vector-store semantics: it returns the
 best `limit` records even if none matched lexically (trust/recency prior).
 Set `--min-score 0.5` (range roughly 0–1) to require a real text match.
 
-### `aetnamem list <db> <subject> [--all]`
+### `aetna000 list <db> <subject> [--all]`
 
 Active records, oldest first. `--all` includes `superseded`, `quarantined`,
 and `tombstoned` records — the way to find quarantined items awaiting
 review.
 
-### `aetnamem forget <db> <subject> (--contains TEXT | --utterance TEXT) [--session S]`
+### `aetna000 forget <db> <subject> (--contains TEXT | --utterance TEXT) [--session S]`
 
 Deletes every active or quarantined record whose content contains the
 selector (case-insensitive), purging record content, fact key, and the
@@ -100,7 +104,7 @@ The forget request text itself is not stored as an episode; the audit event
 keeps only `utterance_sha256` and `selector_sha256`.
 
 ```bash
-$ aetnamem forget ./mem.db user-1 --utterance "Forget my preferred airport."
+$ aetna000 forget ./mem.db user-1 --utterance "Forget my preferred airport."
 {
   "deleted": true,
   "record_ids": ["rec_7c4456…"],
@@ -123,53 +127,53 @@ against the audit chain forever (rules in
 [audit-log-spec.md](audit-log-spec.md)). `"deleted": false` with exit code
 0 means nothing matched.
 
-### `aetnamem promote <db> <subject> <record_id> [--session S]`
+### `aetna000 promote <db> <subject> <record_id> [--session S]`
 
 Activates a quarantined record after the user has explicitly confirmed it
 (trust tier becomes `user_confirmed`; supersession applies). Errors if the
 record is not quarantined. Find candidates with `list --all`.
 
-### `aetnamem consolidate <db> <subject>`
+### `aetna000 consolidate <db> <subject>`
 
 Runs the deterministic cleanup pass: exact duplicate active records collapse
 to the newest copy, and fact-key conflicts are repaired by superseding older
 records. The pass writes a `memory.consolidated` audit event.
 
-### `aetnamem persona <db> <subject> [--max-chars N]`
+### `aetna000 persona <db> <subject> [--max-chars N]`
 
 Builds a live-derived `<user_persona>` snapshot from active records. It is
 not stored as memory; every line carries the source record id, and the build
 is audited as `memory.persona_built`.
 
-### `aetnamem scenes <db> <subject>`
+### `aetna000 scenes <db> <subject>`
 
 Returns the deterministic L2 scene view: sessions with their episode IDs and
 record IDs. This is derived from stored evidence and does not create new
 memory.
 
-### `aetnamem propose <db> <subject> [--proposer NAME]`
+### `aetna000 propose <db> <subject> [--proposer NAME]`
 
 Reads a JSON array of derived fact proposals from stdin. Proposals must cite
 existing evidence IDs and land `quarantined`; they only become active after
 `promote`.
 
 ```bash
-cat proposals.json | aetnamem propose ./mem.db user-1 --proposer nightly-job
+cat proposals.json | aetna000 propose ./mem.db user-1 --proposer nightly-job
 ```
 
-### `aetnamem log-action <db> <subject> <action_type> [--payload JSON] [--session S] [--turn T]`
+### `aetna000 log-action <db> <subject> <action_type> [--payload JSON] [--session S] [--turn T]`
 
 Appends an agent action event to the same audit chain as memory events.
 Bare action types get an `agent.` prefix (`tool_call` → `agent.tool_call`);
 dotted names pass through. Put digests in the payload, not raw content.
 
 ```bash
-aetnamem log-action ./mem.db user-1 tool_call \
+aetna000 log-action ./mem.db user-1 tool_call \
   --payload '{"tool":"calendar.create","args_sha256":"9f2c…"}' --session s1 --turn 3
 # → {"event_id": "aud_…"}
 ```
 
-### `aetnamem inspect <db> <subject>` / `aetnamem audit <db> <subject>`
+### `aetna000 inspect <db> <subject>` / `aetna000 audit <db> <subject>`
 
 `inspect` is the full evidence dump: all records (any status), episodes,
 retrieval events, the audit log, and `audit_chain_valid`. `audit` is the
@@ -177,11 +181,41 @@ subset for audit review (audit log + retrieval events + chain check).
 `inspect` output is the machine-readable disclosure for access/portability
 requests.
 
-### `aetnamem checkpoint <db> [sink.jsonl]` / `aetnamem verify <db> [--subject S] [--checkpoints sink.jsonl]`
+### `aetna000 checkpoint <db> [sink.jsonl]` / `aetna000 verify <db> [--subject S] [--checkpoints sink.jsonl]`
 
 Chain anchoring and verification — semantics, cadence, and anchoring
 recipes are in the [auditing guide](auditing-guide.md). `verify` exits 1 on
 any failure, so both are cron/CI-ready as-is.
+
+### `aetna000 actions …`
+
+The optional guarded-actions commands create and execute causal WorldPatch
+transactions:
+
+```text
+aetna000 actions stage <db> <subject> filesystem <write_text|delete_file> ...
+aetna000 actions show <db> <transaction_id>
+aetna000 actions list <db> [--subject SUBJECT]
+aetna000 actions approve <db> <transaction_id> --approver-label LABEL
+aetna000 actions commit <db> <transaction_id> --root DIRECTORY
+aetna000 actions abort <db> <transaction_id>
+aetna000 actions recover <db> <transaction_id>
+aetna000 actions verify <db> <transaction_id>
+aetna000 actions purge-payloads <db> <transaction_id>
+aetna000 actions import-journal <db> <subject> <journal.db> --source-id SOURCE
+```
+
+`stage --mode observe|preview` records a patch but deliberately cannot
+execute it. The default `enforce` mode requires `--authority-id` and
+`--authority-digest`, followed by a separately signed approval. Set
+`AETNA000_APPROVAL_KEY` in the reviewer process or use
+`--approval-key-file`; never expose that key to the agent-facing process.
+The shared key authenticates key possession, not the `--approver-label` value.
+Likewise, `--authority-id/--authority-digest` are trustworthy only when a
+trusted host controls staging; the CLI flags do not authenticate themselves.
+
+The complete workflow, guarantees, Python API, and current limitations are
+documented in [guarded-actions.md](guarded-actions.md).
 
 ---
 
@@ -190,7 +224,7 @@ any failure, so both are cron/CI-ready as-is.
 ### Running it
 
 ```bash
-aetnamem mcp [--db PATH] [--subject NAME] [--checkpoints FILE] [--retain-query-text]
+aetna000 mcp [--db PATH] [--subject NAME] [--checkpoints FILE] [--retain-query-text]
 ```
 
 | flag | default | meaning |
@@ -212,7 +246,7 @@ standard library only; there are no dependencies to install.
 **Claude Code**
 
 ```bash
-claude mcp add aetnamem -- aetnamem mcp
+claude mcp add aetnamem -- aetna000 mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`) — and any host that takes
@@ -223,20 +257,22 @@ the standard `command`/`args` JSON shape, including OpenClaw's MCP bridge
 {
   "mcpServers": {
     "aetnamem": {
-      "command": "aetnamem",
+      "command": "aetna000",
       "args": ["mcp", "--db", "/home/you/.aetnamem/memories.db", "--subject", "you"]
     }
   }
 }
 ```
 
-If `aetnamem` is not on the host's PATH (common when installed in a venv),
-use the absolute path to the console script (`/path/to/venv/bin/aetnamem`)
+If `aetna000` is not on the host's PATH (common when installed in a venv),
+use the absolute path to the console script (`/path/to/venv/bin/aetna000`)
 or `"command": "/path/to/python", "args": ["-m", "aetnamem.cli", "mcp", …]`.
 
 **Multi-user hosts**: pass `subject_id` explicitly on every tool call
-instead of relying on `--subject`. Isolation is enforced per subject at the
-storage layer.
+instead of relying on `--subject`. This scopes storage queries but is not
+authorization: the caller can choose another subject ID. A multi-user gateway
+must authenticate the caller, derive the subject server-side, and prevent
+cross-subject selection.
 
 ### Tool catalog
 
@@ -271,15 +307,18 @@ Suggested system-prompt guidance for the calling agent:
 
 ### Security properties for MCP deployments
 
-- **The policy gates are server-side.** The calling agent only sees the
-  verbs; it cannot write an active record from webpage content, cannot skip
-  supersession, and cannot delete without generating a chained audit event
-  and receipt.
-- **Prompt injection cannot reach deletion or durable memory.** Forget
-  intent inside `<webpage>`/`<tool_output>` content is ignored by design,
-  and untrusted extractions quarantine.
+- **Deterministic gates run server-side.** Given an honestly supplied source
+  type, webpage/tool records quarantine, recognized fact slots supersede, and
+  accepted deletion writes a chained event and receipt. The MCP caller can
+  choose `source_type`, `subject_id`, and call `memory_promote`, so remote
+  authorization and origin attestation still belong in the host/gateway.
+- **Tagged indirect instructions are contained, not all prompt injection.**
+  Forget intent still embedded in `<webpage>`/`<tool_output>` is rejected, and
+  `memory_capture` logs tool/assistant traffic as digests. If an agent strips
+  provenance and submits an injected instruction as a plain user operation,
+  this local server cannot reconstruct the lost origin.
 - **You can audit while it runs.** The database is ordinary SQLite (WAL
-  mode): run `aetnamem verify`, `aetnamem checkpoint` (e.g. from cron), or
+  mode): run `aetna000 verify`, `aetna000 checkpoint` (e.g. from cron), or
   `tools/verify_audit.py` against the same file the agent is using.
 
 ### Troubleshooting
@@ -287,7 +326,7 @@ Suggested system-prompt guidance for the calling agent:
 | symptom | cause / fix |
 |---|---|
 | host reports the server "didn't respond" | the host may use `Content-Length`-framed (LSP-style) transport instead of newline-delimited JSON; check its logs — file an issue, the transport is one function |
-| `spawn aetnamem ENOENT` | console script not on the host's PATH — use the absolute path or `python -m aetnamem.cli mcp` |
+| `spawn aetna000 ENOENT` | console script not on the host's PATH — use the absolute path or `python -m aetnamem.cli mcp` |
 | tool result `isError: true` | read the message: missing required argument, unknown record id, or promoting a non-quarantined record |
 | empty `records` from `memory_remember` | the message contained no extractable declarative fact (questions never extract) — expected behavior |
 | two hosts, one database | supported for reads; SQLite WAL serializes writes, but prefer one writing host or separate `--db` paths per host |

@@ -51,7 +51,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
   const dbPath = expandHome(String(cfg.dbPath ?? "~/.aetnamem/memories.db"));
   const subject = String(cfg.subject ?? "default");
   return {
-    command: String(cfg.command ?? "aetnamem"),
+    command: String(cfg.command ?? "aetna000"),
     commandArgs: Array.isArray(cfg.commandArgs)
       ? cfg.commandArgs.map(String)
       : ["mcp", "--db", dbPath, "--subject", subject],

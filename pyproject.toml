@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-aetnamem = "aetnamem.cli:main"
+aetna000 = "aetnamem.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/aetna000/aetnamem"

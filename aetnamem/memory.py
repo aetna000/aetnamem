@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from functools import wraps
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
 from aetnamem.core.policy import (
@@ -17,6 +18,20 @@ from aetnamem.extract import extract_facts
 from aetnamem.retrieve import query_tokens, rank_records
 from aetnamem.store import SQLiteStore
 from aetnamem.store.sqlite import utc_now
+
+
+_T = TypeVar("_T")
+
+
+def _atomic(method: Callable[..., _T]) -> Callable[..., _T]:
+    """Make one public memory operation and all its audit writes atomic."""
+
+    @wraps(method)
+    def wrapped(self: "Memory", *args: Any, **kwargs: Any) -> _T:
+        with self.store.transaction(immediate=True):
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 class Memory:
@@ -45,6 +60,7 @@ class Memory:
     def close(self) -> None:
         self.store.close()
 
+    @_atomic
     def remember(
         self,
         subject_id: str,
@@ -175,6 +191,7 @@ class Memory:
             "duplicate_ids": duplicate_ids,
         }
 
+    @_atomic
     def recall(
         self,
         subject_id: str,
@@ -250,6 +267,7 @@ class Memory:
         statuses = None if include_inactive else ("active",)
         return self.store.list_records(subject_id, statuses=statuses)
 
+    @_atomic
     def forget(
         self,
         subject_id: str,
@@ -331,6 +349,7 @@ class Memory:
             "receipt": receipt,
         }
 
+    @_atomic
     def capture(
         self,
         subject_id: str,
@@ -386,6 +405,7 @@ class Memory:
             return {"kind": "logged", "event_id": event_id}
         raise ValueError(f"unknown capture role: {role}")
 
+    @_atomic
     def build_recall_block(
         self,
         subject_id: str,
@@ -439,6 +459,7 @@ class Memory:
         )
         return {"block": block, "record_ids": included, "count": len(included)}
 
+    @_atomic
     def build_persona(
         self,
         subject_id: str,
@@ -529,6 +550,7 @@ class Memory:
             by_session.values(), key=lambda scene: str(scene["ended_at"]), reverse=True
         )
 
+    @_atomic
     def propose_facts(
         self,
         subject_id: str,
@@ -620,6 +642,7 @@ class Memory:
             "rejected": rejected,
         }
 
+    @_atomic
     def consolidate(
         self,
         subject_id: str,
@@ -689,6 +712,7 @@ class Memory:
         )
         return report
 
+    @_atomic
     def promote(
         self,
         subject_id: str,
@@ -830,6 +854,7 @@ class Memory:
             "audit_chain_valid": self.store.verify_audit_chain(subject_id),
         }
 
+    @_atomic
     def log_action(
         self,
         subject_id: str,
