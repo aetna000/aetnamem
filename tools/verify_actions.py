@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone Aetna Guarded Actions verifier (stdlib only).
+"""Standalone aetnamem Guarded Actions verifier (stdlib only).
 
 This program deliberately imports nothing from ``aetnamem``. It verifies the
 subject audit chain, recomputes the WorldPatch plan hash, checks approval scope

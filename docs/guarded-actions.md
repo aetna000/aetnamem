@@ -1,4 +1,4 @@
-# Aetna Guarded Actions
+# aetnamem Guarded Actions
 
 Guarded Actions is an optional causal transaction layer adjacent to
 `Memory`. It does not change the existing memory API or execute anything when
@@ -34,9 +34,13 @@ Ambiguous provider outcome → UNCERTAIN
 ```
 
 `UNCERTAIN` is deliberate. If a provider call raises after request dispatch,
-Aetna does not know whether the external effect happened. It persists the
+`aetnamem` does not know whether the external effect happened. It persists the
 ambiguity and refuses a blind retry. Provider-specific recovery and
 idempotency lookup are required before that operation can be resolved.
+
+An interrupted process observed later follows
+`COMMITTING | COMPENSATING → RECOVERY_REQUIRED`; recovery deliberately fences
+the operation instead of guessing whether it should be retried.
 
 ## Trust boundaries
 
@@ -153,7 +157,7 @@ result = engine.commit(patch.transaction_id)
 
 ## External journal import
 
-`aetna000 actions import-journal` imports compatible transaction/effect
+`aetnamem actions import-journal` imports compatible transaction/effect
 histories as digest-only `action.source_imported` events. The importer reduces raw
 arguments, snapshots, results, client identities, and claimed actors to
 digests before appending the event. Each import is labeled
@@ -166,7 +170,7 @@ the same crash, authority, idempotency, privacy, and compensation-verification
 conformance tests as native adapters.
 
 The importer currently expects a SQLite journal with `transactions` and
-`effects` tables. Run `aetna000 actions import-journal --help` for the command
+`effects` tables. Run `aetnamem actions import-journal --help` for the command
 shape; incompatible or incomplete schemas fail before any audit event is
 written.
 
@@ -183,6 +187,6 @@ Action IDs live in audit event payloads, so the frozen audit-v1 hash preimage
 and standalone memory verifier remain compatible.
 
 `tools/verify_actions.py` independently verifies the action plan, audit chain,
-approval scope/signature, and receipt without importing the AetnaMem package.
+approval scope/signature, and receipt without importing the `aetnamem` package.
 It verifies recorded structure and cryptographic bindings; it cannot prove a
 remote system performed an effect beyond the evidence supplied by its adapter.

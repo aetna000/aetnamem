@@ -14,7 +14,7 @@ DEFAULT_MCP_DB = os.environ.get(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="aetna000")
+    parser = argparse.ArgumentParser(prog="aetnamem")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     remember_parser = subparsers.add_parser(
@@ -61,7 +61,7 @@ def main() -> None:
     forget_parser.add_argument("--session", default=None)
 
     promote_parser = subparsers.add_parser(
-        "promote", help="Activate a quarantined record after user confirmation"
+        "promote", help="Activate a quarantined record and audit the trust transition"
     )
     promote_parser.add_argument("path")
     promote_parser.add_argument("subject_id")
@@ -169,7 +169,7 @@ def main() -> None:
     stage_parser = action_commands.add_parser(
         "stage", help="Create a canonical hash-bound one-operation WorldPatch"
     )
-    stage_parser.add_argument("path", help="AetnaMem SQLite database")
+    stage_parser.add_argument("path", help="aetnamem SQLite database")
     stage_parser.add_argument("subject_id")
     stage_parser.add_argument("adapter", choices=["filesystem"])
     stage_parser.add_argument("operation", choices=["write_text", "delete_file"])
@@ -254,7 +254,7 @@ def main() -> None:
         "import-journal",
         help="Import a compatible journal as digest-only, unverified audit evidence",
     )
-    import_journal_parser.add_argument("path", help="AetnaMem SQLite database")
+    import_journal_parser.add_argument("path", help="aetnamem SQLite database")
     import_journal_parser.add_argument("subject_id")
     import_journal_parser.add_argument("source_journal")
     import_journal_parser.add_argument("--source-id", required=True)
@@ -477,11 +477,11 @@ def _approval_secret(
     if key_file:
         value = Path(key_file).read_text(encoding="utf-8").strip()
     else:
-        value = os.environ.get("AETNA000_APPROVAL_KEY", "").strip()
+        value = os.environ.get("AETNAMEM_APPROVAL_KEY", "").strip()
     if not value:
         if required:
             raise ValueError(
-                "set AETNA000_APPROVAL_KEY or pass --approval-key-file; "
+                "set AETNAMEM_APPROVAL_KEY or pass --approval-key-file; "
                 "keep this key outside the agent-facing process"
             )
         return None

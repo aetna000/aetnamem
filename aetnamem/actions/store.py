@@ -1,7 +1,7 @@
 """Durable operational ledger for guarded actions.
 
 Rows here are mutable recovery state. Every security-relevant transition is
-also appended to AetnaMem's engine-append-only hash chain by ``ActionEngine``. Raw
+also appended to aetnamem's engine-append-only hash chain by ``ActionEngine``. Raw
 arguments and before-images live only in ``action_payloads`` so they can be
 purged independently from the audit plane.
 """

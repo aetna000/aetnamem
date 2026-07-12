@@ -26,10 +26,10 @@ rules documented in [docs/audit-log-spec.md](docs/audit-log-spec.md).
 
 - Python library: `from aetnamem import Memory`
 - Guarded-actions library: `from aetnamem.actions import ActionEngine`
-- CLI: `aetna000 remember`, `recall`, `forget`, `audit`, `verify`, and the
+- CLI: `aetnamem remember`, `recall`, `forget`, `audit`, `verify`, and the
   rest of the engine verbs
-- Guarded-actions CLI: `aetna000 actions stage/show/list/approve/commit/abort/recover/verify/import-journal`
-- MCP server over stdio: `aetna000 mcp`
+- Guarded-actions CLI: `aetnamem actions stage/show/list/approve/commit/abort/recover/verify/import-journal`
+- MCP server over stdio: `aetnamem mcp`
 - OpenClaw plugin wrapper: automatic recall/capture on OpenClaw hooks
 - Independent verifiers: [tools/verify_audit.py](tools/verify_audit.py) and
   [tools/verify_actions.py](tools/verify_actions.py)
@@ -127,7 +127,7 @@ score stays honest.
    The first production-shaped vertical slice is implemented: atomic memory
    and audit writes, causal WorldPatch proposals, signed exact-plan approvals,
    a durable action ledger, explicit uncertainty, verified filesystem
-   compensation, receipts, and the `aetna000 actions` CLI. Remaining adapters,
+   compensation, receipts, and the `aetnamem actions` CLI. Remaining adapters,
    the MCP interception gate, asymmetric identity, and encrypted payloads are
    tracked in [TODO.md](TODO.md).
 

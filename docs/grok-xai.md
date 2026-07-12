@@ -75,7 +75,7 @@ Useful environment variables:
 ## Remote MCP path
 
 xAI also supports Remote MCP tools. That path is for a deployed MCP server
-with a URL. `aetna000 mcp` is currently a local stdio MCP server, which is
+with a URL. `aetnamem mcp` is currently a local stdio MCP server, which is
 ideal for local agents and desktop hosts. To use xAI Remote MCP, deploy an
 HTTP/SSE MCP gateway in front of the same engine, then configure Grok with a
 tool like:

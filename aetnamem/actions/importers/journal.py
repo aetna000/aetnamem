@@ -1,8 +1,8 @@
 """Safe compatibility bridge for external operational journals.
 
-Source rows are imported as unverified evidence, never as authoritative Aetna
+Source rows are imported as unverified evidence, never as authoritative aetnamem
 state. Raw arguments, snapshots, results, actor names, and client identities
-are reduced to digests before entering Aetna's engine-append-only audit plane.
+are reduced to digests before entering aetnamem's engine-append-only audit plane.
 """
 
 from __future__ import annotations

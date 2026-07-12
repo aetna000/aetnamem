@@ -6,8 +6,8 @@ aetnamem has four integration surfaces. Pick by what your host can do:
 |---|---|---|
 | Python library (`from aetnamem import Memory`) | your agent runs Python | v0 |
 | Guarded Actions (`from aetnamem.actions import ActionEngine`) | your Python host can enforce a protected execution boundary | v0 |
-| CLI (`aetna000 <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
-| memory MCP server (`aetna000 mcp`) | your host speaks MCP and needs memory tools | v0 |
+| CLI (`aetnamem <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
+| memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
 
 The memory Python, CLI, and MCP surfaces drive the same `Memory` engine.
 Guarded Actions is adjacent and shares its store/audit chain, but the current
@@ -31,7 +31,7 @@ Conventions:
 - The database file is created on first use; `:memory:` works anywhere a
   path is accepted (useful for smoke tests, useless for persistence).
 
-### `aetna000 remember <db> <subject> <message> [--session S] [--turn T] [--source-type TYPE]`
+### `aetnamem remember <db> <subject> <message> [--session S] [--turn T] [--source-type TYPE]`
 
 Runs the full write pipeline: appends an episode, extracts at most one
 candidate fact, applies the policy gates (trust → quarantine, dedupe,
@@ -42,7 +42,7 @@ Because an explicit override is trusted, do not expose `--source-type` to an
 untrusted caller that can relabel tool/web content as `user_message`.
 
 ```bash
-$ aetna000 remember ./mem.db user-1 "My preferred airport is SFO." --session s1 --turn 1
+$ aetnamem remember ./mem.db user-1 "My preferred airport is SFO." --session s1 --turn 1
 {
   "duplicate_ids": [],
   "episode_id": "ep_0b0b02…",
@@ -71,7 +71,7 @@ $ aetna000 remember ./mem.db user-1 "My preferred airport is SFO." --session s1 
 instead of creating a second record. Records extracted from untrusted
 sources appear with `"status": "quarantined"`.
 
-### `aetna000 recall <db> <subject> <query> [--limit N] [--min-score X] [--session S]`
+### `aetnamem recall <db> <subject> <query> [--limit N] [--min-score X] [--session S]`
 
 Top-k retrieval over **active** records only (quarantined, superseded, and
 tombstoned records are never candidates). Prints a JSON array of records,
@@ -79,20 +79,20 @@ best first. Every call also writes a retrieval event with per-candidate
 score breakdowns — see it via `inspect`.
 
 ```bash
-aetna000 recall ./mem.db user-1 "Which airport should I book from?" --limit 3
+aetnamem recall ./mem.db user-1 "Which airport should I book from?" --limit 3
 ```
 
 With no `--min-score`, recall has vector-store semantics: it returns the
 best `limit` records even if none matched lexically (trust/recency prior).
 Set `--min-score 0.5` (range roughly 0–1) to require a real text match.
 
-### `aetna000 list <db> <subject> [--all]`
+### `aetnamem list <db> <subject> [--all]`
 
 Active records, oldest first. `--all` includes `superseded`, `quarantined`,
 and `tombstoned` records — the way to find quarantined items awaiting
 review.
 
-### `aetna000 forget <db> <subject> (--contains TEXT | --utterance TEXT) [--session S]`
+### `aetnamem forget <db> <subject> (--contains TEXT | --utterance TEXT) [--session S]`
 
 Deletes every active or quarantined record whose content contains the
 selector (case-insensitive), purging record content, fact key, and the
@@ -104,7 +104,7 @@ The forget request text itself is not stored as an episode; the audit event
 keeps only `utterance_sha256` and `selector_sha256`.
 
 ```bash
-$ aetna000 forget ./mem.db user-1 --utterance "Forget my preferred airport."
+$ aetnamem forget ./mem.db user-1 --utterance "Forget my preferred airport."
 {
   "deleted": true,
   "record_ids": ["rec_7c4456…"],
@@ -127,53 +127,55 @@ against the audit chain forever (rules in
 [audit-log-spec.md](audit-log-spec.md)). `"deleted": false` with exit code
 0 means nothing matched.
 
-### `aetna000 promote <db> <subject> <record_id> [--session S]`
+### `aetnamem promote <db> <subject> <record_id> [--session S]`
 
-Activates a quarantined record after the user has explicitly confirmed it
-(trust tier becomes `user_confirmed`; supersession applies). Errors if the
-record is not quarantined. Find candidates with `list --all`.
+Activates a quarantined record and records the trust transition (trust tier
+becomes `user_confirmed`; supersession applies). The command does not
+authenticate who requested or confirmed that transition, so expose it only
+through a trusted approval layer when confirmation must be human-controlled.
+Errors if the record is not quarantined. Find candidates with `list --all`.
 
-### `aetna000 consolidate <db> <subject>`
+### `aetnamem consolidate <db> <subject>`
 
 Runs the deterministic cleanup pass: exact duplicate active records collapse
 to the newest copy, and fact-key conflicts are repaired by superseding older
 records. The pass writes a `memory.consolidated` audit event.
 
-### `aetna000 persona <db> <subject> [--max-chars N]`
+### `aetnamem persona <db> <subject> [--max-chars N]`
 
 Builds a live-derived `<user_persona>` snapshot from active records. It is
 not stored as memory; every line carries the source record id, and the build
 is audited as `memory.persona_built`.
 
-### `aetna000 scenes <db> <subject>`
+### `aetnamem scenes <db> <subject>`
 
 Returns the deterministic L2 scene view: sessions with their episode IDs and
 record IDs. This is derived from stored evidence and does not create new
 memory.
 
-### `aetna000 propose <db> <subject> [--proposer NAME]`
+### `aetnamem propose <db> <subject> [--proposer NAME]`
 
 Reads a JSON array of derived fact proposals from stdin. Proposals must cite
 existing evidence IDs and land `quarantined`; they only become active after
 `promote`.
 
 ```bash
-cat proposals.json | aetna000 propose ./mem.db user-1 --proposer nightly-job
+cat proposals.json | aetnamem propose ./mem.db user-1 --proposer nightly-job
 ```
 
-### `aetna000 log-action <db> <subject> <action_type> [--payload JSON] [--session S] [--turn T]`
+### `aetnamem log-action <db> <subject> <action_type> [--payload JSON] [--session S] [--turn T]`
 
 Appends an agent action event to the same audit chain as memory events.
 Bare action types get an `agent.` prefix (`tool_call` → `agent.tool_call`);
 dotted names pass through. Put digests in the payload, not raw content.
 
 ```bash
-aetna000 log-action ./mem.db user-1 tool_call \
+aetnamem log-action ./mem.db user-1 tool_call \
   --payload '{"tool":"calendar.create","args_sha256":"9f2c…"}' --session s1 --turn 3
 # → {"event_id": "aud_…"}
 ```
 
-### `aetna000 inspect <db> <subject>` / `aetna000 audit <db> <subject>`
+### `aetnamem inspect <db> <subject>` / `aetnamem audit <db> <subject>`
 
 `inspect` is the full evidence dump: all records (any status), episodes,
 retrieval events, the audit log, and `audit_chain_valid`. `audit` is the
@@ -181,34 +183,34 @@ subset for audit review (audit log + retrieval events + chain check).
 `inspect` output is the machine-readable disclosure for access/portability
 requests.
 
-### `aetna000 checkpoint <db> [sink.jsonl]` / `aetna000 verify <db> [--subject S] [--checkpoints sink.jsonl]`
+### `aetnamem checkpoint <db> [sink.jsonl]` / `aetnamem verify <db> [--subject S] [--checkpoints sink.jsonl]`
 
 Chain anchoring and verification — semantics, cadence, and anchoring
 recipes are in the [auditing guide](auditing-guide.md). `verify` exits 1 on
 any failure, so both are cron/CI-ready as-is.
 
-### `aetna000 actions …`
+### `aetnamem actions …`
 
 The optional guarded-actions commands create and execute causal WorldPatch
 transactions:
 
 ```text
-aetna000 actions stage <db> <subject> filesystem <write_text|delete_file> ...
-aetna000 actions show <db> <transaction_id>
-aetna000 actions list <db> [--subject SUBJECT]
-aetna000 actions approve <db> <transaction_id> --approver-label LABEL
-aetna000 actions commit <db> <transaction_id> --root DIRECTORY
-aetna000 actions abort <db> <transaction_id>
-aetna000 actions recover <db> <transaction_id>
-aetna000 actions verify <db> <transaction_id>
-aetna000 actions purge-payloads <db> <transaction_id>
-aetna000 actions import-journal <db> <subject> <journal.db> --source-id SOURCE
+aetnamem actions stage <db> <subject> filesystem <write_text|delete_file> ...
+aetnamem actions show <db> <transaction_id>
+aetnamem actions list <db> [--subject SUBJECT]
+aetnamem actions approve <db> <transaction_id> --approver-label LABEL
+aetnamem actions commit <db> <transaction_id> --root DIRECTORY
+aetnamem actions abort <db> <transaction_id>
+aetnamem actions recover <db> <transaction_id>
+aetnamem actions verify <db> <transaction_id>
+aetnamem actions purge-payloads <db> <transaction_id>
+aetnamem actions import-journal <db> <subject> <journal.db> --source-id SOURCE
 ```
 
 `stage --mode observe|preview` records a patch but deliberately cannot
 execute it. The default `enforce` mode requires `--authority-id` and
 `--authority-digest`, followed by a separately signed approval. Set
-`AETNA000_APPROVAL_KEY` in the reviewer process or use
+`AETNAMEM_APPROVAL_KEY` in the reviewer process or use
 `--approval-key-file`; never expose that key to the agent-facing process.
 The shared key authenticates key possession, not the `--approver-label` value.
 Likewise, `--authority-id/--authority-digest` are trustworthy only when a
@@ -224,7 +226,7 @@ documented in [guarded-actions.md](guarded-actions.md).
 ### Running it
 
 ```bash
-aetna000 mcp [--db PATH] [--subject NAME] [--checkpoints FILE] [--retain-query-text]
+aetnamem mcp [--db PATH] [--subject NAME] [--checkpoints FILE] [--retain-query-text]
 ```
 
 | flag | default | meaning |
@@ -246,7 +248,7 @@ standard library only; there are no dependencies to install.
 **Claude Code**
 
 ```bash
-claude mcp add aetnamem -- aetna000 mcp
+claude mcp add aetnamem -- aetnamem mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`) — and any host that takes
@@ -257,15 +259,15 @@ the standard `command`/`args` JSON shape, including OpenClaw's MCP bridge
 {
   "mcpServers": {
     "aetnamem": {
-      "command": "aetna000",
+      "command": "aetnamem",
       "args": ["mcp", "--db", "/home/you/.aetnamem/memories.db", "--subject", "you"]
     }
   }
 }
 ```
 
-If `aetna000` is not on the host's PATH (common when installed in a venv),
-use the absolute path to the console script (`/path/to/venv/bin/aetna000`)
+If `aetnamem` is not on the host's PATH (common when installed in a venv),
+use the absolute path to the console script (`/path/to/venv/bin/aetnamem`)
 or `"command": "/path/to/python", "args": ["-m", "aetnamem.cli", "mcp", …]`.
 
 **Multi-user hosts**: pass `subject_id` explicitly on every tool call
@@ -318,7 +320,7 @@ Suggested system-prompt guidance for the calling agent:
   provenance and submits an injected instruction as a plain user operation,
   this local server cannot reconstruct the lost origin.
 - **You can audit while it runs.** The database is ordinary SQLite (WAL
-  mode): run `aetna000 verify`, `aetna000 checkpoint` (e.g. from cron), or
+  mode): run `aetnamem verify`, `aetnamem checkpoint` (e.g. from cron), or
   `tools/verify_audit.py` against the same file the agent is using.
 
 ### Troubleshooting
@@ -326,7 +328,7 @@ Suggested system-prompt guidance for the calling agent:
 | symptom | cause / fix |
 |---|---|
 | host reports the server "didn't respond" | the host may use `Content-Length`-framed (LSP-style) transport instead of newline-delimited JSON; check its logs — file an issue, the transport is one function |
-| `spawn aetna000 ENOENT` | console script not on the host's PATH — use the absolute path or `python -m aetnamem.cli mcp` |
+| `spawn aetnamem ENOENT` | console script not on the host's PATH — use the absolute path or `python -m aetnamem.cli mcp` |
 | tool result `isError: true` | read the message: missing required argument, unknown record id, or promoting a non-quarantined record |
 | empty `records` from `memory_remember` | the message contained no extractable declarative fact (questions never extract) — expected behavior |
 | two hosts, one database | supported for reads; SQLite WAL serializes writes, but prefer one writing host or separate `--db` paths per host |

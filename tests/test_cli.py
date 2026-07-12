@@ -57,10 +57,10 @@ def test_cli_log_action(tmp_path: Path) -> None:
     assert events[0]["event_type"] == "agent.tool_call"
 
 
-def test_aetna000_actions_cli_roundtrip(tmp_path: Path) -> None:
+def test_aetnamem_actions_cli_roundtrip(tmp_path: Path) -> None:
     db = str(tmp_path / "mem.db")
     secret = "approval-secret-that-is-at-least-32-bytes-long"
-    environment = {**os.environ, "PYTHONPATH": str(ROOT), "AETNA000_APPROVAL_KEY": secret}
+    environment = {**os.environ, "PYTHONPATH": str(ROOT), "AETNAMEM_APPROVAL_KEY": secret}
 
     help_result = subprocess.run(
         [sys.executable, "-m", "aetnamem.cli", "--help"],
@@ -68,7 +68,7 @@ def test_aetna000_actions_cli_roundtrip(tmp_path: Path) -> None:
         text=True,
         env=environment,
     )
-    assert help_result.stdout.startswith("usage: aetna000 ")
+    assert help_result.stdout.startswith("usage: aetnamem ")
 
     staged = subprocess.run(
         [

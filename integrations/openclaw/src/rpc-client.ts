@@ -1,5 +1,5 @@
 /**
- * Newline-delimited JSON-RPC 2.0 client for the `aetna000 mcp` stdio server.
+ * Newline-delimited JSON-RPC 2.0 client for the `aetnamem mcp` stdio server.
  *
  * The child process is spawned lazily on first call, the MCP initialize
  * handshake runs once, and calls are matched to responses by request id.
@@ -101,7 +101,7 @@ export class AetnamemClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.0" },
+      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.1" },
     });
     this.notify("notifications/initialized", {});
   }

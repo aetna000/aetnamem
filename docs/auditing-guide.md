@@ -55,7 +55,7 @@ m = Memory("./memories.db", retain_query_text=True)   # opt-in, off in prod
 ### 2. Checkpoint on a schedule, anchor externally
 
 ```bash
-aetna000 checkpoint ./memories.db ./checkpoints.jsonl
+aetnamem checkpoint ./memories.db ./checkpoints.jsonl
 ```
 
 Run it from cron/systemd at whatever cadence bounds your exposure — hourly
@@ -76,7 +76,7 @@ A checkpoint sitting next to the database detects accidents, not attackers.
 ### 3. Verify — routinely, and after any incident
 
 ```bash
-aetna000 verify ./memories.db --checkpoints ./checkpoints.jsonl
+aetnamem verify ./memories.db --checkpoints ./checkpoints.jsonl
 ```
 
 Exit code is 0/1, so wire it into CI or monitoring directly. From Python:

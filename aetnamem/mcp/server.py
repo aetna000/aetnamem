@@ -2,13 +2,13 @@
 
 Implements the subset of MCP that tool use requires — initialize, ping,
 tools/list, tools/call — as newline-delimited JSON-RPC 2.0 on stdin/stdout,
-using only the standard library so `aetna000 mcp` keeps the zero-dependency
+using only the standard library so `aetnamem mcp` keeps the zero-dependency
 promise. Diagnostics go to stderr; stdout carries protocol messages only.
 
 Any MCP-capable agent host (Claude Code, Claude Desktop, OpenClaw via its
 MCP bridge, etc.) gets persistent, auditable memory by running:
 
-    aetna000 mcp --db ~/.aetnamem/memories.db
+    aetnamem mcp --db ~/.aetnamem/memories.db
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.2.0"
+    SERVER_VERSION = "0.2.1"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -356,9 +356,9 @@ class MCPServer:
             ),
             _tool(
                 "memory_promote",
-                "Activate a quarantined record after the user has explicitly "
-                "confirmed it. Never call without showing the user the "
-                "record content first.",
+                "Activate a quarantined record and audit the trust transition. "
+                "This tool does not authenticate confirmation; the host must "
+                "show the record and enforce any required human approval.",
                 {
                     **_SUBJECT_PROPERTY,
                     "record_id": {"type": "string"},

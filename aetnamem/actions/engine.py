@@ -1,4 +1,4 @@
-"""Causal transaction coordinator for Aetna Guarded Actions."""
+"""Causal transaction coordinator for aetnamem Guarded Actions."""
 
 from __future__ import annotations
 
@@ -548,7 +548,7 @@ class ActionEngine:
         process died. Any in-flight operation is therefore marked uncertain
         and the transaction becomes ``recovery_required``. A future provider
         can resolve it using an idempotency lookup or authoritative state read;
-        Aetna never performs a blind retry here.
+        aetnamem never performs a blind retry here.
         """
         transaction = self.get(transaction_id)
         if transaction["state"] not in {

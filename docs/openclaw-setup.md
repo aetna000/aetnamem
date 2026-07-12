@@ -11,9 +11,9 @@ and auto-capture hooks, use the plugin in
 
 ```mermaid
 flowchart TD
-    A["Install<br/>pip install aetnamem"] --> B{"Is aetna000<br/>on OpenClaw's PATH?"}
-    B -- "yes" --> C["command: aetna000<br/>args: [mcp, --db, ~/.aetnamem/memories.db, --subject, you]"]
-    B -- "no (venv install)" --> D["command: /path/to/venv/bin/aetna000<br/>or: /path/to/python -m aetnamem.cli mcp ..."]
+    A["Install<br/>pip install aetnamem"] --> B{"Is aetnamem<br/>on OpenClaw's PATH?"}
+    B -- "yes" --> C["command: aetnamem<br/>args: [mcp, --db, ~/.aetnamem/memories.db, --subject, you]"]
+    B -- "no (venv install)" --> D["command: /path/to/venv/bin/aetnamem<br/>or: /path/to/python -m aetnamem.cli mcp ..."]
     C --> E["Add the server to OpenClaw's<br/>MCP bridge config as 'aetnamem'"]
     D --> E
     E --> F["Restart OpenClaw<br/>(or reload its MCP servers)"]
@@ -21,7 +21,7 @@ flowchart TD
     G -- "yes" --> H["Done — the agent has<br/>auditable memory"]
     G -- "no" --> I["Check OpenClaw's MCP logs:<br/>ENOENT → use absolute path<br/>no response → see integration guide"]
     I --> E
-    H --> J["Recommended: cron job<br/>aetna000 checkpoint + anchor externally"]
+    H --> J["Recommended: cron job<br/>aetnamem checkpoint + anchor externally"]
 ```
 
 The config entry OpenClaw's MCP bridge needs (standard `command`/`args`
@@ -31,7 +31,7 @@ shape):
 {
   "mcpServers": {
     "aetnamem": {
-      "command": "aetna000",
+      "command": "aetnamem",
       "args": ["mcp", "--db", "/home/you/.aetnamem/memories.db", "--subject", "you"]
     }
   }
@@ -49,7 +49,7 @@ automatically on hooks.
 sequenceDiagram
     participant U as You (WhatsApp/Telegram/…)
     participant O as OpenClaw agent
-    participant M as aetna000 mcp (stdio)
+    participant M as aetnamem mcp (stdio)
     participant DB as SQLite + audit chain
 
     U->>O: "My preferred airport is SFO"
@@ -97,7 +97,7 @@ authenticated reviewer layer.
 flowchart LR
     subgraph host ["Your machine"]
         DB[("~/.aetnamem/memories.db")]
-        CRON["cron: aetna000 checkpoint"]
+        CRON["cron: aetnamem checkpoint"]
     end
     subgraph anchor ["Different trust domain"]
         CK["checkpoints.jsonl<br/>(WORM / object lock / RFC 3161)"]
@@ -105,7 +105,7 @@ flowchart LR
     OC["OpenClaw via MCP"] <--> DB
     CRON --> DB
     CRON --> CK
-    V["aetna000 verify --checkpoints …<br/>or tools/verify_audit.py"] --> DB
+    V["aetnamem verify --checkpoints …<br/>or tools/verify_audit.py"] --> DB
     V --> CK
 ```
 

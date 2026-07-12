@@ -1,8 +1,8 @@
-# Aetna Guarded Actions TODO
+# aetnamem Guarded Actions TODO
 
-This is the implementation checklist for **Aetna Guarded Actions**: a
+This is the implementation checklist for **aetnamem Guarded Actions**: a
 causal transaction layer connecting evidence, memory, authority, tool effects,
-verification, and recovery. `aetna000` is the canonical CLI executable.
+verification, and recovery. `aetnamem` is the canonical CLI executable.
 
 ## Foundation
 
@@ -38,8 +38,8 @@ verification, and recovery. `aetna000` is the canonical CLI executable.
 
 ## Interfaces
 
-- [x] Make `aetna000` the canonical installed executable and documentation command.
-- [x] Add `aetna000 actions stage/show/list/approve/commit/abort/recover/verify/import-journal`.
+- [x] Make `aetnamem` the canonical installed executable and documentation command.
+- [x] Add `aetnamem actions stage/show/list/approve/commit/abort/recover/verify/import-journal`.
 - [ ] Add an MCP gate that removes direct write tools when enforcement is enabled.
 - [ ] Add Telegram as a separate privileged approval client.
 - [ ] Add a dashboard for evidence, authority, patch, execution, and recovery history.
@@ -65,4 +65,4 @@ verification, and recovery. `aetna000` is the canonical CLI executable.
 - [x] Document deployment topology and gate-bypass prevention.
 - [ ] Decide whether the SDK remains AGPL, becomes dual-licensed, or exposes a
       permissively licensed protocol/verifier package.
-- [ ] Build the flagship Aetna research → review → X action demonstration.
+- [ ] Build the flagship aetnamem research → review → X action demonstration.

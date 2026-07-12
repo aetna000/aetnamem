@@ -57,6 +57,10 @@ pip install aetnamem
 pip install -e .
 ```
 
+The product installs one console command: `aetnamem`. Use `aetnamem mcp` for
+the MCP server and `aetnamem actions …` for guarded actions. `aetna000` is the
+organization namespace only; it is not installed as a product command.
+
 ```python
 from aetnamem import Memory
 
@@ -80,25 +84,25 @@ are available from Python and the CLI, so any process that can run a shell
 command is a client:
 
 ```bash
-aetna000 remember   ./memories.db user-1 "My preferred airport is SFO." --session s1
-aetna000 recall     ./memories.db user-1 "Which airport should I book from?"
-aetna000 forget     ./memories.db user-1 --utterance "Forget my preferred airport."
-aetna000 list       ./memories.db user-1 --all
-aetna000 promote    ./memories.db user-1 rec_...
-aetna000 log-action ./memories.db user-1 tool_call --payload '{"tool":"calendar"}'
-aetna000 consolidate ./memories.db user-1
-aetna000 persona    ./memories.db user-1
-aetna000 scenes     ./memories.db user-1
-aetna000 inspect    ./memories.db user-1
-aetna000 audit      ./memories.db user-1
-aetna000 checkpoint ./memories.db ./checkpoints.jsonl   # anchor this file externally
-aetna000 verify     ./memories.db --checkpoints ./checkpoints.jsonl
+aetnamem remember   ./memories.db user-1 "My preferred airport is SFO." --session s1
+aetnamem recall     ./memories.db user-1 "Which airport should I book from?"
+aetnamem forget     ./memories.db user-1 --utterance "Forget my preferred airport."
+aetnamem list       ./memories.db user-1 --all
+aetnamem promote    ./memories.db user-1 rec_...
+aetnamem log-action ./memories.db user-1 tool_call --payload '{"tool":"calendar"}'
+aetnamem consolidate ./memories.db user-1
+aetnamem persona    ./memories.db user-1
+aetnamem scenes     ./memories.db user-1
+aetnamem inspect    ./memories.db user-1
+aetnamem audit      ./memories.db user-1
+aetnamem checkpoint ./memories.db ./checkpoints.jsonl   # anchor this file externally
+aetnamem verify     ./memories.db --checkpoints ./checkpoints.jsonl
 python tools/verify_audit.py ./memories.db --checkpoints ./checkpoints.jsonl  # no aetnamem import
 ```
 
 The standalone `tools/verify_*.py` commands are included in Git checkouts and
-source distributions. Wheel-only installs should use `aetna000 verify` and
-`aetna000 actions verify`, which cover the same integrity rules.
+source distributions. Wheel-only installs should use `aetnamem verify` and
+`aetnamem actions verify`, which cover the same integrity rules.
 
 ## Guarded actions
 
@@ -111,7 +115,7 @@ host-attested `authorized_by` evidence that permits it.
 
 The first reference adapter performs root-confined UTF-8 file writes and
 deletes. It is classified as **verified compensatable**, not transactionally
-reversible: Aetna rechecks the before-state, executes only an exact approved
+reversible: `aetnamem` rechecks the before-state, executes only an exact approved
 plan, observes the after-state, and verifies any compensation against the
 captured before-state.
 
@@ -119,20 +123,20 @@ captured before-state.
 mkdir -p ./workspace
 
 # Agent/host staging boundary: no reviewer key is needed here.
-aetna000 actions stage ./memories.db user-1 filesystem write_text \
+aetnamem actions stage ./memories.db user-1 filesystem write_text \
   --root ./workspace \
   --args '{"path":"report.md","content":"reviewed content"}' \
   --actor researcher-agent \
   --authority-id task-42 \
   --authority-digest 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
-aetna000 actions show    ./memories.db act_...
+aetnamem actions show    ./memories.db act_...
 
 # Separate trusted reviewer/executor shell. Persist this key securely.
-export AETNA000_APPROVAL_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-aetna000 actions approve ./memories.db act_... --approver-label user-1
-aetna000 actions commit  ./memories.db act_... --root ./workspace
-aetna000 actions verify  ./memories.db act_...
+export AETNAMEM_APPROVAL_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+aetnamem actions approve ./memories.db act_... --approver-label user-1
+aetnamem actions commit  ./memories.db act_... --root ./workspace
+aetnamem actions verify  ./memories.db act_...
 python tools/verify_actions.py ./memories.db act_...  # no aetnamem import
 ```
 
@@ -140,9 +144,9 @@ Changing the persisted plan, adapter manifest, approval binding, expiry, or
 guarded file precondition prevents execution. Raw arguments, before-images, and provider
 receipts live in the erasable action payload plane; audit events contain only
 structural metadata and digests. Erase those payloads after their retention
-period with `aetna000 actions purge-payloads ./memories.db act_...`.
+period with `aetnamem actions purge-payloads ./memories.db act_...`.
 If a process dies across an external execution boundary, use
-`aetna000 actions recover ./memories.db act_...`; it fences in-flight effects
+`aetnamem actions recover ./memories.db act_...`; it fences in-flight effects
 as uncertain and emits a `recovery_required` receipt instead of retrying.
 
 Compatible external transaction journals can join the same forensic timeline
@@ -150,13 +154,13 @@ without copying their raw arguments, snapshots, results, claimed actors, or
 client IDs into the audit plane:
 
 ```bash
-aetna000 actions import-journal ./memories.db user-1 ./source-journal.db \
+aetnamem actions import-journal ./memories.db user-1 ./source-journal.db \
   --source-id production-agent
 ```
 
 Imports are idempotent per source/transaction and are explicitly labeled
 `unverified_operational_journal`: importing external evidence does not upgrade
-its mutable status rows or claimed identities into Aetna proof.
+its mutable status rows or claimed identities into `aetnamem` proof.
 
 The HMAC approval key belongs in the human/reviewer process, not the
 agent-facing process. The `--approver-label` value is attribution; the shared key
@@ -170,7 +174,7 @@ Protocol and security details are in
 
 ## Use from agents (MCP)
 
-`aetna000 mcp` currently serves **memory verbs only** as MCP tools over stdio:
+`aetnamem mcp` currently serves **memory verbs only** as MCP tools over stdio:
 newline-delimited JSON-RPC implemented with the standard library only, so the
 zero-dependency promise holds. Defaults: database at
 `~/.aetnamem/memories.db` (override
@@ -182,7 +186,7 @@ write tools directly.
 **Claude Code:**
 
 ```bash
-claude mcp add aetnamem -- aetna000 mcp
+claude mcp add aetnamem -- aetnamem mcp
 ```
 
 **Claude Desktop / any host with JSON MCP config** (OpenClaw's MCP bridge
@@ -192,7 +196,7 @@ takes the same command + args shape):
 {
   "mcpServers": {
     "aetnamem": {
-      "command": "aetna000",
+      "command": "aetnamem",
       "args": ["mcp", "--db", "/home/you/.aetnamem/memories.db"]
     }
   }
@@ -222,7 +226,7 @@ every prompt and auto-capture after every turn — on top of the same engine
 and audit chain. The policy gates run server-side, so a hostile webpage
 summarized by the agent still cannot plant durable memory, deletion still
 returns receipts, and you can independently audit the same SQLite file with
-`aetna000 verify` or `tools/verify_audit.py` while the agent uses it.
+`aetnamem verify` or `tools/verify_audit.py` while the agent uses it.
 Full tool catalog, host configs, and troubleshooting:
 [integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md).
 
@@ -236,7 +240,7 @@ the same MCP/Python verbs and preserve the same audit trail.
 For any MCP-capable host, start with:
 
 ```bash
-aetna000 mcp --db ~/.aetnamem/memories.db --subject you
+aetnamem mcp --db ~/.aetnamem/memories.db --subject you
 ```
 
 Then configure the host to expose the `memory_*` tools. This is the right
@@ -285,7 +289,7 @@ integrations/
 Each adapter should document the same guarantees: untrusted content stays
 quarantined, deletion returns receipts, recall injection is bounded and
 audited, and the SQLite database can still be verified externally with
-`aetna000 verify` or `tools/verify_audit.py`.
+`aetnamem verify` or `tools/verify_audit.py`.
 
 ## Compliance posture
 
@@ -303,12 +307,12 @@ for the precise integrity threat model.
 
 - **L0 — episodes**: raw turns, append-only, purged by deletion.
 - **L1 — records**: extracted facts with provenance.
-- **L2 — scenes**: deterministic per-session view (`aetna000 scenes`).
+- **L2 — scenes**: deterministic per-session view (`aetnamem scenes`).
 - **L3 — persona**: live-derived snapshot of active facts
-  (`aetna000 persona`, MCP `memory_persona`) — no cached persona is stored;
+  (`aetnamem persona`, MCP `memory_persona`) — no cached persona is stored;
   each generated snapshot carries its source record IDs.
 - **Derived proposals**: external LLM/batch jobs submit candidates via
-  `aetna000 propose` / `Memory.propose_facts()`; they land *quarantined*
+  `aetnamem propose` / `Memory.propose_facts()`; they land *quarantined*
   with mandatory evidence links and only activate through `promote()`.
 
 ## How recall works

@@ -9,7 +9,7 @@ see the main README's guarantee boundaries.
 
 ## How it works
 
-The plugin spawns `aetna000 mcp` as a child process and talks newline-
+The plugin spawns `aetnamem mcp` as a child process and talks newline-
 delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 
 | OpenClaw hook | engine call | behavior |
@@ -37,7 +37,7 @@ version), then configure:
 
 ```json
 {
-  "command": "aetna000",
+  "command": "aetnamem",
   "dbPath": "~/.aetnamem/memories.db",
   "subject": "you",
   "recall": { "maxRecords": 5, "maxChars": 2000, "minScore": 0.3 },
@@ -45,7 +45,7 @@ version), then configure:
 }
 ```
 
-If `aetna000` is not on OpenClaw's PATH, set `command` to the absolute venv
+If `aetnamem` is not on OpenClaw's PATH, set `command` to the absolute venv
 path, or use `"command": "/path/to/python"` with
 `"commandArgs": ["-m", "aetnamem.cli", "mcp", "--db", "...", "--subject", "you"]`.
 
@@ -59,9 +59,9 @@ Because the database is plain aetnamem SQLite, the memory audit loop works
 while OpenClaw runs:
 
 ```bash
-aetna000 verify ~/.aetnamem/memories.db
-aetna000 checkpoint ~/.aetnamem/memories.db ~/checkpoints.jsonl   # cron + anchor
-aetna000 consolidate ~/.aetnamem/memories.db you                  # dedupe/repair pass
+aetnamem verify ~/.aetnamem/memories.db
+aetnamem checkpoint ~/.aetnamem/memories.db ~/checkpoints.jsonl   # cron + anchor
+aetnamem consolidate ~/.aetnamem/memories.db you                  # dedupe/repair pass
 ```
 
 ## Notes

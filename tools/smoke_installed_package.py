@@ -7,8 +7,8 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
+import sys
 import tempfile
 
 
@@ -34,12 +34,11 @@ def main() -> None:
         for entry in distribution.entry_points
         if entry.group == "console_scripts"
     }
-    assert scripts == {"aetna000": "aetnamem.cli:main"}, scripts
+    assert scripts == {"aetnamem": "aetnamem.cli:main"}, scripts
 
-    executable = shutil.which("aetna000")
-    assert executable, "aetna000 console command was not installed"
-    assert shutil.which("aetnamem") is None, "unexpected aetnamem console command"
-    run(executable, "--help")
+    executable = Path(sys.executable).with_name("aetnamem")
+    assert executable.is_file(), "aetnamem console command was not installed"
+    run(str(executable), "--help")
 
     with tempfile.TemporaryDirectory(prefix="aetnamem-wheel-smoke-") as temp:
         root = Path(temp)
@@ -48,7 +47,7 @@ def main() -> None:
         workspace.mkdir()
 
         json_run(
-            executable,
+            str(executable),
             "remember",
             str(database),
             "release-smoke",
@@ -57,7 +56,7 @@ def main() -> None:
             "wheel-test",
         )
         recalled = json_run(
-            executable,
+            str(executable),
             "recall",
             str(database),
             "release-smoke",
@@ -65,11 +64,11 @@ def main() -> None:
         )
         assert isinstance(recalled, list) and recalled
         assert "Vim" in recalled[0]["content"]
-        memory_verification = json_run(executable, "verify", str(database))
+        memory_verification = json_run(str(executable), "verify", str(database))
         assert memory_verification["valid"] is True, memory_verification
 
         staged = json_run(
-            executable,
+            str(executable),
             "actions",
             "stage",
             str(database),
@@ -89,9 +88,9 @@ def main() -> None:
         )
         transaction_id = staged["transaction_id"]
         approval_env = dict(os.environ)
-        approval_env["AETNA000_APPROVAL_KEY"] = "abcdef0123456789" * 4
+        approval_env["AETNAMEM_APPROVAL_KEY"] = "abcdef0123456789" * 4
         json_run(
-            executable,
+            str(executable),
             "actions",
             "approve",
             str(database),
@@ -101,7 +100,7 @@ def main() -> None:
             env=approval_env,
         )
         json_run(
-            executable,
+            str(executable),
             "actions",
             "commit",
             str(database),
@@ -111,7 +110,7 @@ def main() -> None:
             env=approval_env,
         )
         action_verification = json_run(
-            executable,
+            str(executable),
             "actions",
             "verify",
             str(database),

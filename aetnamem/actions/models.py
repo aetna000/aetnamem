@@ -1,4 +1,4 @@
-"""Stable data contracts for Aetna Guarded Actions.
+"""Stable data contracts for aetnamem Guarded Actions.
 
 The model intentionally distinguishes evidence that *informed* an action from
 authority that permits it. Untrusted content may be useful evidence, but it

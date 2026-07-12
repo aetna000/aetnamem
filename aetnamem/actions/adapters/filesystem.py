@@ -248,7 +248,7 @@ class FilesystemAdapter:
 
     @staticmethod
     def _atomic_write(target: Path, data: bytes) -> None:
-        descriptor, temporary = tempfile.mkstemp(prefix=".aetna000-", dir=target.parent)
+        descriptor, temporary = tempfile.mkstemp(prefix=".aetnamem-", dir=target.parent)
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)
