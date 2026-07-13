@@ -1,0 +1,33 @@
+\section{Related Work}
+
+\subsection{Agents and tool use}
+
+ReAct interleaves model reasoning and environment actions~\cite{yao2023react}; Toolformer trains models to choose APIs and arguments~\cite{schick2023toolformer}. These works improve action selection. \system{} begins after selection: it asks whether the proposed effect has authority, whether the exact plan was approved, what assumptions it relies on, what the provider actually changed, and how that claim can later be verified.
+
+ToolEmu uses a language-model-emulated sandbox and evaluator to discover risky agent behavior~\cite{ruan2023toolemu}. AgentDojo evaluates utility and prompt-injection security across realistic tool environments~\cite{debenedetti2024agentdojo}. These are complementary test environments. The current \system{} experiment is much smaller but emits a verifiable operational artifact and exercises persistent memory plus action authority in one chain.
+
+\subsection{Prompt-injection defenses}
+
+Greshake et al. establish indirect prompt injection through remotely supplied data~\cite{greshake2023indirect}. Instruction-hierarchy training teaches models to prioritize privileged instructions~\cite{wallace2024hierarchy}. CaMeL extracts trusted control/data flows and applies capabilities to prevent unauthorized exfiltration~\cite{debenedetti2025camel}. CaMeL is the closest architectural relative: both place a protective system layer around an untrusted model and distinguish data from authority.
+
+The contribution here is persistence and evidence: lifecycle-gated memory, exact-plan transaction records, before/after observations, compensation, receipts, erasure boundaries, and an externally anchorable history. Conversely, CaMeL offers a stronger formal security story for its mediated programs and a broader AgentDojo evaluation. \system{} should not be read as superseding it; combining CaMeL-style control-flow extraction with \system-style persistent evidence is a promising direction.
+
+\subsection{Long-term agent memory}
+
+Generative Agents stores experiences and synthesizes reflections~\cite{park2023generative}; MemoryBank adds evolving long-term memory~\cite{zhong2023memorybank}; and MemGPT uses tiered virtual context management~\cite{packer2023memgpt}. LongMemEval evaluates extraction, multi-session reasoning, temporal reasoning, updates, and abstention over long conversations~\cite{wu2024longmemeval}. These systems emphasize memory capability and answer quality.
+
+\system{} emphasizes policy and evidence: origin, quarantine, mutation lineage, retrieval traces, deletion receipts, and audit integrity. Its deterministic v0 extractor is deliberately less semantically capable than model-backed memory. A mature system needs both: high-recall semantic extraction and a policy gate that does not grant extracted text authority by default.
+
+\benchmark{} provides a common multi-session harness for 19 configured targets in the pinned snapshot~\cite{memorystackbench2026}. Its five-scenario safety suite is narrower than LongMemEval's 500 questions, but it directly checks webpage poisoning, deletion retention, provenance, temporal replacement, and overgeneralization. The paper uses it as conformance evidence, not comprehensive memory quality.
+
+\subsection{Classical systems foundations}
+
+Fail-safe defaults, complete mediation, and separation of privilege come directly from Saltzer and Schroeder~\cite{saltzer1975protection}. Typed, scoped authority follows capability-system principles~\cite{dennis1966capabilities,miller2003capability}. The separation of \code{informed\_by} and \code{authorized\_by} can be viewed as a provenance/authority distinction: causal influence does not imply permission. Buneman et al.'s why/where provenance motivates retaining source relationships rather than only values~\cite{buneman2001provenance}.
+
+Guarded multi-operation actions resemble sagas: when external effects cannot share one atomic transaction, explicit compensating actions and partial-failure states are required~\cite{garciamolina1987sagas}. The implementation is intentionally more conservative about ambiguous dispatch: it fences uncertainty rather than assuming compensation is always possible.
+
+Hash-linked history and external anchoring draw on secure logging and timestamping~\cite{schneier1998securelogs,haber1991timestamp}. \system's construction is simpler than forward-secure encrypted logging and transparency trees, but its threat boundary is explicit and its wire format is independently executable.
+
+\subsection{Evaluation practice}
+
+Kapoor et al. warn that agent benchmarks can encourage shortcuts, conflate developer needs, omit cost, and lack reproducibility~\cite{kapoor2024agents}. We respond by pinning commits and hashes, rerunning the current version, reporting ties and target heterogeneity, excluding timing rankings, testing policy with non-benchmark vocabulary, and disclosing common ownership. The resulting evidence is stronger than an unqualified score but still requires external replication and broader suites.

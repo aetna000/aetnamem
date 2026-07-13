@@ -1,0 +1,35 @@
+{
+  "aetnamem": {
+    "commit": "0cd082c9cac14f35a66ff946395a31847322005d",
+    "version": "0.2.1"
+  },
+  "benchmark": {
+    "auditability_sha256": "bbb1b1554d19e799b362e37df771ad39841ec34de3791228ac8f44184e724527",
+    "commit": "10b9407ce54c92bcb8aee24099505427aabeebcd",
+    "leaderboard_sha256": "54e47dbd204d3cb6b0c479193a8901005ef2ae96163fe433b4307c26168044cb",
+    "rerun_scorecard_sha256": "ef60b9b2676733871f24015cb6130a83a61c72b03475fc247012b245a8316e0b",
+    "suite": "seven_sins_v0_1"
+  },
+  "demo_artifacts": {
+    "checkpoints_jsonl_sha256": "7e528a029c07c2fdc76851dd0988087a083c810a2b3b9cf4899221c17d1cfa7a",
+    "memories_db_sha256": "5c7f46db3101de28f7381f2166e33424bba3b4b9273fd7807ebe5260747896a4",
+    "transcript_txt_sha256": "a2497f67e66f54bd0efa45d34d11a0f4a283187b861560de3d3da1f6b0dac203"
+  },
+  "environment": {
+    "cpu": "Apple M2",
+    "memory_bytes": 17179869184,
+    "operating_system": "macOS 26.5.1 (25F80)",
+    "python": "3.12.2",
+    "sqlite": "3.50.6",
+    "tectonic": "0.16.9"
+  },
+  "fresh_reproduction_utc_date": "2026-07-13",
+  "results": {
+    "benchmark_checks": "33/33",
+    "benchmark_scenarios": "5/5",
+    "benchmark_severity_weight": "81/81",
+    "pytest": "88/88",
+    "standalone_demo_verifiers": "2/2",
+    "tamper_probes": "2/2"
+  }
+}

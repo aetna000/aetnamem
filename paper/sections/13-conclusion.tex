@@ -1,0 +1,7 @@
+\section{Conclusion}
+
+Stateful agents need more than memory and tools. They need an authority model, transaction semantics, result verification, and evidence that survives disagreement about what happened. \system{} implements a compact version of that control plane: origin-aware memory admission, quarantine, active-only recall, typed causal authority, exact-plan approval, preconditioned and verified effects, explicit uncertainty, chain-bound receipts, and standalone verification.
+
+The artifact passes every assertion in the pinned \benchmark{} suite and reproduces five action refusals, one authorized commit, and two tamper detections over a real database. Those results are strong within their scope and deliberately modest outside it. The engine is deterministic, the benchmark tie is broad, the evaluation is self-maintained, and forced mediation remains unfinished.
+
+The more general lesson is architectural. A model's output should be treated as a proposal. Durable memory should be admitted according to origin and trust. External effects should require scoped authority and exact reviewed intent. Claimed results should be reconciled with observed state. History should be independently checkable and anchored outside the writer's control. Evidence should come before effect, and verification should come after it.

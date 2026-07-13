@@ -1,0 +1,107 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[a4paper,top=17mm,bottom=19mm,left=16mm,right=16mm,columnsep=6mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,mathtools}
+\usepackage{newtxtext,newtxmath}
+\usepackage{microtype}
+\usepackage{booktabs,tabularx,array,multirow,makecell}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,backgrounds,calc,fit,positioning,shapes.geometric}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+\usepackage{balance}
+
+\definecolor{aetnaInk}{HTML}{17252A}
+\definecolor{aetnaTeal}{HTML}{2A6F73}
+\definecolor{aetnaBlue}{HTML}{315A7D}
+\definecolor{aetnaRed}{HTML}{B23A48}
+\definecolor{aetnaGold}{HTML}{D49A2A}
+\definecolor{aetnaPurple}{HTML}{6B4C9A}
+\definecolor{codebg}{HTML}{F4F6F6}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=aetnaBlue,
+  citecolor=aetnaTeal,
+  urlcolor=aetnaPurple,
+  pdftitle={Evidence Before Effect: Aetnamem's Auditable Memory and Guarded-Action Control Plane for AI Agents},
+  pdfauthor={Javad Taghia}
+}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\emergencystretch}{1.8em}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1em}
+\renewcommand{\arraystretch}{1.12}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{aetnaInk!20},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=2pt,
+  xrightmargin=2pt
+}
+
+\newcommand{\system}{\textsc{aetnamem}}
+\newcommand{\benchmark}{\textsc{MemoryStackBench}}
+\newcommand{\worldpatch}{\textsc{WorldPatch}}
+\newcommand{\sha}{\operatorname{SHA256}}
+\newcommand{\canon}{\operatorname{Canon}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\property}[1]{\smallskip\noindent\textbf{Property #1.}\enspace}
+\newcommand{\threat}[1]{\smallskip\noindent\textbf{#1.}\enspace}
+
+\title{\vspace{-1.5em}\textbf{Evidence Before Effect: \system's Auditable Memory and\\Guarded-Action Control Plane for AI Agents}}
+\author{Javad Taghia\\\small Independent Researcher\\\small \href{mailto:aetna000@gmail.com}{aetna000@gmail.com} \quad \url{https://github.com/aetna000/aetnamem}}
+\date{July 2026\\\small Technical report; artifact version 1.0}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Persistent memory and tool use turn language-model agents from text generators into stateful actors. The same transition creates two coupled failure channels: untrusted content can become durable ``user memory,'' and that memory can later be misused as authority for an external effect. We present \system, a framework-neutral reference control plane that separates information from authority and binds memory transitions, action intent, approval, execution evidence, and outcome receipts into one independently verifiable history. Its memory path classifies origin, quarantines untrusted extractions, restricts retrieval to active records, preserves provenance, and records deletion and supersession. Its guarded-action path compiles proposed operations into a canonical, hash-bound \worldpatch; requires trusted, host-attested \code{authorized\_by} evidence for enforced mutations; binds approval to the exact plan; revalidates adapter manifests and world-state preconditions; verifies postconditions; and records uncertainty instead of blindly retrying ambiguous effects. A per-subject SHA-256 chain and externally anchorable checkpoints support zero-dependency verification while erasable payload tables retain raw arguments and before-images.
+
+We evaluate the open-source implementation at commit \code{0cd082c}. A fresh deterministic run passes all 33 check-level assertions, all five scenarios, and all 81 severity-weighted points in \benchmark's \code{seven\_sins\_v0\_1} suite. This is a perfect conformance result, tied by eleven other targets in the pinned 19-target public snapshot; it is not a language-model score. The benchmark's separate evidence matrix assigns \system{} 16/18 auditability points, the highest value in that snapshot. A reproducible hostile-page demonstration then exercises five refusal paths, one authorized commit, two implementation-independent verifiers, and two tamper probes over a 12-event database. The results establish executable control-plane invariants for the tested paths, not universal prompt-injection immunity, formal verification, or forced mediation of tools outside the gate.
+\end{abstract}
+
+\input{sections/01-introduction}
+\input{sections/02-scope-threat-model}
+\input{sections/03-architecture}
+\input{sections/04-memory}
+\input{sections/05-guarded-actions}
+\input{sections/06-evidence-ledger}
+\input{sections/07-implementation}
+\input{sections/08-evaluation}
+\input{sections/09-results}
+\input{sections/10-security-analysis}
+\input{sections/11-related-work}
+\input{sections/12-limitations-roadmap}
+\input{sections/13-conclusion}
+
+\balance
+{\footnotesize
+\bibliographystyle{plain}
+\bibliography{references}
+}
+
+\clearpage
+\appendix
+\onecolumn
+\input{sections/appendices}
+
+\end{document}

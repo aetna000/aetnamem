@@ -1,0 +1,84 @@
+\section{Trust-Aware Persistent Memory}
+
+Persistent memory is modeled as a lifecycle of evidence-bearing records rather than a bag of text. Each record contains a subject, content, source type, trust tier, status, confidence, fact slot, source session/turn, source episode, timestamps, and optional supersession link.
+
+\subsection{Admission rule}
+
+Let $c$ be a candidate fact extracted from source class $s$. Let $\tau(s)$ map source class to a trust tier. In the current policy,
+
+\begin{equation}
+\tau(s)=
+\begin{cases}
+\texttt{trusted\_user}, & s=\texttt{user\_message},\\
+\texttt{untrusted\_content}, & \text{otherwise}.
+\end{cases}
+\end{equation}
+
+Let $T_M=\{\texttt{trusted\_user},\texttt{user\_confirmed}\}$ be the
+set of trust tiers admitted directly to active memory. The initial status is
+
+\begin{equation}
+\operatorname{status}(c)=
+\begin{cases}
+\texttt{active}, & \tau(c)\in T_M,\\
+\texttt{quarantined}, & \text{otherwise}.
+\end{cases}
+\label{eq:admission}
+\end{equation}
+
+The extractor may be deterministic or model-backed; admission is downstream and deterministic. In v0.2.1, the built-in extractor uses generic sentence patterns to make policy behavior inspectable. External LLM/batch extractors can submit proposals, but those proposals land quarantined with mandatory evidence links.
+
+\subsection{Source classification}
+
+The built-in classifier treats a user turn containing marked \code{<webpage>} or tool-output content as originating from that embedded source rather than from the user's transport channel. This prevents the common mistake ``the user sent the message, therefore every string inside it is user authority.'' The host remains responsible for authentic source labeling when content arrives through other encodings.
+
+\subsection{Retrieval invariant}
+
+For subject $u$, query $q$, and limit $k$, recall is
+
+\begin{equation}
+\begin{aligned}
+R_k(u,q)=\operatorname{TopK}_{m}\{\operatorname{score}(m,q) \mid{}&
+m.u=u,\\[-2pt]
+&m.status=\texttt{active}\}.
+\end{aligned}
+\label{eq:recall}
+\end{equation}
+
+The score combines SQLite FTS5 relevance~\cite{sqlitefts5}, trust, and recency. A minimum score can require lexical evidence. Every retrieval event records the query digest, candidate IDs and scores, returned IDs, thresholds, and session context. Query text is omitted by default.
+
+\property{M1 (Quarantine non-recall)} Assuming records are created only through the admission path and retrieval enforces \cref{eq:recall}, an untrusted candidate cannot be returned before explicit promotion.
+
+\emph{Argument.} Equation~\eqref{eq:admission} assigns every untrusted candidate \code{quarantined}; Equation~\eqref{eq:recall} quantifies only over \code{active} records. Promotion is the only normal transition from quarantined to active. Database tampering or a bypassing read path violates the assumptions and is handled separately by audit verification and deployment controls.
+
+\subsection{Supersession without poisoning}
+
+Facts with stable semantic slots, such as ``preferred airport'' or ``report file,'' may evolve. A new \emph{active} record supersedes active records with the same slot. A quarantined record never triggers supersession. This asymmetry matters: a hostile page can target exactly the same slot as a trusted user fact and still cannot replace it.
+
+Trusted candidates deduplicate only against active records. Otherwise, a previously quarantined copy of the same text could swallow a later genuine user statement and keep it unavailable. Quarantined candidates may deduplicate against active or quarantined records to limit redundant evidence while preserving the active version.
+
+\property{M2 (Trusted-slot preservation)} For an active record $m$ and an incoming untrusted candidate $c$ with the same fact slot, admission of $c$ leaves $m$ active and places $c$ in quarantine.
+
+The property is a direct consequence of the supersession condition: old records are selected only when the new candidate status is active. The flagship experiment targets this exact edge case.
+
+\subsection{Promotion and derived memory}
+
+Promotion is explicit, subject-scoped, and audited. It changes status to active, raises trust to \code{user\_confirmed}, and only then applies same-slot supersession. Deployments that require human-only promotion must not expose the promotion tool to the agent without another approval boundary.
+
+Higher layers are derived rather than independently authoritative:
+
+\begin{itemize}
+  \item \textbf{L0 episodes}: raw ingested turns, subject to purge;
+  \item \textbf{L1 records}: extracted facts with lifecycle and provenance;
+  \item \textbf{L2 scenes}: deterministic session-grouped views;
+  \item \textbf{L3 persona}: live-derived bounded view of active records; and
+  \item \textbf{proposals}: external synthesis results quarantined pending admission.
+\end{itemize}
+
+Because persona and scenes are generated from active L1 state, they do not persist an independent stale copy. Generated context carries record IDs and emits its own audit event.
+
+\subsection{Deletion semantics}
+
+Forget operations match both active and quarantined records. The engine tombstones records, clears content and fact slots, removes FTS entries, purges source episodes that no longer support live records, and returns a deletion receipt. The receipt binds selector digest, purged IDs, event ID, and event hash. This is a logical purge of the live database, not physical sanitization of storage media or downstream copies.
+
+Deletion applies to quarantine because otherwise an injection payload could remain in a hidden review queue after the user requested erasure. It also produces evidence because an unverifiable ``deleted'' response is not enough for a durable privacy workflow.

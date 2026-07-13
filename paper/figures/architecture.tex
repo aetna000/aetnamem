@@ -1,0 +1,71 @@
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  node distance=7mm and 9mm,
+  box/.style={draw=aetnaInk, rounded corners=2pt, minimum height=9mm, minimum width=25mm, align=center, fill=white, line width=.7pt},
+  trusted/.style={box, fill=aetnaTeal!12, draw=aetnaTeal},
+  untrusted/.style={box, fill=aetnaGold!16, draw=aetnaGold!80!black},
+  gate/.style={box, fill=aetnaRed!9, draw=aetnaRed},
+  evidence/.style={box, fill=aetnaPurple!9, draw=aetnaPurple},
+  store/.style={box, cylinder, shape border rotate=90, aspect=.25, fill=aetnaBlue!8, draw=aetnaBlue},
+  flow/.style={-{Latex[length=2.2mm]}, line width=.8pt, draw=aetnaInk},
+  emit/.style={-{Latex[length=2mm]}, dashed, line width=.7pt, draw=aetnaPurple},
+  label/.style={font=\sffamily\scriptsize, text=aetnaInk!85}
+]
+  \node[trusted] (host) {Trusted user / host\\attestation};
+  \node[untrusted, below=9mm of host] (web) {Webpage, tool output,\\assistant-derived text};
+
+  \node[box, right=12mm of host] (classify) {Source classifier\\and extractor};
+  \node[gate, right=of classify] (admit) {Memory admission\\policy};
+  \node[store, right=of admit] (records) {L0 episodes\\L1 records};
+  \node[box, right=of records] (recall) {Active-only ranker\\bounded context};
+  \node[box, right=of recall] (agent) {Agent runtime\\or framework};
+
+  \node[box, below=12mm of classify] (proposal) {Operation proposal\\+ causal evidence};
+  \node[gate, right=of proposal] (policy) {Authority and\\risk policy};
+  \node[evidence, right=of policy] (patch) {Canonical WorldPatch\\exact plan hash};
+  \node[trusted, right=of patch] (reviewer) {Separate reviewer\\expiring HMAC};
+  \node[box, right=of reviewer] (adapter) {Scoped adapter\\prepare / revalidate\\execute / verify};
+  \node[box, right=of adapter] (world) {External world\\or sandbox};
+
+  \node[store, below=17mm of patch, minimum width=31mm] (audit) {Per-subject\\hash-chained audit};
+  \node[store, right=13mm of audit, minimum width=31mm] (payload) {Erasable raw\\payload plane};
+  \node[evidence, right=13mm of payload] (verify) {Standalone verifiers\\stdlib only};
+  \node[evidence, right=13mm of verify] (anchor) {External checkpoint\\or timestamp anchor};
+
+  \draw[flow] (host) -- (classify);
+  \draw[flow] (web) -| (classify);
+  \draw[flow] (classify) -- node[label, above]{candidate + provenance} (admit);
+  \draw[flow] (admit) -- node[label, above]{active / quarantine} (records);
+  \draw[flow] (records) -- (recall);
+  \draw[flow] (recall) -- (agent);
+
+  \draw[flow] (agent.south) |- (proposal.east);
+  \draw[flow] (host.south) |- node[label, near end, above]{authorized\_by} (proposal.west);
+  \draw[flow] (web.south) |- node[label, near end, below]{informed\_by only} (proposal.west);
+  \draw[flow] (proposal) -- (policy);
+  \draw[flow] (policy) -- node[label, above]{allow / deny / review} (patch);
+  \draw[flow] (patch) -- (reviewer);
+  \draw[flow] (reviewer) -- node[label, above]{plan-bound approval} (adapter);
+  \draw[flow] (adapter) -- node[label, above]{effect} (world);
+  \draw[flow] (world) to[bend left=25] node[label, below]{observed state} (adapter);
+
+  \foreach \source in {classify,admit,recall,proposal,policy,patch,reviewer,adapter} {
+    \draw[emit] (\source.south) |- (audit.north);
+  }
+  \draw[emit] (adapter.south) |- (payload.north);
+  \draw[flow] (audit) -- (verify);
+  \draw[flow] (payload) -- (verify);
+  \draw[flow] (audit) -- (anchor);
+  \draw[flow] (anchor) to[bend left=18] (verify);
+
+  \node[label, above=1mm of audit] {digests, transitions, receipts};
+  \node[label, above=1mm of payload] {arguments, before-images, provider results};
+  \node[draw=aetnaInk!55, dashed, rounded corners=3pt, fit=(proposal)(policy)(patch)(reviewer)(adapter), inner sep=4mm,
+        label={[label]below:Guarded-action control path}] {};
+\end{tikzpicture}}
+\caption{Implemented reference architecture. Memory admission and guarded actions share an evidence plane but retain separate mutable payload tables. Dashed arrows denote evidence emission. The current release provides the embedded engine, CLI, memory MCP server, OpenClaw integration, filesystem reference adapter, and standalone verifiers; it does not yet force arbitrary agent frameworks through a universal action gateway.}
+\label{fig:architecture}
+\end{figure*}

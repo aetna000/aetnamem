@@ -1,0 +1,46 @@
+\section{Reference Implementation}
+
+The evaluated artifact is \system{} v0.2.1, an AGPL-3.0 Python package requiring Python 3.10 or newer~\cite{aetnamem2026}. Runtime dependencies are limited to the Python standard library and SQLite. Development adds pytest. The checkout contains approximately 9,380 lines across 42 tracked Python source/test/tool files at the evaluated commit.
+
+\subsection{Storage and interfaces}
+
+SQLite stores episodes, records, FTS5 indexes, retrieval events, audit events, action transactions, operations, dependencies, evidence, approvals, attempts, payloads, and receipts. Python API and CLI expose memory operations, inspection, checkpointing, and guarded actions. The stdio MCP server exposes memory verbs through newline-delimited JSON-RPC. A native TypeScript OpenClaw plugin performs pre-prompt recall and post-turn capture using the same engine.
+
+The action subsystem currently exposes a Python protocol and CLI. Its first adapter supports root-confined UTF-8 \code{write\_text} and \code{delete\_file}. Additional providers and a mandatory mediation gateway are not yet implemented.
+
+\subsection{Atomicity boundary}
+
+The implementation uses SQLite transactions to atomically couple live-state changes and corresponding audit events. For example, a memory record and its \code{record\_created} event succeed or roll back together; deletion, payload purge, and their evidence follow the same rule. External effects are deliberately outside database transactions. The coordinator commits intent before invocation, then records observation and terminal state after invocation.
+
+This boundary avoids holding a database lock across a slow API, but introduces an unavoidable uncertainty window. The state machine makes that window explicit and recoverable rather than pretending distributed effects share SQLite atomicity.
+
+\subsection{Canonicalization and identifiers}
+
+Hashed structures use sorted-key compact JSON, UTF-8, and lowercase SHA-256 hex. Record, event, transaction, operation, evidence, approval, attempt, and receipt identifiers use typed prefixes and random UUID/nonce material. Idempotency keys derive from transaction/operation identity, adapter/operation, and argument digest.
+
+Canonicalization is versioned through document format strings. The action
+plan, approval, receipt, and checkpoint formats each carry a distinct
+\code{v1} identifier. Changing a hashed schema requires a new format version
+rather than silent reinterpretation.
+
+\subsection{Policy compactness}
+
+The critical memory policy is intentionally small: source classification, source-to-trust mapping, initial status, slot-aware supersession, deduplication, and deletion intent. The action policy is similarly narrow: unknown effects fail closed; enforced mutations require at least one trusted, attested authority; and untrusted authority is rejected. These functions contain no benchmark-specific vocabulary and are directly tested with unrelated examples.
+
+Compact policy does not imply a small product surface. It means the decision kernel can be read and tested separately from extraction, ranking, host integration, and adapters.
+
+\subsection{Artifact layout}
+
+The repository distributes:
+
+\begin{itemize}
+  \item machine-readable audit and action specifications;
+  \item standalone verifier programs;
+  \item 88 unit/integration/documentation tests;
+  \item benchmark adapter and target manifest;
+  \item a deterministic flagship driver with hostile HTML fixture;
+  \item an actual SQLite database, checkpoint JSONL, and transcript from the recorded run; and
+  \item this paper's pinned CSV data, plotting script, diagrams, evidence validator, and LaTeX source.
+\end{itemize}
+
+The paper build does not scrape the live leaderboard. This prevents an updated website from silently changing a submitted figure. Data provenance records source commit and SHA-256 digests; refresh is a deliberate operation.

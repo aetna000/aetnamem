@@ -1,0 +1,37 @@
+\section{Introduction}
+
+Agent systems increasingly interleave model inference with retrieval, persistent memory, and tool calls. ReAct makes reasoning and acting explicit in one trajectory~\cite{yao2023react}; Toolformer demonstrates models that select and invoke APIs~\cite{schick2023toolformer}; and memory architectures such as Generative Agents, MemoryBank, and MemGPT retain information across interactions~\cite{park2023generative,zhong2023memorybank,packer2023memgpt}. These capabilities are useful precisely because they move information and alter state. They are dangerous for the same reason.
+
+The usual agent diagram ends at ``tool result.'' That endpoint is too early for a dependable system. A tool call may have lacked authority, executed a stale plan, raced with another writer, returned success without changing the world, changed the world before timing out, or left a result that cannot later be attributed to the approved request. Persistent memory adds a second delayed channel: a hostile webpage can influence a model in one session, become stored as a user fact, and authorize or bias an effect in a later session. Indirect prompt injection is therefore not only a prompt-level problem~\cite{greshake2023indirect,debenedetti2024agentdojo}. It is an information-flow, authority, transaction, and evidence problem.
+
+Classical systems security offers durable principles: fail-safe defaults, complete mediation, separation of privilege, and least privilege~\cite{saltzer1975protection}; capability-based authority~\cite{dennis1966capabilities,miller2003capability}; compensating transactions for effects that cannot be atomically rolled back~\cite{garciamolina1987sagas}; provenance that explains where data came from~\cite{buneman2001provenance}; and tamper-evident logs anchored outside the system they describe~\cite{schneier1998securelogs,haber1991timestamp}. The central thesis of this work is that an agent control plane should apply those ideas around a fallible model rather than expecting the model to emulate them reliably in natural language.
+
+\system{} is a compact reference implementation of that thesis. It is not another agent loop and does not depend on a particular model, planner, or host. It supplies policy-bearing memory, guarded external actions, and a shared evidence ledger that can sit beneath OpenClaw, Hermes-like hosts, LangGraph, Letta, or any process able to call Python, a CLI, or MCP. The language model may propose; the control plane decides whether the proposal can become durable state or an external effect.
+
+\subsection{Design question}
+
+We ask:
+
+\begin{quote}
+\emph{Can a small, framework-neutral systems layer preserve useful agent memory and tool access while ensuring that untrusted information does not silently become authority, approved intent cannot drift before execution, ambiguous effects remain explicit, and historical claims are independently checkable?}
+\end{quote}
+
+This question is narrower than ``solve agent safety.'' It is also more operational. The desired output is not merely a refusal message. It is a set of durable artifacts: source classification, policy decision, exact plan, approval scope, before-state evidence, execution attempt, observed after-state, receipt, and a chain position that another implementation can verify.
+
+\subsection{Contributions}
+
+This report makes five contributions.
+
+\begin{enumerate}
+  \item \textbf{Information-authority separation.} Evidence references carry both a causal relation (\code{informed\_by} or \code{authorized\_by}) and a trust tier. Untrusted content may shape a proposal but cannot authorize an enforced mutation.
+  \item \textbf{Trust-aware persistent memory.} Webpage, tool-output, and derived facts enter quarantine with provenance; only active records are recallable; and quarantined values cannot supersede trusted facts until explicit promotion.
+  \item \textbf{Exact-plan guarded actions.} Canonical \worldpatch{} documents bind arguments, previews, preconditions, adapter manifests, dependencies, evidence, policy, and identity context into a plan hash. Approval and terminal receipts bind to that exact plan.
+  \item \textbf{Dual-plane, independently verifiable evidence.} Raw erasable payloads are separated from digest-only append history. Per-subject hash chains, checkpoints, deletion receipts, action receipts, and standard-library verifiers make database claims testable without importing \system{} code.
+  \item \textbf{Reproducible evaluation artifacts.} We report a pinned benchmark snapshot, a fresh current-version rerun, the complete 88-test repository suite, and a deterministic hostile-page/action demonstration whose SQLite database and checkpoints are distributed with the code.
+\end{enumerate}
+
+\subsection{Headline result, stated precisely}
+
+The \system{} adapter achieves 33/33 checks and 5/5 scenarios on \benchmark{}~\cite{memorystackbench2026}. In colloquial terms it ``aced'' the suite. Scientifically, three qualifiers matter. First, the target is a deterministic engine with no language model, so this result does not measure model intelligence. Second, eleven other targets also reach 33/33 in the pinned snapshot, so this is perfect conformance rather than a unique win. Third, the same GitHub account maintains \system{} and \benchmark; we therefore describe the run as reproducible self-evaluation, not independent third-party validation. These qualifiers do not weaken the executable result; they define what it means.
+
+The remainder of the paper defines the threat model, presents the architecture and protocols, reports evaluation results, and separates implemented guarantees from deployment assumptions and roadmap work.

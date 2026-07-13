@@ -1,0 +1,55 @@
+\section{Architecture}
+
+\input{figures/architecture}
+
+\Cref{fig:architecture} shows two policy paths sharing one evidence substrate. The upper path governs what becomes durable and recallable. The lower path governs what may alter the world. Both paths emit causal metadata and digests into a per-subject event chain, while raw content and before-images remain in mutable tables with explicit retention semantics.
+
+\subsection{Control-plane decomposition}
+
+The architecture is organized into seven logical stages.
+
+\paragraph{1. Origin-aware ingestion.} The host supplies or derives source class, subject, session, and turn. The extractor proposes facts but does not choose their authority. In the reference extractor, user statements and embedded webpage/tool payloads are deterministically distinguished.
+
+\paragraph{2. Memory policy.} Candidate facts receive a trust tier and initial lifecycle state. Trusted user facts become active. Untrusted or derived facts become quarantined and retain their origin, episode, confidence, slot, session, and turn.
+
+\paragraph{3. Active-only context construction.} Recall ranks only active records and writes candidate/score evidence. Persona and context blocks are live-derived, bounded, and annotated with source record identifiers, reducing stale cached summaries and feedback loops.
+
+\paragraph{4. Intent compilation.} An action proposal is normalized by an adapter into typed arguments, preview, effect class, preconditions, sensitive-field declarations, and a manifest fingerprint. Dependencies and evidence are ordered canonically. The resulting \worldpatch{} is content-addressed.
+
+\paragraph{5. Authority and approval.} Policy checks evidence before a plan can enter an executable state. A separate reviewer signs the exact plan hash with an expiry and nonce. The key is absent from the agent-facing process.
+
+\paragraph{6. Scoped execution and verification.} Commit recomputes the persisted plan, checks approval, verifies adapter identity, revalidates all preconditions, then crosses the external boundary. The adapter observes after-state and verifies the postcondition. Ambiguity is represented as uncertainty, not success.
+
+\paragraph{7. Evidence admission.} Every transition emits a structural event. A receipt binds terminal state and operation digests to the plan and event chain. Standalone verifiers recompute these relationships. Checkpoints export chain heads to a separate trust domain.
+
+\subsection{Three planes, not one log}
+
+A single append-only log cannot simultaneously maximize audit integrity, operational utility, privacy, and erasure. \system{} therefore separates:
+
+\begin{description}
+  \item[Live state plane.] Episodes, records, retrieval details, action transactions, and status needed for normal operation.
+  \item[Sensitive payload plane.] Raw action arguments, previews, before-images, provider results, compensation material, and optionally retained query text. This plane is explicitly purgeable.
+  \item[Evidence plane.] Event types, identities as claimed/attested, record and operation IDs, hashes, transitions, and receipt bindings. Engine-generated events avoid raw fact values and secrets.
+\end{description}
+
+This is not full cryptographic privacy. Digests can leak equality and are vulnerable to dictionary attacks when the underlying value has low entropy. The split instead provides a tractable retention boundary: structural accountability can survive after operational payloads are purged.
+
+\subsection{Framework neutrality}
+
+Framework neutrality means the policy semantics do not depend on the agent loop. The same core can be reached through Python, CLI, stdio MCP, or a host-native lifecycle adapter. A framework integration should remain thin:
+
+\begin{itemize}
+  \item before model context assembly, request a bounded persona/recall block;
+  \item after a turn, capture user facts and log assistant/tool content as classified data or digests;
+  \item for a mutation, submit a typed proposal and causal evidence rather than a raw shell handle;
+  \item keep reviewer authority in another process; and
+  \item retain audit identifiers in the host's own trace.
+\end{itemize}
+
+This pattern allows a host to replace its model or planner without silently replacing memory and action semantics. Complete mediation remains a deployment property: direct write tools must be removed or separately confined.
+
+\subsection{Dual-entry evidence}
+
+We use \emph{dual-entry} as an engineering metaphor, not a claim of formal accounting equivalence. The intent side records what was authorized: plan, policy, authority, dependencies, and preconditions. The effect side records what the adapter attempted and observed: provider request identifier, result digest, after-state, verification, and compensation. A transaction is trustworthy only when these entries reconcile through the same plan and operation identifiers. A receipt that says ``success'' without a matching intent record is insufficient; an approved intent without verified after-state is also insufficient.
+
+In later work, independent provider observers could make this reconciliation three-party. In v0.2.1, postcondition verification is adapter-specific, while ledger verification is implemented by separate code paths.

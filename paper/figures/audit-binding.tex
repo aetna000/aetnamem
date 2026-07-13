@@ -1,0 +1,44 @@
+\begin{figure*}[t]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  event/.style={draw=aetnaBlue, rounded corners=2pt, minimum width=27mm, minimum height=13mm, align=center, fill=aetnaBlue!7},
+  artifact/.style={draw=aetnaPurple, rounded corners=2pt, minimum width=31mm, minimum height=12mm, align=center, fill=aetnaPurple!8},
+  verifier/.style={draw=aetnaTeal, rounded corners=2pt, minimum width=31mm, minimum height=12mm, align=center, fill=aetnaTeal!9},
+  arrow/.style={-{Latex[length=2.2mm]}, line width=.8pt, draw=aetnaInk},
+  bind/.style={-{Latex[length=2.2mm]}, dashed, line width=.8pt, draw=aetnaPurple},
+  tinylabel/.style={font=\sffamily\scriptsize, text=aetnaInk!80, align=center}
+]
+  \node[event] (e1) {$e_1$\\episode ingested\\$h_1=H(e_1,\bot)$};
+  \node[event, right=8mm of e1] (e4) {$e_4$\\record quarantined\\$h_4=H(e_4,h_3)$};
+  \node[event, right=8mm of e4] (e6) {$e_6$\\action proposed\\$h_6=H(e_6,h_5)$};
+  \node[event, right=8mm of e6] (e7) {$e_7$\\plan approved\\$h_7=H(e_7,h_6)$};
+  \node[event, right=8mm of e7] (e12) {$e_{12}$\\receipt issued\\$h_{12}=H(e_{12},h_{11})$};
+
+  \draw[arrow] (e1) -- node[tinylabel, above]{previous hash} (e4);
+  \draw[arrow] (e4) -- node[tinylabel, above]{previous hash} (e6);
+  \draw[arrow] (e6) -- node[tinylabel, above]{previous hash} (e7);
+  \draw[arrow] (e7) -- node[tinylabel, above]{previous hash} (e12);
+
+  \node[artifact, below=17mm of e6] (plan) {WorldPatch\\plan hash $p$};
+  \node[artifact, below=17mm of e7] (approval) {Approval\\$\mathrm{HMAC}_k(p,\mathrm{scope},t,n)$};
+  \node[artifact, below=17mm of e12] (receipt) {Action receipt\\$H(p,\mathrm{terminal},\mathrm{ops},h_{12})$};
+  \node[artifact, right=12mm of e12] (checkpoint) {Checkpoint\\subject head $(12,h_{12})$};
+  \node[verifier, below=17mm of checkpoint] (verify) {Standalone verifier\\recompute chain, plan,\\approval, and receipt};
+
+  \draw[bind] (plan) -- (e6);
+  \draw[bind] (plan) -- (approval);
+  \draw[bind] (approval) -- (e7);
+  \draw[bind] (plan) -- (receipt);
+  \draw[bind] (receipt) -- (e12);
+  \draw[bind] (e12) -- (checkpoint);
+  \draw[arrow] (checkpoint) -- (verify);
+  \draw[arrow] (receipt) -- (verify);
+  \draw[arrow] (plan) |- (verify);
+
+  \node[tinylabel, below=3mm of e4] {Changing \texttt{quarantined} to \texttt{active} changes $h_4$\\and invalidates the recorded suffix/checkpoint.};
+\end{tikzpicture}}
+\caption{Evidence binding in the recorded flagship run (intermediate events are visually elided, not omitted from verification). Hash chaining detects prefix mutation; an externally held checkpoint is required to detect whole-history replacement or suffix truncation. The construction is tamper-evident, not tamper-proof.}
+\label{fig:audit-binding}
+\end{figure*}

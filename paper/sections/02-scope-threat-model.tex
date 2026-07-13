@@ -1,0 +1,57 @@
+\section{Scope, Terminology, and Threat Model}
+
+\subsection{System boundary}
+
+We use \emph{agent} for the model-driven process that interprets a task and proposes memory or tool operations. We use \emph{host} for the process that knows channel identity, origin, session context, and deployment policy. A \emph{reviewer} holds approval authority outside the agent-facing process. An \emph{adapter} translates a typed operation into a provider-specific effect and observation. The \emph{world} is the mutable external resource, such as a filesystem, mailbox, browser, cloud API, or database.
+
+\system{} is a control plane, not a model. It can run below a deterministic script, an LLM agent, or a human-operated CLI. In the current implementation, memory tools are available through MCP and a native OpenClaw plugin, while guarded actions are exposed through Python and CLI interfaces. A universal action-interception MCP gateway remains roadmap work.
+
+\subsection{Assets and adversaries}
+
+The protected assets are: (i) trusted active memory; (ii) user data named in memory and action payloads; (iii) external resources reachable through adapters; (iv) reviewer approval authority; and (v) the integrity and continuity of the evidence history.
+
+We consider an adversary who can:
+
+\begin{itemize}
+  \item place arbitrary instructions in webpages, documents, tool output, or assistant-generated text that an agent processes;
+  \item induce the agent to propose an operation, cite malicious content as evidence, omit authority, or modify a proposal after review;
+  \item modify mutable SQLite rows after staging or after execution;
+  \item edit, insert, reorder, or delete local audit rows and replace local artifacts;
+  \item trigger exceptions or process interruption around an external-effect boundary; and
+  \item race external resource state between proposal and commit.
+\end{itemize}
+
+The base analysis assumes the adversary cannot break SHA-256 collision resistance or HMAC unforgeability, obtain the reviewer key, alter a genuinely external checkpoint anchor, or compromise the trusted host's source/identity attestation. Compromise of those roots of trust is discussed as residual risk.
+
+\subsection{Security goals}
+
+\begin{table}[t]
+\centering
+\caption{Security goals and their concrete enforcement points.}
+\label{tab:goals}
+\scriptsize
+\begin{tabularx}{\columnwidth}{@{}p{19mm}YY@{}}
+\toprule
+Goal & Required behavior & Enforcement point \\
+\midrule
+G1 Origin integrity & Preserve source class and provenance for every candidate fact & Host/classifier, record schema, audit event \\
+G2 Quarantine & Prevent untrusted facts from recall or trusted supersession & Admission policy, active-only retrieval \\
+G3 Authority & Prevent informational evidence from authorizing mutation & Evidence relation, trust tier, attestation check \\
+G4 Exact intent & Execute only the reviewed operational plan & Canonical plan hash, approval signature, commit recomputation \\
+G5 Fresh world state & Abort or compensate when assumptions change & Before-image preconditions and revalidation \\
+G6 Outcome evidence & Distinguish requested, attempted, observed, and verified state & Adapter receipt, postcondition verification, terminal receipt \\
+G7 Historical integrity & Detect local history manipulation relative to a trusted anchor & Hash chain, checkpoint, standalone verifier \\
+G8 Erasure boundary & Purge live content without erasing structural accountability & Mutable payload plane, digest-only audit plane \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Non-goals}
+
+The current release does not claim to: detect every prompt injection; authenticate a caller that lies about \code{source\_type}; force an agent through the gate when it also has direct write tools; provide a hardened operating-system sandbox; prove adapter correctness; offer non-repudiation from a shared HMAC key; make SQLite bytes disappear from free pages, WAL files, backups, or replicas; provide Byzantine consensus; or establish legal/regulatory compliance. It also does not claim statistical generalization from five deterministic benchmark scenarios. These boundaries are part of the design contract, not footnotes to it.
+
+\subsection{Trusted computing base}
+
+The trusted computing base (TCB) consists of the source classifier or host attestation, deterministic policy functions, canonical serializer and hash primitives, approval-key custody, adapter implementation, SQLite/OS behavior, verifier implementation, and external checkpoint sink. The agent and untrusted content are explicitly outside the TCB. A model may be fully prompt-injected and still encounter deterministic denials, provided complete mediation holds at deployment.
+
+This decomposition echoes the instruction/data separation pursued by instruction-hierarchy training~\cite{wallace2024hierarchy} and CaMeL's control/data-flow separation~\cite{debenedetti2025camel}, but moves the enforcement target into persistent memory and transaction evidence. Unlike CaMeL, \system{} does not presently claim a formal information-flow proof or universal mediation.

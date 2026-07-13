@@ -1,0 +1,105 @@
+\section{Guarded Actions}
+
+The action engine treats tool mutation as a durable causal transaction. The model may propose arbitrary text, but only a typed adapter can prepare an executable operation, and only an exact approved plan can cross the external-effect boundary.
+
+\subsection{Evidence is not authority}
+
+Each evidence reference is a tuple
+
+\begin{equation}
+e=(\mathrm{kind},\mathrm{ref},\mathrm{digest},\mathrm{relation},\mathrm{trust},\mathrm{attested}),
+\end{equation}
+
+where relation is either \code{informed\_by} or \code{authorized\_by}. The distinction is structural, not prompt wording. A webpage may legitimately inform an operation (for example, supply a shipping quote) while lacking authority to change the user's delivery address.
+
+For a prepared operation $o$, evidence set $E$, and mode $\mu$, the core policy is:
+
+\begin{equation}
+\begin{aligned}
+d(o)=\texttt{unknown\_blocked}
+  &\implies \neg\operatorname{allow}(o,E,\mu),\\
+\mathsf{mut}(o)\land A(E)=\varnothing
+  &\implies \neg\operatorname{allow}(o,E,\texttt{enforce}).
+\end{aligned}
+\end{equation}
+
+Here $\mathsf{mut}(o)$ denotes a mutating effect, and
+
+\begin{equation}
+\begin{aligned}
+A(E)=\{e\in E \mid{}&e.relation=\texttt{authorized\_by},\\[-2pt]
+&e.trust\in T,\ e.attested\},
+\end{aligned}
+\end{equation}
+
+and $T=\{\texttt{trusted\_user},\texttt{user\_confirmed}\}$. Any purported authority outside $T$ is rejected even when another valid authority exists; this avoids silently accepting contaminated authority sets.
+
+\property{A1 (Non-escalation of information)} An evidence reference marked \code{informed\_by} can never satisfy the enforced-mutation authority requirement. An \code{authorized\_by} reference with untrusted tier or absent host attestation is rejected.
+
+\subsection{Canonical WorldPatch}
+
+An operation proposal names an adapter, typed operation, arguments, causal evidence, and dependencies. Adapter preparation returns normalized arguments, preview, preconditions, effect class, and sensitive fields. The engine computes digests for arguments, preview, preconditions, and adapter manifest. It topologically orders operations and rejects unknown dependencies or cycles.
+
+Let $J(x)=\canon(x)$ denote UTF-8 JSON with sorted keys and no insignificant whitespace, and $H(x)=\sha(J(x))$. The plan hash is
+
+\begin{equation}
+p=H(\mathrm{format},tx,u,a,\mu,v,H(\mathrm{policy}),[o_1,\ldots,o_n]),
+\label{eq:planhash}
+\end{equation}
+
+where every $o_i$ contains operation identity, effect class, argument/preview/precondition/manifest digests, dependency IDs, and sorted evidence. Transaction, subject, actor, mode, plan version, and policy are therefore in approval scope.
+
+\subsection{Approval}
+
+In enforce mode, a valid proposal enters \code{awaiting\_approval}. A separate process issues
+
+\begin{equation}
+\sigma=\operatorname{HMAC}_{k}(J(tx,p,\mathrm{approver},t_i,t_e,n,\mathrm{format})),
+\label{eq:approval}
+\end{equation}
+
+using SHA-256 HMAC~\cite{krawczyk1997hmac}. The document contains issue/expiry time and a 128-bit random nonce. The database enforces nonce uniqueness. The shared key demonstrates possession of $k$, not the real-world identity of the free-text approver label. KMS-backed asymmetric signers can implement the same issue/verify surface in future deployments.
+
+\property{A2 (Exact-plan approval)} Under HMAC unforgeability and hash collision resistance, an approval for plan hash $p$ cannot authorize a different plan $p'$ unless the verifier is bypassed, the key is compromised, or a relevant hash collision is found.
+
+\subsection{Commit protocol}
+
+Before the first effect, commit performs the following checks:
+
+\begin{enumerate}
+  \item transaction mode is \code{enforce} and state is \code{approved};
+  \item the persisted plan recomputes to the recorded hash;
+  \item a matching proposed event exists on the subject chain;
+  \item approval digest, signature, scope, and expiry are valid;
+  \item current adapter manifests match approved manifest digests; and
+  \item every operation's preconditions still hold.
+\end{enumerate}
+
+The engine then durably enters \code{committing}. Immediately before each operation it revalidates preconditions again, records \code{effect\_executing}, and only then invokes the adapter with a deterministic idempotency key. The adapter returns a provider request ID, result, and observed after-state. A separate adapter method re-reads authoritative state and verifies the postcondition.
+
+\input{figures/action-state-machine}
+
+\subsection{Effect classes}
+
+Adapters classify operations as:
+
+\begin{description}
+  \item[read only] no mutation;
+  \item[transactional reversible] provider supplies atomic rollback semantics;
+  \item[verified compensatable] before-state can be restored and checked, but external observers may have seen the effect;
+  \item[irreversible staged] execution requires explicit staging and cannot be generically undone;
+  \item[observe only] no execution; or
+  \item[unknown blocked] fail closed.
+\end{description}
+
+The filesystem reference adapter is \code{verified\_compensatable}, not transactional. It confines relative paths to a configured root, rejects symlinks and non-regular files, captures content hash/mode/before-image, atomically replaces file contents, and verifies observed existence/hash/mode. Filesystem hooks and observers can still see intermediate effects; compensation is not time reversal.
+
+\subsection{Failure and uncertainty}
+
+No SQLite transaction remains open while a provider call runs. If dispatch raises, the system cannot generally know whether the provider applied the effect before failing. The operation and transaction become \code{uncertain}; already verified earlier operations are compensated where possible. A process that dies in \code{committing} is fenced by recovery into \code{recovery\_required}. Generic recovery never blindly retries. Provider-specific idempotency lookup or authoritative read must resolve the outcome.
+
+\property{A3 (No success by assertion)} A transaction reaches \code{committed} only after every operation's postcondition verifier returns true. Provider return alone is insufficient.
+
+\property{A4 (No generic blind retry)} An interrupted in-flight effect is represented as uncertain/recovery-required until provider-specific reconciliation. This avoids turning an ambiguous first execution into an unintended duplicate.
+
+These are state-machine invariants of the reference implementation, not guarantees that an adapter's observation is semantically complete.

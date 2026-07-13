@@ -1,0 +1,41 @@
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  font=\sffamily\footnotesize,
+  state/.style={draw=aetnaInk, rounded corners=2pt, minimum width=21mm, minimum height=8mm, align=center, fill=white},
+  terminal/.style={state, double, double distance=1pt, fill=aetnaTeal!9},
+  danger/.style={state, double, double distance=1pt, fill=aetnaRed!8, draw=aetnaRed},
+  arrow/.style={-{Latex[length=2.2mm]}, line width=.75pt, draw=aetnaInk},
+  fail/.style={-{Latex[length=2.2mm]}, line width=.75pt, draw=aetnaRed},
+  note/.style={font=\sffamily\scriptsize, align=center, text=aetnaInk!85}
+]
+  \node[state] (proposed) {proposal\\validated};
+  \node[state, right=11mm of proposed] (await) {awaiting\\approval};
+  \node[state, right=11mm of await] (approved) {approved};
+  \node[state, right=11mm of approved] (committing) {committing};
+  \node[terminal, right=11mm of committing] (committed) {committed};
+
+  \node[terminal, below=15mm of await] (aborted) {aborted};
+  \node[danger, below left=15mm and 11mm of committing] (uncertain) {uncertain};
+  \node[danger, below=15mm of committing] (recovery) {recovery\\required};
+  \node[state, below right=15mm and 11mm of committing] (compensating) {compensating};
+  \node[danger, below left=13mm and 3mm of compensating] (partial) {partial};
+  \node[terminal, below right=13mm and 3mm of compensating] (compensated) {compensated};
+
+  \draw[arrow] (proposed) -- node[note, above]{policy gate} (await);
+  \draw[arrow] (await) -- node[note, above]{bound approval} (approved);
+  \draw[arrow] (approved) -- node[note, above]{revalidate} (committing);
+  \draw[arrow] (committing) -- node[note, above]{verify} (committed);
+
+  \draw[fail] (await) -- node[note, left]{abort} (aborted);
+  \draw[fail] (approved) to[bend right=18] node[note, below left]{stale} (aborted);
+  \draw[fail] (committing) -- node[note, above left]{ambiguous} (uncertain);
+  \draw[fail] (committing) -- node[note, right]{interrupted} (recovery);
+  \draw[fail] (committing) -- node[note, above right]{later failure} (compensating);
+  \draw[fail] (recovery) -- node[note, above]{resolve} (uncertain);
+  \draw[fail] (compensating) -- node[note, below left]{failed} (partial);
+  \draw[arrow] (compensating) -- node[note, below right]{restored} (compensated);
+\end{tikzpicture}
+\caption{Guarded-action lifecycle. Database transactions protect ledger transitions, not external effects. The engine records execution intent before crossing the adapter boundary and represents ambiguous outcomes explicitly as \emph{uncertain} or \emph{recovery required}.}
+\label{fig:action-state}
+\end{figure*}

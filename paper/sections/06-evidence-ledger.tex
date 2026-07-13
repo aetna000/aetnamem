@@ -1,0 +1,57 @@
+\section{Evidence Ledger and Independent Verification}
+
+The evidence ledger makes claims falsifiable after execution. It does not prevent all compromise; it provides a cryptographic consistency relation between events, plans, receipts, and externally pinned history.
+
+\subsection{Per-subject event chain}
+
+Each event stores sequence, event ID, subject, type, UTC time, actor, optional session/turn/record, canonical payload, previous hash, and event hash. For subject $u$,
+
+\begin{equation}
+h_i=H(\mathrm{id}_i,u,\mathrm{type}_i,t_i,a_i,s_i,r_i,\mathrm{payload}_i,h_{i-1}),
+\label{eq:eventhash}
+\end{equation}
+
+with $h_0=\bot$. Global sequence numbers order database insertion, while chain links are per subject. The verifier recomputes every event preimage and checks continuity.
+
+Engine-generated memory events contain message/query/selector digests and structural metadata rather than raw values. Action events similarly carry plan, result, observation, and error digests while raw payloads live elsewhere. Low-level custom action logging can still accept arbitrary caller payloads, so deployment code must preserve this convention.
+
+\subsection{Checkpoints}
+
+A checkpoint stores, for every subject, the current sequence, head hash, and event count, then hashes the checkpoint document itself. Verification applies a containment rule: the pinned sequence must exist and have the pinned hash. A checkpoint must be copied to a trust domain the database owner cannot rewrite, such as WORM object storage, a transparency service, or an RFC~3161 timestamp authority~\cite{adams2001timestamp}. A checkpoint left beside the database mainly detects accidents.
+
+Hash chaining detects editing, insertion, reordering, and middle deletion when the verifier has a trusted expected head. It cannot by itself detect deleting a suffix or replacing the entire database and recomputing every hash. The external head closes that gap relative to its anchoring time.
+
+\subsection{Receipts}
+
+A deletion receipt binds subject, time, selector digest, purged record/episode IDs, audit event ID/hash, and receipt digest. An action receipt binds transaction, subject, exact plan hash, terminal state, operation-result/compensation digests, audit event ID/hash, and receipt digest. Verification requires:
+
+\begin{enumerate}
+  \item the receipt digest recomputes;
+  \item its event exists on a valid subject chain;
+  \item the event hash equals the receipt's bound hash;
+  \item event payload and receipt agree on transaction, plan, terminal state, and operation digest; and
+  \item plan and recorded operational tables recompute consistently.
+\end{enumerate}
+
+\input{figures/audit-binding}
+
+\subsection{Independent implementations}
+
+The repository ships two Python-standard-library programs. \code{verify\_audit.py} implements the event-chain, checkpoint, and deletion-receipt rules without importing \system. \code{verify\_actions.py} additionally reconstructs \worldpatch, validates approval scope and optional HMAC, and checks action receipt bindings. This is implementation independence: a defect in the engine's self-check need not be repeated by calling the same library. It is not organizational independence; both programs are maintained in the same project.
+
+\property{E1 (Mutation detection relative to an anchor)} If an adversary modifies an event at or before a trusted checkpoint's pinned head without finding a hash collision, then either the chain rule or checkpoint containment check fails.
+
+\emph{Argument.} Modifying event $e_j$ changes $h_j$ by \cref{eq:eventhash}. Retaining the old suffix breaks the next \code{prev\_hash}; recomputing the suffix changes the pinned head. Deleting the suffix fails containment. Replacing the external checkpoint lies outside the assumption.
+
+\subsection{Evidence is not truth}
+
+The ledger proves consistency among recorded assertions. It does not make a false adapter observation true, authenticate a forged host source label, or prove that no unlogged side channel existed. In particular:
+
+\begin{itemize}
+  \item \emph{integrity} means recorded bytes have a consistent hash history;
+  \item \emph{authenticity} depends on keys, host identity, and adapter/provider evidence;
+  \item \emph{completeness} depends on mediation and event coverage; and
+  \item \emph{semantic correctness} depends on policy and verifiers.
+\end{itemize}
+
+This distinction avoids treating ``blockchain-like'' logging as a substitute for access control or trustworthy observation.

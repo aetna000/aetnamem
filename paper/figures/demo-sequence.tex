@@ -1,0 +1,43 @@
+\begin{figure*}[t]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  actor/.style={draw=aetnaInk, rounded corners=2pt, minimum width=27mm, minimum height=8mm, align=center, fill=white},
+  lifeline/.style={draw=aetnaInk!35, dashed},
+  msg/.style={-{Latex[length=2mm]}, line width=.75pt, draw=aetnaInk},
+  refuse/.style={-{Latex[length=2mm]}, line width=.8pt, draw=aetnaRed},
+  pass/.style={-{Latex[length=2mm]}, line width=.8pt, draw=aetnaTeal},
+  detect/.style={-{Latex[length=2mm]}, line width=.8pt, draw=aetnaPurple},
+  label/.style={font=\sffamily\scriptsize, align=center, fill=white, inner sep=1.5pt}
+]
+  \node[actor] (page) at (0,0) {Web / tool data};
+  \node[actor] (agent) at (3.4,0) {Agent + trusted host};
+  \node[actor] (engine) at (6.8,0) {aetnamem policy};
+  \node[actor] (reviewer) at (10.2,0) {Reviewer process};
+  \node[actor] (world) at (13.6,0) {Adapter + world};
+  \node[actor] (verifier) at (17,0) {Independent code-path\\verifiers};
+  \foreach \node in {page,agent,engine,reviewer,world,verifier} {
+    \draw[lifeline] (\node.south) -- ++(0,-9.8);
+  }
+
+  \draw[msg] (agent.south |- 0,-1) -- node[label, above]{trusted fact: \texttt{report.md}} (engine.south |- 0,-1);
+  \draw[pass] (engine.south |- 0,-1.55) -- node[label, above]{active record} (agent.south |- 0,-1.55);
+  \draw[msg] (page.south |- 0,-2.25) -- node[label, above]{hidden instruction: attacker path} (agent.south |- 0,-2.25);
+  \draw[msg] (agent.south |- 0,-2.8) -- node[label, above]{classified webpage content} (engine.south |- 0,-2.8);
+  \draw[refuse] (engine.south |- 0,-3.35) -- node[label, above]{quarantined; never recalled} (agent.south |- 0,-3.35);
+
+  \draw[msg] (agent.south |- 0,-4.15) -- node[label, above]{stage exfil; poison cited as authority} (engine.south |- 0,-4.15);
+  \draw[refuse] (engine.south |- 0,-4.7) -- node[label, above]{refuse: untrusted data cannot authorize} (agent.south |- 0,-4.7);
+  \draw[msg] (agent.south |- 0,-5.45) -- node[label, above]{host-attested task + operation} (engine.south |- 0,-5.45);
+  \draw[pass] (engine.south |- 0,-6.0) -- node[label, above]{WorldPatch + exact plan hash} (reviewer.south |- 0,-6.0);
+  \draw[pass] (reviewer.south |- 0,-6.55) -- node[label, above]{expiring plan-bound approval} (engine.south |- 0,-6.55);
+  \draw[pass] (engine.south |- 0,-7.1) -- node[label, above]{revalidate, execute, observe} (world.south |- 0,-7.1);
+  \draw[pass] (world.south |- 0,-7.65) -- node[label, above]{verified result} (engine.south |- 0,-7.65);
+  \draw[pass] (engine.south |- 0,-8.2) -- node[label, above]{chain-bound receipt} (agent.south |- 0,-8.2);
+  \draw[msg] (engine.south |- 0,-8.75) -- node[label, above]{database + checkpoint} (verifier.south |- 0,-8.75);
+  \draw[detect] (verifier.south |- 0,-9.3) -- node[label, above]{valid original; reject plan/history mutations} (agent.south |- 0,-9.3);
+\end{tikzpicture}}
+\caption{Flagship demonstration sequence. The LLM is intentionally absent: the experiment isolates control-plane behavior with deterministic inputs. Refusal behavior is asserted by exit status, and final claims are checked from the produced database rather than inferred from a video or transcript.}
+\label{fig:demo-sequence}
+\end{figure*}

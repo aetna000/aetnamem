@@ -1,0 +1,45 @@
+\section{Limitations and Roadmap}
+\label{sec:limitations}
+
+\subsection{Evaluation limitations}
+
+The benchmark has only five scenarios and 33 assertions. They are deterministic, public, and visible to the implementer. Passing them cannot estimate a field attack rate, robustness to paraphrase, multilingual injection, multimodal content, long-horizon drift, or adaptive adversaries. The flagship demonstration is one carefully chosen vertical slice. Its value is inspectable causality, not breadth.
+
+The benchmark and project share a maintainer, and the ``independent'' verifiers share a repository and author. An external team should rerun the artifacts, inspect adapter semantics, add hidden scenarios, and implement at least one verifier from the written specification.
+
+The public comparison mixes native memory agents, managed services, direct APIs, store-level harnesses, and conversation-session persistence. A 33/33 harness may include explicit adapter policy not present in every default product path. The paper therefore avoids broad competitive claims.
+
+\subsection{Implementation limitations}
+
+\paragraph{No universal action gateway.} Memory MCP exists, but guarded actions are not yet exposed as a mandatory MCP interception layer. An agent with another filesystem or network tool can bypass the reference engine.
+
+\paragraph{Host-attested, not cryptographically authenticated, source and authority.} The engine trusts source type and CLI authority flags supplied by the host. Subject IDs are storage scopes, not authenticated tenants.
+
+\paragraph{Shared-key approval.} HMAC is a practical local primitive but lacks signer non-repudiation and makes key distribution/rotation operationally sensitive. Approver labels are claims.
+
+\paragraph{One narrow adapter.} The filesystem vertical slice supports two operations. Email, browser, database, cloud, messaging, payment, and code-execution adapters need provider-specific preconditions, idempotency, observation, and compensation.
+
+\paragraph{Adapter-coupled verification.} The same adapter family prepares, executes, and verifies. Separate observer credentials and implementations would reduce correlated failure.
+
+\paragraph{Deterministic extraction and lexical retrieval.} Generic patterns and FTS5 make behavior reproducible but limit semantic coverage. Model-backed extraction and vector retrieval remain future work and must preserve quarantine semantics.
+
+\paragraph{Storage and deployment maturity.} SQLite is the only storage backend. Payload encryption, remote multi-tenant service hardening, KMS integration, role-based administration, secure checkpoint publication, and operational observability remain deployment work.
+
+\paragraph{No formal proof or machine-checked model.} Properties in this report are code-level arguments under stated assumptions. The state machine and schemas have not been verified in TLA+, Alloy, Coq, Lean, or a model checker.
+
+\subsection{Roadmap}
+
+The highest-leverage next steps are:
+
+\begin{enumerate}
+  \item \textbf{Complete mediation:} add an authenticated action gateway for MCP/HTTP hosts and remove direct mutation capabilities from agent-facing processes.
+  \item \textbf{Asymmetric approval:} define a signer interface for KMS/HSM/passkey-backed signatures, key identifiers, rotation, revocation, and role policy.
+  \item \textbf{Independent observation:} support read-only verifier principals and provider audit-log correlation distinct from executor credentials.
+  \item \textbf{Provider adapters:} implement conditional/idempotent adapters for email, calendars, Git, cloud storage, databases, browsers, and messaging.
+  \item \textbf{Formal protocol publication:} version and publish \worldpatch{}, approval, receipt, and verifier schemas as a permissively licensed protocol package.
+  \item \textbf{Broader evaluation:} add guarded-action tracks to \benchmark{}, hidden/adaptive scenarios, multiple models/hosts, crash injection, concurrency, fuzzing, and repeated performance experiments.
+  \item \textbf{Policy-preserving semantic memory:} add LLM extraction and embeddings only behind the same admission, provenance, deletion, and retrieval-evidence boundaries.
+  \item \textbf{External witnessing:} integrate transparency logs, WORM storage, or trusted timestamping for production checkpoint anchors.
+\end{enumerate}
+
+The design target is not ``a better prompt.'' It is a deployable control path in which the model never possesses all authority required to approve, execute, and rewrite the evidence for its own effects.

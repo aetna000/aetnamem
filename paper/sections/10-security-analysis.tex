@@ -1,0 +1,71 @@
+\section{Security Analysis}
+
+This section analyzes how the design responds to representative attacks and where the argument terminates at a trust assumption.
+
+\subsection{Persistent indirect prompt injection}
+
+An adversarial webpage asks the agent to remember a new value. Model-level instruction following may fail: the agent may summarize or repeat the payload. The control plane does not need to decide whether the text ``looks malicious.'' It needs authentic origin. Once labeled webpage/tool output, extracted facts receive untrusted tier and quarantine. Active-only retrieval blocks delayed re-entry, and quarantined same-slot facts cannot supersede trusted state.
+
+This control fails if the host labels remote content as \code{user\_message}, if another memory path bypasses admission, or if the agent can call promotion with effective authority. Source authenticity and complete mediation are therefore first-class deployment requirements.
+
+\subsection{Authority laundering}
+
+An injected agent may cite untrusted memory as justification for an effect. Because authority is a typed relation and trust tier rather than prose, the attempt is rejected. Relabeling the same reference \code{authorized\_by} is also insufficient when its trust tier is untrusted or host attestation is false.
+
+An attacker who controls trusted host flags can fabricate authority. The current CLI cannot prove that a human issued \code{--authority-id}; those flags are trustworthy only when a host-side wrapper controls them. A production gateway should derive authority from authenticated task/session state rather than agent-supplied arguments.
+
+\subsection{Plan substitution and confused review}
+
+Approval covers the plan hash, and the plan covers policy, adapter manifest, exact operation digests, dependencies, evidence, actor, subject, and mode. Commit recomputes the plan from operational tables before any effect. Mutating arguments while leaving their recorded digest unchanged is detected when prepared payload digest and plan reconstruction are checked; mutating both payload and digest changes the plan; substituting a manifest changes its fingerprint.
+
+The reviewer still needs a usable rendering of the plan. Cryptographic exactness does not prevent a human from approving misleading content or a dangerous but accurately described action. Psychological acceptability remains a security requirement~\cite{saltzer1975protection}.
+
+\subsection{World-state races}
+
+The filesystem adapter snapshots existence, kind, content digest, mode, and before-image. Commit validates all operations before starting and revalidates each immediately before execution. A concurrent change aborts or triggers compensation. There remains a time-of-check/time-of-use window between final revalidation and OS operation, and path safety is implemented in user space rather than with a hardened capability filesystem. Symlinks are rejected, but a privileged local adversary racing directory replacement is outside the demonstrated guarantee.
+
+Provider adapters should use native conditional writes, ETags, transaction tokens, or idempotency APIs where available. A generic pre-read is weaker than provider-enforced compare-and-swap.
+
+\subsection{False success and partial failure}
+
+Provider return values are treated as receipts, not proof. The adapter re-observes state and checks a typed postcondition. If verification fails, the transaction is uncertain and previous verified operations are compensated in reverse order. Failed compensation yields \code{partial}, preserving the failure instead of overwriting it with success.
+
+The adapter supplies both execution and verification logic in v0.2.1. A defective or malicious adapter can lie consistently. Higher-assurance deployments should use independent read credentials, provider audit APIs, or a separately implemented observer.
+
+\subsection{Crash consistency}
+
+The engine records \code{effect\_executing} before the provider call. An ordinary exception after dispatch becomes uncertain. A hard crash leaves a durable committing/executing marker; recovery fences it as \code{recovery\_required} and refuses generic retry. This is safer than at-least-once replay but does not resolve the world automatically. The provider must offer lookup by idempotency key or authoritative state inspection.
+
+\subsection{Audit rewriting}
+
+Editing a past payload without recomputing its hash fails immediately, as demonstrated. Recomputing all later hashes still changes the head and fails an external checkpoint. Deleting the tail also fails checkpoint containment. If the attacker controls both database and checkpoint sink, the evidence can be rewritten consistently. External anchoring and retention governance are therefore not optional for adversarial tamper detection.
+
+The event chain is not a forward-secure log in the stronger Schneier--Kelsey sense~\cite{schneier1998securelogs}: it does not evolve and erase authentication keys, encrypt past entries, or prevent a compromised writer from creating a new valid suffix. It is a transparent SHA-256 hash chain with external-head anchoring.
+
+\subsection{Privacy and erasure}
+
+Digest-only engine events reduce raw-value retention, and content/action payloads can be logically purged. However, hashes of low-entropy facts may be guessed, SQLite may retain bytes in free pages/WAL, and backups/replicas may outlive local deletion. Secure erase, encryption, backup lifecycle, data minimization, and jurisdiction-specific requirements remain deployment concerns. The architecture can support evidence for a deletion workflow; it is not a compliance certification~\cite{nist2023airmf}.
+
+\subsection{Security-property summary}
+
+\begin{table*}[t]
+\centering
+\caption{Security properties, assumptions, and principal residual risks.}
+\label{tab:security-summary}
+\scriptsize
+\begin{tabularx}{\textwidth}{@{}p{24mm}Y Y Y@{}}
+\toprule
+Property & Mechanism & Required assumptions & Residual risk \\
+\midrule
+Quarantine non-recall & Source trust mapping; active-only query & Authentic source class; mediated read path & Misclassification, promotion abuse, direct DB read \\
+Trusted-slot preservation & Supersede only when new record is active & Policy path not bypassed & Malicious promotion or direct status edit \\
+Authority non-escalation & Typed relation, tier, host attestation & Host controls attestation & Compromised host can mint authority \\
+Exact-plan approval & Canonical plan hash and HMAC & Key secrecy, collision resistance, clock sanity & Shared-key identity ambiguity; misleading preview \\
+Fresh precondition & Adapter snapshot and two-phase revalidation & Correct observer; sufficiently strong provider API & TOCTOU race, incomplete precondition \\
+Verified outcome & Provider receipt plus postcondition read & Correct independent-enough observation & Adapter may lie; external side effects unobserved \\
+No blind retry & Executing marker, uncertainty, recovery fence & Durable SQLite transition & Manual/provider reconciliation still required \\
+Tamper evidence & Per-subject chain and external checkpoint & Anchor outside attacker domain & Pre-anchor rewrite; compromised anchor; no event completeness proof \\
+Payload erasure & Separate mutable payload/content tables & Correct purge and backup policy & Free pages, WAL, replicas, digest inference \\
+\bottomrule
+\end{tabularx}
+\end{table*}

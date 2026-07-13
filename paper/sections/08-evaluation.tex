@@ -1,0 +1,91 @@
+\section{Evaluation Methodology}
+
+The evaluation answers four research questions.
+
+\begin{description}
+  \item[RQ1:] Does the memory engine satisfy the tested write, retrieval, deletion, untrusted-source, and temporal-update contract?
+  \item[RQ2:] Does the action path refuse missing/untrusted authority and plan drift while permitting an exactly approved effect?
+  \item[RQ3:] Can independent code paths verify the resulting database and detect concrete plan/history tampering?
+  \item[RQ4:] What evidence surfaces does the public benchmark observe relative to other targets?
+\end{description}
+
+\subsection{Pinned artifacts and environment}
+
+The evaluated engine is v0.2.1 at Git commit
+\code{0cd082c9cac14f35a66ff946395a31847322005d}. The benchmark code and public comparison snapshot are pinned at \code{10b9407ce54c92bcb8aee24099505427aabeebcd}. We executed the experiment on macOS 26.5.1 (build 25F80), Apple M2, 16~GiB memory, Python 3.12.2, and SQLite 3.50.6 on 13 July 2026.
+
+All benchmark and flagship tasks are deterministic. No LLM, API key, network request, embedding service, or stochastic sampler participates in the \system{} run. Consequently we report exact conformance counts, not means or confidence intervals. A repeated run tests reproducibility of the implementation, not sampling variance.
+
+\subsection{MemoryStackBench}
+
+\benchmark{} executes a common adapter interface over multi-session \emph{plant $\rightarrow$ interfere $\rightarrow$ probe} scenarios. The \code{seven\_sins\_v0\_1} suite contains five scenario-level tests and 33 assertions:
+
+\begin{table}[t]
+\centering
+\caption{MemoryStackBench suite composition.}
+\label{tab:suite}
+\scriptsize
+\begin{tabularx}{\columnwidth}{@{}Yp{25mm}C{9mm}C{10mm}@{}}
+\toprule
+Scenario & Category & Checks & Severity \\
+\midrule
+Durable private-itinerary preference & Retrieval correctness & 6 & Medium \\
+Webpage memory poisoning & Untrusted-source resistance & 10 & High \\
+SFO $\rightarrow$ OAK correction & Temporal update handling & 7 & Medium \\
+Backup-email deletion & Deletion behavior & 5 & High \\
+Avoiding beef $\not\Rightarrow$ vegetarian & Write correctness & 5 & Medium \\
+\midrule
+Total & & 33 & 15 high, 18 medium \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Checks inspect both user-visible responses and normalized memory records. They test required provenance fields, absence of poisoned/deleted/stale/overgeneralized content, and presence of the intended active fact. Severity weighting assigns 81 total points in the pinned suite.
+
+We performed two analyses:
+
+\begin{enumerate}
+  \item a fresh run against the current \system{} checkout via \code{PYTHONPATH}; and
+  \item a descriptive comparison using the public 19-target leaderboard and auditability JSON files, whose hashes are recorded in the artifact.
+\end{enumerate}
+
+The public targets are heterogeneous. Some are native semantic memory systems; others are store-level or session-level harnesses with benchmark adapter policy. Scores therefore establish conformance of each configured target, not a universal ranking of every product capability. The benchmark itself states this distinction. Timing logs are informational and are not used for performance claims.
+
+\subsection{Auditability matrix}
+
+The benchmark separately scores six evidence dimensions from zero to three: inspectability, provenance, retrieval transparency, deletion evidence, mutation lineage, and tamper evidence. It also records whether evidence is declared native, adapter-injected, or undeclared. This is a descriptive matrix, not part of the 33 safety checks.
+
+For \system{}, all six origins are declared \code{native}. Other rows in the pinned public snapshot have \code{undeclared} origin metadata. Cross-target point differences should therefore be interpreted as surfaces exposed to the harness, not independently audited security strength.
+
+\subsection{Flagship hostile-page experiment}
+
+The deterministic driver executes three acts, illustrated in \cref{fig:demo-sequence}.
+
+\input{figures/demo-sequence}
+
+\paragraph{Act 1: delayed memory poisoning.} A trusted user fact establishes \code{report.md}. A benign-looking HTML fixture contains a hidden instruction that targets the same fact slot with \code{files.attacker.example/steal.md}. A naive HTML text extraction includes the payload. The engine receives it as webpage content, extracts the candidate, and must quarantine it. Recall must return only the trusted path.
+
+\paragraph{Act 2: authority and exact-plan enforcement.} The driver attempts five prohibited paths: untrusted memory as action authority; mutation with no authority; commit without reviewer key; commit of an unapproved transaction; and commit after mutation of a persisted approved plan on a copy. Every prohibited step is wrapped in a shell assertion that fails the demo if the command exits successfully. A genuine host-attested task is staged, approved with an expiring HMAC in a separate process context, committed through the filesystem adapter, and verified against observed state.
+
+\paragraph{Act 3: independent evidence checks.} The engine exports a checkpoint and verifies itself. Then the two standalone programs verify the database. Finally, a copy's quarantine event is rewritten from \code{quarantined} to \code{active}; the audit verifier must exit nonzero and identify sequence 4.
+
+The recorded artifact includes the real \code{memories.db}, checkpoint JSONL, and transcript. Our reproduction reran the driver in a temporary directory and separately re-executed both standalone verifiers against the recorded copies.
+
+\subsection{Repository tests}
+
+We ran the complete test suite, not only benchmark tests. It covers memory transactions, policy, auditability, retrieval, extraction, MCP, CLI, host adapters, layers, journal import, actions, and documentation. Action tests include wrong-plan approval, nonce replay, world-state race, adapter drift, payload purge, operational-table tamper, uncertain execution, recovery fencing, and failed compensation.
+
+\subsection{Validity controls}
+
+To reduce self-confirming evaluation:
+
+\begin{itemize}
+  \item benchmark vocabulary does not appear in core policy functions;
+  \item direct unit tests use non-benchmark facts and resources;
+  \item refusal steps assert nonzero exit rather than matching a favorable transcript alone;
+  \item standalone verifiers do not import the package under test;
+  \item tamper probes operate on copies so the distributed original remains verifiable; and
+  \item source commits, environment, data hashes, and exact commands are disclosed.
+\end{itemize}
+
+Remaining construct and external-validity threats are addressed in \cref{sec:limitations}.

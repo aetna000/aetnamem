@@ -1,4 +1,29 @@
-# aetnamem
+<p align="center">
+  <img src="./docs/assets/aetnamem-header.png" width="1536" alt="aetnamem control plane: provenance-aware memory, guarded actions, and independently verifiable evidence">
+</p>
+
+<h1 align="center">aetnamem</h1>
+
+<p align="center">
+  <strong>Evidence before effect.</strong><br>
+  Auditable memory and exact-plan guarded actions for stateful AI agents.
+</p>
+
+<p align="center">
+  <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Version 0.2.1" src="https://img.shields.io/badge/version-0.2.1-315A7D?style=flat-square">
+  <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
+  <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
+  <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="#install--use">Quick start</a> &middot;
+  <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
+  <a href="./paper/aetnamem-control-plane.pdf">Scientific report</a> &middot;
+  <a href="./docs/guarded-actions.md">Guarded actions</a> &middot;
+  <a href="./TODO.md">Roadmap</a>
+</p>
 
 A local-first, zero-dependency Python engine for provenance-aware agent memory
 and optional guarded actions. The reference store is one SQLite file. Its

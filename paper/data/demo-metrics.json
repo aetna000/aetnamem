@@ -1,0 +1,12 @@
+{
+  "action_transaction_id": "act_ebd33915ea974e64a36282deef754f49",
+  "active_records": 1,
+  "audit_events": 12,
+  "authorized_commits": 1,
+  "checkpoint_count": 1,
+  "engine_verifier_passes": 1,
+  "expected_refusals": 5,
+  "quarantined_records": 1,
+  "standalone_verifier_passes": 2,
+  "tamper_probes_detected": 2
+}
