@@ -35,6 +35,7 @@ dev = [
 
 [project.scripts]
 aetnamem = "aetnamem.cli:main"
+aetnamem-service = "aetnamem.service.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/aetna000/aetnamem"

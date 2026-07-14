@@ -40,9 +40,16 @@ verification, and recovery. `aetnamem` is the canonical CLI executable.
 
 - [x] Make `aetnamem` the canonical installed executable and documentation command.
 - [x] Add `aetnamem actions stage/show/list/approve/commit/abort/recover/verify/import-journal`.
-- [ ] Add an MCP gate that removes direct write tools when enforcement is enabled.
+- [x] Add an MCP gate that removes direct write tools when enforcement is enabled.
+      (`aetnamem/mcp/gate.py`: spawn-and-forward proxy, read-only passthrough,
+      default-block for unclassified writes. In-process equivalent for the
+      built-in assistant loop is `aetnamem/broker/` + `aetnamem/service/`.)
+- [x] Add a macOS local dashboard/assistant shell with onboarding checks,
+      provider setup, chat, pending approvals, memory inspection, Keychain
+      provider secrets, and encrypted at-rest DB sealing on clean shutdown.
 - [ ] Add Telegram as a separate privileged approval client.
-- [ ] Add a dashboard for evidence, authority, patch, execution, and recovery history.
+- [ ] Package a signed/notarized macOS `.app` wrapper around the local service.
+- [ ] Expand the dashboard for full evidence, authority, patch, execution, and recovery history.
 
 ## Security and validation
 

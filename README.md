@@ -19,6 +19,7 @@
 
 <p align="center">
   <a href="#install--use">Quick start</a> &middot;
+  <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
   <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
   <a href="./paper/aetnamem-control-plane.pdf">Scientific report</a> &middot;
   <a href="./docs/guarded-actions.md">Guarded actions</a> &middot;
@@ -29,6 +30,20 @@ A local-first, zero-dependency Python engine for provenance-aware agent memory
 and optional guarded actions. The reference store is one SQLite file. Its
 security claims are deterministic and testable, but deliberately narrower
 than “the database is trusted” or “every external action is reversible.”
+
+## What can I use today?
+
+On macOS, run a local assistant dashboard with onboarding checks, provider
+setup, governed chat, approval-gated file writes, a safe workspace, Keychain
+secrets, and encrypted at-rest database sealing:
+
+```bash
+chmod +x scripts/macos/aetnamem-desktop.command
+open scripts/macos/aetnamem-desktop.command
+```
+
+Then open the printed dashboard URL. Details and limitations:
+**[aetnamem Desktop for macOS](./docs/macos-desktop.md)**.
 
 - **Provenance is required.** Extracted records link to their source episode;
   derived proposals instead cite existing episode or record IDs. Records also
@@ -367,6 +382,9 @@ benchmark scenario.
 
 ## Documentation
 
+- **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
+  onboarding checks, provider setup, approval UI, safe workspace, Keychain
+  secrets, and encrypted at-rest database sealing.
 - **[Integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md)** — full CLI
   reference (every command, flags, output shapes, exit codes) and MCP
   server reference (transport, flags, tool catalog, host configs for
