@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.2.1" src="https://img.shields.io/badge/version-0.2.1-315A7D?style=flat-square">
+  <img alt="Version 0.2.2" src="https://img.shields.io/badge/version-0.2.2-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -144,9 +144,17 @@ pip install aetnamem
 pip install -e .
 ```
 
-The product installs one console command: `aetnamem`. Use `aetnamem mcp` for
-the MCP server and `aetnamem actions …` for guarded actions. `aetna000` is the
-organization namespace only; it is not installed as a product command.
+The package installs two console commands:
+
+- `aetnamem` provides the memory CLI, the MCP server through `aetnamem mcp`,
+  and guarded actions through `aetnamem actions …`.
+- `aetnamem-service` starts the local assistant dashboard. Run
+  `aetnamem-service --help` for workspace, database, network, and browser
+  options. The cross-platform desktop launchers above additionally bootstrap
+  Ollama and the recommended lightweight model.
+
+`aetna000` is the organization namespace only; it is not installed as a
+product command.
 
 ```python
 from aetnamem import Memory

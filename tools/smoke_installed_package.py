@@ -34,11 +34,17 @@ def main() -> None:
         for entry in distribution.entry_points
         if entry.group == "console_scripts"
     }
-    assert scripts == {"aetnamem": "aetnamem.cli:main"}, scripts
+    assert scripts == {
+        "aetnamem": "aetnamem.cli:main",
+        "aetnamem-service": "aetnamem.service.__main__:main",
+    }, scripts
 
     executable = Path(sys.executable).with_name("aetnamem")
     assert executable.is_file(), "aetnamem console command was not installed"
     run(str(executable), "--help")
+    service_executable = Path(sys.executable).with_name("aetnamem-service")
+    assert service_executable.is_file(), "aetnamem-service command was not installed"
+    run(str(service_executable), "--help")
 
     with tempfile.TemporaryDirectory(prefix="aetnamem-wheel-smoke-") as temp:
         root = Path(temp)
