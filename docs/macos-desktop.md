@@ -106,6 +106,22 @@ Settings includes a **Data & security** panel showing where the live memory
 database lives, whether it is sealed encrypted at rest on quit (and to which
 path), and that the encryption key is stored in the macOS Keychain.
 
+## Database location and backup
+
+The persistent macOS database is stored as these two files:
+
+```text
+~/Library/Application Support/aetnamem/memories.db.enc
+~/Library/Application Support/aetnamem/memories.db.enc.hmac
+```
+
+The plaintext path shown while the app is open is temporary. Quit the service
+normally before backup, copy both sealed files together, and retain the
+`aetnamem` database key from the macOS login Keychain for disaster recovery.
+Workspace files under `~/Aetnamem Workspace` require a separate backup. See
+**[Data storage, backup, and restore](./data-storage-and-backup.md)** for exact
+backup and restore commands and the limits of the encryption design.
+
 ## Current limitations
 
 - This is a local web app, not a signed/notarized `.app` bundle yet.

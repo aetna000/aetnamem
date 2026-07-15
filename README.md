@@ -92,6 +92,17 @@ via `winget` if missing. The database lives at `%LOCALAPPDATA%\aetnamem`
    OpenAI-compatible endpoint), run the system check, and review the
    *Data & security* panel showing exactly where your data lives.
 
+### Data location and backup
+
+The desktop launchers use platform-native data locations: macOS stores a
+Keychain-protected sealed database under `~/Library/Application Support`,
+Linux uses `$XDG_DATA_HOME` when set and otherwise `~/.local/share`, and
+Windows uses `%LOCALAPPDATA%`. Workspace files are stored separately. Quit
+the service before copying SQLite data, and on macOS back up the encrypted
+database, its HMAC sidecar, and a recoverable copy of the Keychain key. See
+**[Data storage, backup, and restore](./docs/data-storage-and-backup.md)** for
+exact paths and restore instructions.
+
 - **Provenance is required.** Extracted records link to their source episode;
   derived proposals instead cite existing episode or record IDs. Records also
   carry source, session, turn, time, confidence, status, and trust metadata.
@@ -440,6 +451,9 @@ benchmark scenario.
 - **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
   onboarding checks, provider setup, approval UI, safe workspace, Keychain
   secrets, and encrypted at-rest database sealing.
+- **[Data storage and backup](https://github.com/aetna000/aetnamem/blob/main/docs/data-storage-and-backup.md)** — default
+  database/workspace paths on macOS, Linux, and Windows, plus safe backup,
+  key recovery, restore steps, and encryption boundaries.
 - **[Integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md)** — full CLI
   reference (every command, flags, output shapes, exit codes) and MCP
   server reference (transport, flags, tool catalog, host configs for
