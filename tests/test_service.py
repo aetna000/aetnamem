@@ -198,3 +198,28 @@ def test_chat_endpoint_captures_user_turn(running):
     )
     assert status == 200
     assert any("report.md" in r["content"] for r in records["records"])
+
+
+def test_local_provider_configuration_needs_no_api_key(running):
+    status, result = call(running.base, "POST", "/provider", token=running.reviewer_token, body={
+        "kind": "local",
+        "model": "qwen3:1.7b",
+        "base_url": "http://localhost:11434",
+    })
+
+    assert status == 200
+    assert result["kind"] == "local"
+    assert result["model"] == "qwen3:1.7b"
+    assert result["api_key_configured"] is False
+
+
+def test_local_provider_replaces_stale_echo_model(running):
+    status, result = call(running.base, "POST", "/provider", token=running.reviewer_token, body={
+        "kind": "local",
+        "model": "local-echo",
+        "base_url": "http://localhost:11434",
+    })
+
+    assert status == 200
+    assert result["kind"] == "local"
+    assert result["model"] == "qwen3:1.7b"

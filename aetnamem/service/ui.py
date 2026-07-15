@@ -33,6 +33,13 @@ APP_HTML = """<!doctype html>
     .tabs button.active { background:#2457d6; color:white; border-color:#2457d6; }
     .panel { display:none; }
     .panel.active { display:block; }
+    .toolbar { display:grid; grid-template-columns: 1fr 180px; gap:8px; margin-bottom:12px; }
+    .group { border:1px solid var(--line); border-radius:8px; padding:10px; display:grid; gap:10px; }
+    .group-head { display:flex; justify-content:space-between; align-items:center; gap:8px; font-weight:800; }
+    .topic { display:grid; gap:8px; }
+    .topic-title { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+    .count { color:var(--muted); font-size:12px; border:1px solid var(--line); border-radius:999px; padding:2px 7px; }
+    details summary { cursor:pointer; color:var(--muted); font-size:12px; }
     .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
     pre { white-space:pre-wrap; overflow:auto; background:rgba(120,130,150,.11); padding:10px; border-radius:6px; }
     .chat { min-height:280px; max-height:460px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:10px; }
@@ -65,15 +72,17 @@ APP_HTML = """<!doctype html>
       <h2>3. AI provider</h2>
       <label>Provider</label>
       <select id="providerKind">
+        <option value="local">Local light (Ollama)</option>
         <option value="echo">Offline echo</option>
         <option value="openai">OpenAI</option>
         <option value="deepseek">DeepSeek</option>
         <option value="openai-compatible">OpenAI-compatible</option>
       </select>
-      <label>Model</label><input id="providerModel" value="local-echo">
-      <label>Base URL</label><input id="providerBase" placeholder="Only for compatible APIs">
-      <label>API key</label><input id="providerKey" type="password" placeholder="Stored in process for this dev build">
+      <label>Model</label><input id="providerModel" value="qwen3:1.7b">
+      <label>Base URL</label><input id="providerBase" placeholder="http://localhost:11434 for Ollama">
+      <label>API key</label><input id="providerKey" type="password" placeholder="Remote providers only">
       <button onclick="saveProvider()">Save provider</button>
+      <p class="muted">For a 12 GB M1 laptop: install Ollama, run <code>ollama pull qwen3:1.7b</code>, then use Local light.</p>
       <div id="providerStatus" class="muted"></div>
     </section>
   </div>
@@ -86,6 +95,16 @@ APP_HTML = """<!doctype html>
         <button id="tab-checksPanel" onclick="showPanel('checksPanel')">Checks</button>
       </div>
       <div id="panel-memory" class="panel active">
+        <div class="toolbar">
+          <input id="memorySearch" placeholder="Search remembered facts" oninput="renderMemory()">
+          <select id="memoryStatusFilter" onchange="renderMemory()">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="quarantined">Needs review</option>
+            <option value="superseded">Replaced</option>
+            <option value="tombstoned">Forgotten</option>
+          </select>
+        </div>
         <div id="memory" class="stack"></div>
       </div>
       <div id="panel-audit" class="panel">
@@ -112,6 +131,7 @@ APP_HTML = """<!doctype html>
 <script>
 const $ = id => document.getElementById(id);
 const subject = "default";
+let memoryRecords = [];
 function saveTokens(){ localStorage.agentToken=$("agentToken").value; localStorage.reviewerToken=$("reviewerToken").value; refreshAll(); }
 function loadTokens(){ $("agentToken").value=localStorage.agentToken||""; $("reviewerToken").value=localStorage.reviewerToken||""; }
 async function api(path, opts={}){
@@ -125,13 +145,13 @@ async function api(path, opts={}){
 async function loadChecks(){
   try {
     const c = await api("/system-check");
-    $("checks").innerHTML = `<div class="${c.mac_only_supported?'ok':'bad'}">macOS: ${c.mac_only_supported?'yes':'no'}</div><div>Python: ${c.python}</div><div class="${c.has_min_disk_1gb?'ok':'bad'}">1 GB disk: ${c.has_min_disk_1gb?'yes':'no'}</div>`;
+    $("checks").innerHTML = `<div class="${c.mac_only_supported?'ok':'bad'}">macOS: ${c.mac_only_supported?'yes':'no'}</div><div>Python: ${c.python}</div><div class="${c.has_min_disk_1gb?'ok':'bad'}">1 GB disk: ${c.has_min_disk_1gb?'yes':'no'}</div><div class="${c.ollama_cli?'ok':'warn'}">Ollama CLI: ${c.ollama_cli?'installed':'not found'}</div><div class="${c.ollama_api?'ok':'warn'}">Ollama API: ${c.ollama_api?'running':'not running'}</div><div>Light model: <code>${c.recommended_local_model}</code></div>`;
   } catch(e) { $("checks").textContent=e.message; }
 }
 async function saveProvider(){
   try {
     const p = await api("/provider", {role:"reviewer", method:"POST", body:{kind:$("providerKind").value, model:$("providerModel").value, base_url:$("providerBase").value, api_key:$("providerKey").value}});
-    $("providerStatus").textContent = `${p.kind} / ${p.model} / key ${p.api_key_configured?'set':'not set'}`;
+    $("providerStatus").textContent = `${p.kind} / ${p.model}${p.base_url ? ' / '+p.base_url : ''} / key ${p.api_key_configured?'set':'not needed'}`;
   } catch(e) { $("providerStatus").textContent=e.message; }
 }
 async function sendChat(){
@@ -166,13 +186,66 @@ async function refreshActions(){
 async function refreshMemory(){
   try {
     const r = await api("/memory?subject="+encodeURIComponent(subject)+"&include_inactive=1");
-    $("memory").innerHTML = r.records.length ? "" : "<div class='muted'>No memory yet.</div>";
-    for (const m of r.records) {
-      const div=document.createElement("div"); div.className="card";
-      div.innerHTML = `<div class="card-title">${escapeHtml(m.content || "(purged)")}</div><div class="meta"><span>${m.status}</span><span>${m.source_type}</span><span>${m.trust_tier}</span><span>${m.id}</span></div>`;
-      $("memory").appendChild(div);
-    }
+    memoryRecords = r.records || [];
+    renderMemory();
   } catch(e) { $("memory").textContent=e.message; }
+}
+function renderMemory(){
+  const q = ($("memorySearch")?.value || "").trim().toLowerCase();
+  const status = $("memoryStatusFilter")?.value || "";
+  const filtered = memoryRecords.filter(m => {
+    const hay = [m.content, m.fact_key, m.status, m.source_type, m.trust_tier, m.id].join(" ").toLowerCase();
+    return (!q || hay.includes(q)) && (!status || m.status === status);
+  });
+  $("memory").innerHTML = filtered.length ? "" : "<div class='muted'>No matching memory.</div>";
+  const groups = [
+    ["Active trusted memory", "active"],
+    ["Needs review / quarantined", "quarantined"],
+    ["Replaced old facts", "superseded"],
+    ["Forgotten / purged", "tombstoned"],
+    ["Other", ""],
+  ];
+  for (const [label, groupStatus] of groups) {
+    const records = filtered.filter(m => groupStatus ? m.status === groupStatus : !["active","quarantined","superseded","tombstoned"].includes(m.status));
+    if (!records.length) continue;
+    const group = document.createElement("div"); group.className = "group";
+    group.innerHTML = `<div class="group-head"><span>${label}</span><span class="count">${records.length}</span></div>`;
+    const byTopic = {};
+    for (const record of records) {
+      const topic = topicName(record);
+      (byTopic[topic] ||= []).push(record);
+    }
+    for (const topic of Object.keys(byTopic).sort()) {
+      const topicEl = document.createElement("div"); topicEl.className = "topic";
+      topicEl.innerHTML = `<div class="topic-title">${escapeHtml(topic)}</div>`;
+      for (const m of byTopic[topic].sort((a,b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))) {
+        topicEl.appendChild(memoryCard(m));
+      }
+      group.appendChild(topicEl);
+    }
+    $("memory").appendChild(group);
+  }
+}
+function topicName(m){
+  const key = m.fact_key || m.scope || "general";
+  return String(key).replace(/_/g, " ");
+}
+function memoryCard(m){
+  const div=document.createElement("div"); div.className="card";
+  const content = m.content || "(content purged)";
+  const confidence = m.confidence == null ? "" : `<span>confidence ${Number(m.confidence).toFixed(2)}</span>`;
+  div.innerHTML = `
+    <div class="card-title">${escapeHtml(content)}</div>
+    <div class="meta">
+      <span>${escapeHtml(m.status || "")}</span>
+      <span>${escapeHtml(m.source_type || "")}</span>
+      <span>${escapeHtml(m.trust_tier || "")}</span>
+      ${confidence}
+      <span>${escapeHtml(m.id || "")}</span>
+    </div>
+    <details><summary>Details</summary><pre>${escapeHtml(JSON.stringify(m, null, 2))}</pre></details>
+  `;
+  return div;
 }
 async function refreshAudit(){
   try {
@@ -193,7 +266,7 @@ async function refreshVerify(){
   } catch(e) { $("verifyStatus").textContent=e.message; }
 }
 function escapeHtml(value){ return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-async function refreshProvider(){ try { const p=await api("/provider"); $("providerStatus").textContent=`${p.kind} / ${p.model} / key ${p.api_key_configured?'set':'not set'}`; } catch(e){} }
+async function refreshProvider(){ try { const p=await api("/provider"); $("providerKind").value=p.kind; $("providerModel").value=p.model; $("providerBase").value=p.base_url||""; $("providerStatus").textContent=`${p.kind} / ${p.model}${p.base_url ? ' / '+p.base_url : ''} / key ${p.api_key_configured?'set':'not needed'}`; } catch(e){} }
 async function refreshAll(){ await loadChecks(); await refreshProvider(); await refreshActions(); await refreshMemory(); await refreshAudit(); await refreshVerify(); }
 loadTokens(); refreshAll();
 </script>

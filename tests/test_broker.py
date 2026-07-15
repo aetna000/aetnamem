@@ -77,6 +77,25 @@ def test_memory_remember_defaults_to_untrusted_when_not_user_attested(tmp_path: 
     memory.close()
 
 
+def test_user_attested_memory_remember_saves_unstructured_note(tmp_path: Path) -> None:
+    memory, _, _, broker = build(tmp_path)
+    result = broker.dispatch(
+        "memory_remember",
+        {"message": "i need to cook dinner"},
+        BrokerContext(
+            subject_id="user-1",
+            actor_id="assistant",
+            source_type="user_message",
+            user_attested=True,
+        ),
+    )
+
+    assert result.status == "executed"
+    records = memory.list("user-1")
+    assert [record["content"] for record in records] == ["I need to cook dinner."]
+    memory.close()
+
+
 def test_memory_forget_requires_host_attested_user_request(tmp_path: Path) -> None:
     memory, _, _, broker = build(tmp_path)
     broker.dispatch("memory_remember", {"message": "My report file is report.md."}, ctx())

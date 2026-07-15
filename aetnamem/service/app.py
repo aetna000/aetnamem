@@ -16,10 +16,11 @@ from pathlib import Path
 import secrets
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 from aetnamem.actions import ActionEngine, ActionStateError, ApprovalAuthority, verify_action
 from aetnamem.actions.policy import ActionPolicyViolation
-from aetnamem.assistant import AssistantLoop, ProviderConfig
+from aetnamem.assistant import AssistantLoop, DEFAULT_LOCAL_MODEL, ProviderConfig
 from aetnamem.assistant.providers import provider_from_config
 from aetnamem.broker import AuthorityRef, BrokerContext, ToolBroker, UnknownToolError
 from aetnamem.service.secrets import MacKeychain
@@ -43,6 +44,7 @@ class ControlService:
     reviewer_token: str
     authorities: dict[str, AuthorityRef] = field(default_factory=dict)
     provider_config: ProviderConfig = field(default_factory=ProviderConfig)
+    after_mutation: Callable[[], None] | None = None
 
     @property
     def memory(self):  # noqa: ANN201 - passthrough
@@ -153,20 +155,33 @@ class ControlService:
         store_path = self.memory.store.path
         disk_path = "." if store_path == ":memory:" else str(Path(store_path).parent)
         free_disk = shutil.disk_usage(disk_path).free
+        local_model_url = self.provider_config.base_url or "http://localhost:11434"
         return {
             "platform": platform.system(),
             "mac_only_supported": platform.system() == "Darwin",
             "python": platform.python_version(),
             "free_disk_bytes": free_disk,
             "has_min_disk_1gb": free_disk >= 1_000_000_000,
+            "ollama_cli": bool(shutil.which("ollama")),
+            "ollama_api": _ollama_available(local_model_url),
+            "recommended_local_model": DEFAULT_LOCAL_MODEL,
+            "recommended_local_pull": f"ollama pull {DEFAULT_LOCAL_MODEL}",
         }
 
     def configure_provider(self, body: dict[str, Any]) -> dict[str, Any]:
         kind = (body.get("kind") or "echo").strip().lower()
-        model = (body.get("model") or "local-echo").strip()
+        model = (
+            body.get("model") or (DEFAULT_LOCAL_MODEL if kind in {"local", "ollama"} else "local-echo")
+        ).strip()
         base_url = (body.get("base_url") or "").strip() or None
         api_key = (body.get("api_key") or "").strip() or None
-        if kind != "echo":
+        if kind in {"local", "ollama"}:
+            kind = "local"
+            if model in {"", "local-echo"}:
+                model = DEFAULT_LOCAL_MODEL
+            base_url = base_url or "http://localhost:11434"
+            api_key = None
+        elif kind != "echo":
             keychain = MacKeychain()
             account = f"provider-{kind}"
             if api_key:
@@ -263,6 +278,14 @@ def _context_from(raw: dict[str, Any], authorities: dict[str, AuthorityRef]) -> 
 def _one(query: dict[str, list[str]], key: str) -> str | None:
     values = query.get(key)
     return values[0] if values else None
+
+
+def _ollama_available(base_url: str) -> bool:
+    try:
+        with urlopen(base_url.rstrip("/") + "/api/tags", timeout=1.5) as response:
+            return 200 <= response.status < 300
+    except Exception:
+        return False
 
 
 # -- HTTP plumbing -----------------------------------------------------------
@@ -372,7 +395,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
         query = parse_qs(parsed.query)
         try:
-            self._reply(200, handler(service, params, body, query))
+            payload = handler(service, params, body, query)
+            if method == "POST" and service.after_mutation is not None:
+                service.after_mutation()
+            self._reply(200, payload)
         except HttpError as exc:
             self._reply(exc.status, {"error": exc.message})
         except Exception as exc:  # never leak a stack over the wire

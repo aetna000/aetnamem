@@ -24,6 +24,11 @@ class ForgetProvider:
         return '{"tool":"memory_forget","arguments":{"utterance":"Forget my report file."}}'
 
 
+class RememberNoteProvider:
+    def complete(self, messages, tools):
+        return '{"tool":"memory_remember","arguments":{"message":"i need to cook dinner"}}'
+
+
 def build(tmp_path: Path):
     memory = Memory(tmp_path / "mem.db")
     (tmp_path / "workspace").mkdir()
@@ -76,4 +81,20 @@ def test_assistant_allows_forget_only_from_user_forget_request(tmp_path: Path) -
 
     assert result["tool_result"]["status"] == "executed"
     assert memory.recall("u1", "report file") == []
+    memory.close()
+
+
+def test_assistant_memory_tool_saves_explicit_note(tmp_path: Path) -> None:
+    memory, _, broker = build(tmp_path)
+    loop = AssistantLoop(memory, broker, RememberNoteProvider())
+
+    result = loop.chat(
+        subject_id="u1",
+        session_id="s1",
+        message="remember i need to cook dinner",
+    )
+
+    assert result["tool_result"]["status"] == "executed"
+    records = memory.list("u1")
+    assert any(record["content"] == "I need to cook dinner." for record in records)
     memory.close()

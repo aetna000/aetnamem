@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import secrets
 from pathlib import Path
 
@@ -71,6 +72,17 @@ def main() -> None:
     service.provider_config = config_from_env()
     server = serve(service, host=args.host, port=args.port)
 
+    def checkpoint_and_seal() -> None:
+        if encrypted_manager is None:
+            return
+        try:
+            memory.store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # noqa: SLF001
+        except Exception:
+            pass
+        encrypted_manager.seal()
+
+    service.after_mutation = checkpoint_and_seal if encrypted_manager is not None else None
+
     print(f"aetnamem control service on http://{args.host}:{args.port}", flush=True)
     print(f"  dashboard : http://{args.host}:{args.port}/app", flush=True)
     print(f"  db        : {db_path}", flush=True)
@@ -80,19 +92,22 @@ def main() -> None:
     print(f"  agent token    (assistant loop): {service.agent_token}", flush=True)
     print(f"  reviewer token (dashboard)     : {service.reviewer_token}", flush=True)
     print("Ctrl-C to stop.", flush=True)
+
+    def stop(_signum, _frame) -> None:
+        raise KeyboardInterrupt
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, stop)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.shutdown()
-        try:
-            memory.store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # noqa: SLF001
-        except Exception:
-            pass
+        checkpoint_and_seal()
         memory.close()
         if encrypted_manager is not None:
-            encrypted_manager.seal()
             encrypted_manager.__exit__(None, None, None)
 
 

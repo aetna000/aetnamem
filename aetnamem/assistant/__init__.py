@@ -3,7 +3,9 @@
 from aetnamem.assistant.agent import AssistantLoop
 from aetnamem.assistant.providers import (
     AssistantProvider,
+    DEFAULT_LOCAL_MODEL,
     EchoProvider,
+    OllamaProvider,
     OpenAICompatibleProvider,
     ProviderConfig,
 )
@@ -11,7 +13,9 @@ from aetnamem.assistant.providers import (
 __all__ = [
     "AssistantLoop",
     "AssistantProvider",
+    "DEFAULT_LOCAL_MODEL",
     "EchoProvider",
+    "OllamaProvider",
     "OpenAICompatibleProvider",
     "ProviderConfig",
 ]

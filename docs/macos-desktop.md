@@ -6,8 +6,8 @@ This is the practical, non-developer path for a local assistant protected by
 ## What it gives you today
 
 - A local web dashboard at `http://127.0.0.1:8765/app`.
-- A chat shell backed by OpenAI, DeepSeek, any OpenAI-compatible API, or an
-  offline echo mode for testing.
+- A chat shell backed by a lightweight local Ollama model, OpenAI, DeepSeek,
+  any OpenAI-compatible API, or an offline echo mode for testing.
 - Durable local memory with provenance and deletion receipts.
 - Approval-gated file writes in a safe workspace folder.
 - Mac Keychain protected database key with encrypted at-rest database sealing
@@ -46,10 +46,40 @@ The dashboard checks:
 
 Then choose a provider:
 
+- `Local light (Ollama)` for a laptop-local model suitable for 12 GB Apple
+  Silicon machines
 - `Offline echo` to test without an API key
 - `OpenAI`
 - `DeepSeek`
 - `OpenAI-compatible` for local gateways or custom providers
+
+## Local light model
+
+The desktop UI includes an Ollama-backed local provider. The default model is:
+
+```text
+qwen3:1.7b
+```
+
+On an M1 laptop with 12 GB RAM, use this path first. It keeps inference local,
+avoids API keys, and leaves memory/audit data inside the `aetnamem` sidecar.
+
+Install and pull the model:
+
+```bash
+chmod +x scripts/macos/install-light-local-model.command
+open scripts/macos/install-light-local-model.command
+```
+
+Or run the equivalent commands manually:
+
+```bash
+ollama pull qwen3:1.7b
+ollama serve
+```
+
+Then select `Local light (Ollama)` in the provider panel. The default base URL
+is `http://localhost:11434`.
 
 ## Safe workspace
 

@@ -67,6 +67,7 @@ class Memory:
         message: str | None = None,
         *,
         fact: str | None = None,
+        force: bool = False,
         session_id: str | None = None,
         turn_id: str | int | None = None,
         source_type: str | None = None,
@@ -100,6 +101,20 @@ class Memory:
         )
 
         candidates = extract_facts(text, source_type=source)
+        if force and not candidates and source == "user_message":
+            from aetnamem.core.policy import trust_tier_for_source
+            from aetnamem.extract.rules import CandidateFact
+
+            candidates = [
+                CandidateFact(
+                    content=_explicit_note(text),
+                    confidence=0.7,
+                    source_type=source,
+                    trust_tier=trust_tier_for_source(source),
+                    fact_key=None,
+                    scope="user_note",
+                )
+            ]
         records: list[dict[str, Any]] = []
         duplicate_ids: list[str] = []
         for candidate in candidates:
@@ -905,6 +920,17 @@ def _selector_contains(selector: dict[str, Any] | str | None) -> str | None:
 
 def _sha256(value: str) -> str:
     return sha256_hex(value)
+
+
+def _explicit_note(value: str) -> str:
+    text = " ".join(value.strip().split())
+    if not text:
+        return "User asked to remember an empty note."
+    if text[0].islower():
+        text = text[0].upper() + text[1:]
+    if text[-1] not in ".?!":
+        text += "."
+    return text
 
 
 def _load_checkpoints(path: str | Path | None) -> list[dict[str, Any]]:

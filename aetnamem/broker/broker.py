@@ -197,6 +197,7 @@ class ToolBroker:
             return m.remember(
                 ctx.subject_id,
                 message,
+                force=ctx.user_attested,
                 session_id=ctx.session_id,
                 turn_id=ctx.turn_id,
                 source_type=ctx.source_type,

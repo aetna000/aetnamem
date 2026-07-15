@@ -33,9 +33,9 @@ than “the database is trusted” or “every external action is reversible.”
 
 ## What can I use today?
 
-On macOS, run a local assistant dashboard with onboarding checks, provider
-setup, governed chat, approval-gated file writes, a safe workspace, Keychain
-secrets, and encrypted at-rest database sealing:
+On macOS, run a local assistant dashboard with onboarding checks, lightweight
+local model setup through Ollama, governed chat, approval-gated file writes, a
+safe workspace, Keychain secrets, and encrypted at-rest database sealing:
 
 ```bash
 chmod +x scripts/macos/aetnamem-desktop.command
@@ -44,6 +44,16 @@ open scripts/macos/aetnamem-desktop.command
 
 Then open the printed dashboard URL. Details and limitations:
 **[aetnamem Desktop for macOS](./docs/macos-desktop.md)**.
+
+For a 12 GB Apple Silicon laptop, use the included local-light profile:
+
+```bash
+chmod +x scripts/macos/install-light-local-model.command
+open scripts/macos/install-light-local-model.command
+```
+
+It pulls `qwen3:1.7b` for Ollama and the dashboard can then use the
+`Local light (Ollama)` provider at `http://localhost:11434`.
 
 - **Provenance is required.** Extracted records link to their source episode;
   derived proposals instead cite existing episode or record IDs. Records also

@@ -121,8 +121,11 @@ class AssistantLoop:
                     actor_id="assistant",
                     session_id=session_id,
                     authority=authority,
-                    source_type="tool_output",
-                    user_attested=tool == "memory_forget" and is_forget_request(user_message),
+                    source_type="user_message" if tool == "memory_remember" else "tool_output",
+                    user_attested=(
+                        tool == "memory_remember"
+                        or (tool == "memory_forget" and is_forget_request(user_message))
+                    ),
                 ),
             )
         except ActionPolicyViolation as exc:
