@@ -297,6 +297,20 @@ class ToolBroker:
         """Execute (read-only/memory) or stage (guarded) a single tool call."""
         spec = self.get(name)
         arguments = dict(arguments or {})
+        # Models (small local ones especially) invent argument names; an
+        # unexpected kwarg must come back as a correctable tool result, not
+        # blow up the whole chat turn as a TypeError.
+        properties = spec.input_schema.get("properties")
+        if isinstance(properties, dict):
+            arguments = {k: v for k, v in arguments.items() if k in properties}
+        missing = [k for k in spec.input_schema.get("required") or [] if k not in arguments]
+        if missing:
+            return ToolResult(
+                ok=False,
+                status="invalid_arguments",
+                data={"tool": spec.name, "missing": missing},
+                message=f"Missing required argument(s): {', '.join(missing)}.",
+            )
         if spec.kind is ToolKind.GUARDED:
             return self._stage_guarded(spec, arguments, context)
         try:
@@ -307,6 +321,13 @@ class ToolBroker:
                 status="refused",
                 data={"tool": spec.name, "reason": str(exc)},
                 message=f"Refused: {exc}.",
+            )
+        except TypeError as exc:
+            return ToolResult(
+                ok=False,
+                status="invalid_arguments",
+                data={"tool": spec.name},
+                message=f"Invalid arguments: {exc}.",
             )
 
     def _run_local(

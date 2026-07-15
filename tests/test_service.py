@@ -53,6 +53,7 @@ def running(tmp_path: Path):
             operation="write_text",
         )
         service = build_service(engine, broker, agent_token=AGENT, reviewer_token=REVIEWER)
+        service.workspace = tmp_path / "workspace"
         server = serve(service, port=0)
         holder["server"] = server
         holder["port"] = server.server_address[1]
@@ -223,3 +224,56 @@ def test_local_provider_replaces_stale_echo_model(running):
     assert status == 200
     assert result["kind"] == "local"
     assert result["model"] == "qwen3:1.7b"
+
+
+def test_files_lists_workspace_contents(running):
+    (running.workspace / "notes").mkdir()
+    (running.workspace / "notes" / "report.md").write_text("# Weekly\n- done", "utf-8")
+    (running.workspace / ".hidden").write_text("secret", "utf-8")
+
+    status, result = call(running.base, "GET", "/files", token=running.agent_token)
+
+    assert status == 200
+    paths = [f["path"] for f in result["files"]]
+    assert "notes/report.md" in paths
+    assert ".hidden" not in paths
+
+
+def test_files_read_and_save_roundtrip(running):
+    (running.workspace / "report.md").write_text("draft", "utf-8")
+
+    status, read = call(
+        running.base, "GET", "/files/content?path=report.md", token=running.agent_token
+    )
+    assert status == 200
+    assert read["content"] == "draft"
+
+    status, saved = call(
+        running.base, "POST", "/files/content", token=running.reviewer_token,
+        body={"path": "report.md", "content": "final", "subject_id": "default"},
+    )
+    assert status == 200
+    assert (running.workspace / "report.md").read_text("utf-8") == "final"
+
+    status, audit = call(
+        running.base, "GET", "/audit?subject=default", token=running.agent_token
+    )
+    assert status == 200
+    assert any(e["event_type"] == "user.file_saved" for e in audit["audit_log"])
+
+
+def test_files_save_requires_reviewer_token(running):
+    status, result = call(
+        running.base, "POST", "/files/content", token=running.agent_token,
+        body={"path": "report.md", "content": "sneaky"},
+    )
+    assert status == 403
+    assert not (running.workspace / "report.md").exists()
+
+
+def test_files_rejects_path_traversal(running):
+    for path in ("../escape.txt", "/etc/passwd"):
+        status, result = call(
+            running.base, "GET", f"/files/content?path={path}", token=running.agent_token
+        )
+        assert status == 400, path

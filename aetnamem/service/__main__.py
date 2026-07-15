@@ -11,13 +11,20 @@ import argparse
 import os
 import signal
 import secrets
+import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 from aetnamem import Memory
 from aetnamem.actions import ActionEngine, ApprovalAuthority, FilesystemAdapter
-from aetnamem.assistant.providers import config_from_env
+from aetnamem.assistant.providers import (
+    DEFAULT_LOCAL_MODEL,
+    DEFAULT_OLLAMA_BASE_URL,
+    ProviderConfig,
+    config_from_env,
+)
+from aetnamem.service.app import _ollama_available, build_service, serve
 from aetnamem.broker import ToolBroker
-from aetnamem.service.app import build_service, serve
 from aetnamem.service.encrypted_db import EncryptedDatabaseManager
 
 
@@ -28,6 +35,11 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--include-promote", action="store_true")
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="do not auto-open the dashboard in the default browser",
+    )
     parser.add_argument(
         "--encrypted-db",
         default=os.environ.get("AETNAMEM_ENCRYPTED_DB", ""),
@@ -69,7 +81,21 @@ def main() -> None:
         operation="write_text",
     )
     service = build_service(engine, broker)
-    service.provider_config = config_from_env()
+    service.workspace = workspace
+    service.db_info = {
+        "db_path": str(db_path),
+        "db_sealed_at_rest": encrypted_manager is not None,
+        "db_sealed_path": (
+            str(encrypted_manager.encrypted_path) if encrypted_manager is not None else None
+        ),
+        "db_key_storage": "macos-keychain" if encrypted_manager is not None else None,
+    }
+    provider_config = config_from_env()
+    if provider_config.kind == "echo" and _ollama_available(DEFAULT_OLLAMA_BASE_URL):
+        provider_config = ProviderConfig(
+            kind="local", model=DEFAULT_LOCAL_MODEL, base_url=DEFAULT_OLLAMA_BASE_URL
+        )
+    service.provider_config = provider_config
     server = serve(service, host=args.host, port=args.port)
 
     def checkpoint_and_seal() -> None:
@@ -89,9 +115,23 @@ def main() -> None:
     if encrypted_manager is not None:
         print(f"  sealed db : {encrypted_manager.encrypted_path}", flush=True)
     print(f"  workspace : {workspace}", flush=True)
+    print(f"  provider  : {provider_config.kind} / {provider_config.model}", flush=True)
     print(f"  agent token    (assistant loop): {service.agent_token}", flush=True)
     print(f"  reviewer token (dashboard)     : {service.reviewer_token}", flush=True)
     print("Ctrl-C to stop.", flush=True)
+
+    # Tokens travel in the URL fragment, which the browser never sends over
+    # the wire; the dashboard stores them locally and strips the fragment.
+    signin_url = (
+        f"http://{args.host}:{args.port}/app"
+        f"#agent={quote(service.agent_token)}&reviewer={quote(service.reviewer_token)}"
+    )
+    if not args.no_open:
+        opened = webbrowser.open(signin_url)
+        if not opened:
+            print(f"Open this URL to sign in automatically:\n  {signin_url}", flush=True)
+    else:
+        print(f"Sign-in URL: {signin_url}", flush=True)
 
     def stop(_signum, _frame) -> None:
         raise KeyboardInterrupt

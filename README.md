@@ -33,27 +33,64 @@ than “the database is trusted” or “every external action is reversible.”
 
 ## What can I use today?
 
-On macOS, run a local assistant dashboard with onboarding checks, lightweight
-local model setup through Ollama, governed chat, approval-gated file writes, a
-safe workspace, Keychain secrets, and encrypted at-rest database sealing:
+A local assistant desktop app: governed chat backed by a lightweight local
+Ollama model, visible/searchable memory, approval-gated file writes in a safe
+workspace, an in-browser file viewer/editor, and a live-verified audit chain.
+One launcher does everything — installs Ollama if missing, pulls the
+`qwen3:1.7b` model on first run, starts the service, and opens the dashboard
+in your browser **already signed in** (tokens ride in the URL fragment and
+never leave the browser).
+
+### macOS
 
 ```bash
+git clone https://github.com/aetna000/aetnamem.git && cd aetnamem
 chmod +x scripts/macos/aetnamem-desktop.command
 open scripts/macos/aetnamem-desktop.command
 ```
 
-Then open the printed dashboard URL. Details and limitations:
-**[aetnamem Desktop for macOS](./docs/macos-desktop.md)**.
+macOS additionally seals the memory database encrypted at rest on quit, keyed
+through the Keychain. Details: **[aetnamem Desktop for macOS](./docs/macos-desktop.md)**.
 
-For a 12 GB Apple Silicon laptop, use the included local-light profile:
+### Linux (Ubuntu/Debian and RHEL/Fedora/CentOS)
 
 ```bash
-chmod +x scripts/macos/install-light-local-model.command
-open scripts/macos/install-light-local-model.command
+git clone https://github.com/aetna000/aetnamem.git && cd aetnamem
+chmod +x scripts/linux/aetnamem-desktop.sh
+./scripts/linux/aetnamem-desktop.sh
 ```
 
-It pulls `qwen3:1.7b` for Ollama and the dashboard can then use the
-`Local light (Ollama)` provider at `http://localhost:11434`.
+Needs `python3` ≥ 3.10 (`sudo apt-get install python3` /
+`sudo dnf install python3`) and `curl`. Ollama is installed via its official
+installer if missing. The database lives at
+`~/.local/share/aetnamem/memories.db` (no at-rest sealing on Linux yet).
+
+### Windows 10/11
+
+Double-click `scripts\windows\aetnamem-desktop.bat`, or run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\aetnamem-desktop.ps1
+```
+
+Needs Python 3.10+ (`winget install Python.Python.3.12`). Ollama is installed
+via `winget` if missing. The database lives at `%LOCALAPPDATA%\aetnamem`
+(no at-rest sealing on Windows yet).
+
+### Using the app
+
+1. **Chat** — the assistant runs fully on your machine with the local model.
+   Tell it things worth remembering; ask it to draft files.
+2. **Approvals tab** — when the assistant wants to write a file, the action is
+   staged, never executed. Review the plan and click *Approve & run* or *Deny*.
+3. **Files tab** — everything in your workspace (`~/Aetnamem Workspace` on
+   macOS/Windows, `~/aetnamem-workspace` on Linux). Markdown renders in the
+   browser; any text file can be edited and saved in place.
+4. **Memory tab** — every remembered fact with status, provenance, and trust
+   tier; search and filter, including quarantined and forgotten records.
+5. **Settings** — switch provider (local Ollama, OpenAI, DeepSeek, or any
+   OpenAI-compatible endpoint), run the system check, and review the
+   *Data & security* panel showing exactly where your data lives.
 
 - **Provenance is required.** Extracted records link to their source episode;
   derived proposals instead cite existing episode or record IDs. Records also

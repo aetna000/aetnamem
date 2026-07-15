@@ -98,3 +98,64 @@ def test_assistant_memory_tool_saves_explicit_note(tmp_path: Path) -> None:
     records = memory.list("u1")
     assert any(record["content"] == "I need to cook dinner." for record in records)
     memory.close()
+
+
+class WrongArgsProvider:
+    """Simulates a small model inventing an argument name."""
+
+    def complete(self, messages, tools):
+        return '{"tool":"memory_remember","arguments":{"fact":"weekly report lives in report.md"}}'
+
+
+class UnknownToolProvider:
+    def complete(self, messages, tools):
+        return '{"tool":"make_coffee","arguments":{}}'
+
+
+class ThinkingProvider:
+    """Simulates a thinking model (qwen3) wrapping a fenced tool call."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                "<think>The user wants me to remember this.</think>\n"
+                '```json\n{"tool":"memory_remember","arguments":{"message":"report lives in report.md"}}\n```'
+            )
+        return "<think>done</think>Saved it."
+
+
+def test_invented_argument_names_do_not_crash_chat(tmp_path: Path) -> None:
+    memory, engine, broker = build(tmp_path)
+    loop = AssistantLoop(memory, broker, WrongArgsProvider())
+
+    result = loop.chat(subject_id="u1", session_id="s1", message="Remember my report file.")
+
+    assert result["tool_result"]["ok"] is False
+    assert result["tool_result"]["status"] == "invalid_arguments"
+    memory.close()
+
+
+def test_unknown_tool_does_not_crash_chat(tmp_path: Path) -> None:
+    memory, engine, broker = build(tmp_path)
+    loop = AssistantLoop(memory, broker, UnknownToolProvider())
+
+    result = loop.chat(subject_id="u1", session_id="s1", message="Make me a coffee.")
+
+    assert result["tool_result"]["status"] == "unknown_tool"
+    memory.close()
+
+
+def test_think_blocks_and_fences_are_handled(tmp_path: Path) -> None:
+    memory, engine, broker = build(tmp_path)
+    loop = AssistantLoop(memory, broker, ThinkingProvider())
+
+    result = loop.chat(subject_id="u1", session_id="s1", message="Remember: report lives in report.md.")
+
+    assert result["tool_result"]["status"] == "executed"
+    assert "<think>" not in result["reply"]
+    assert result["reply"] == "Saved it."
+    memory.close()

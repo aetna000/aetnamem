@@ -9,6 +9,8 @@ behind a desktop shell on the same machine.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import hmac
 import json
@@ -45,6 +47,8 @@ class ControlService:
     authorities: dict[str, AuthorityRef] = field(default_factory=dict)
     provider_config: ProviderConfig = field(default_factory=ProviderConfig)
     after_mutation: Callable[[], None] | None = None
+    workspace: Path | None = None
+    db_info: dict[str, Any] = field(default_factory=dict)
 
     @property
     def memory(self):  # noqa: ANN201 - passthrough
@@ -166,7 +170,86 @@ class ControlService:
             "ollama_api": _ollama_available(local_model_url),
             "recommended_local_model": DEFAULT_LOCAL_MODEL,
             "recommended_local_pull": f"ollama pull {DEFAULT_LOCAL_MODEL}",
+            "workspace": str(self.workspace) if self.workspace else None,
+            **self.db_info,
         }
+
+    # -- workspace files --------------------------------------------------------
+
+    _MAX_FILE_BYTES = 1_000_000
+
+    def _workspace_root(self) -> Path:
+        if self.workspace is None:
+            raise HttpError(409, "no workspace configured")
+        return self.workspace.resolve()
+
+    def _resolve_workspace_path(self, raw: str | None) -> Path:
+        if not raw:
+            raise HttpError(400, "missing 'path'")
+        root = self._workspace_root()
+        candidate = (root / raw).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise HttpError(400, "path escapes workspace")
+        return candidate
+
+    def list_files(self) -> dict[str, Any]:
+        root = self._workspace_root()
+        files: list[dict[str, Any]] = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.name.startswith("."):
+                continue
+            stat = path.stat()
+            files.append(
+                {
+                    "path": str(path.relative_to(root)),
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(
+                        stat.st_mtime, tz=timezone.utc
+                    ).isoformat(),
+                }
+            )
+            if len(files) >= 500:
+                break
+        return {"root": str(root), "files": files}
+
+    def read_file(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        path = self._resolve_workspace_path(_one(query, "path"))
+        if not path.is_file():
+            raise HttpError(404, "file not found")
+        if path.stat().st_size > self._MAX_FILE_BYTES:
+            raise HttpError(413, "file too large to open in the dashboard")
+        try:
+            content = path.read_text("utf-8")
+        except UnicodeDecodeError:
+            raise HttpError(415, "not a text file")
+        return {
+            "path": str(path.relative_to(self._workspace_root())),
+            "content": content,
+        }
+
+    def save_file(self, body: dict[str, Any]) -> dict[str, Any]:
+        path = self._resolve_workspace_path(body.get("path"))
+        content = body.get("content")
+        if not isinstance(content, str):
+            raise HttpError(400, "save requires string 'content'")
+        if len(content.encode("utf-8")) > self._MAX_FILE_BYTES:
+            raise HttpError(413, "content too large")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, "utf-8")
+        relative = str(path.relative_to(self._workspace_root()))
+        # A reviewer-token save is the human editing their own workspace, so it
+        # skips staging — but it still lands on the audit chain.
+        self.memory.log_action(
+            body.get("subject_id") or "default",
+            "user.file_saved",
+            payload={
+                "path": relative,
+                "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            },
+            session_id=body.get("session_id"),
+            actor="user",
+        )
+        return {"path": relative, "size": len(content.encode("utf-8"))}
 
     def configure_provider(self, body: dict[str, Any]) -> dict[str, Any]:
         kind = (body.get("kind") or "echo").strip().lower()
@@ -182,12 +265,16 @@ class ControlService:
             base_url = base_url or "http://localhost:11434"
             api_key = None
         elif kind != "echo":
-            keychain = MacKeychain()
-            account = f"provider-{kind}"
-            if api_key:
-                keychain.set(account, api_key)
-            else:
-                api_key = keychain.get(account)
+            import platform
+
+            if platform.system() == "Darwin":
+                keychain = MacKeychain()
+                account = f"provider-{kind}"
+                if api_key:
+                    keychain.set(account, api_key)
+                else:
+                    api_key = keychain.get(account)
+            # Elsewhere the key is held in memory for this session only.
         config = ProviderConfig(kind=kind, model=model, api_key=api_key, base_url=base_url)
         provider_from_config(config)  # validate early
         self.provider_config = config
@@ -309,6 +396,9 @@ def _routes() -> dict[tuple[str, str], Route]:
         ("POST", "/actions/{id}/approve"): ("reviewer", lambda s, p, b, q: s.approve(p["id"], b)),
         ("POST", "/actions/{id}/commit"): ("reviewer", lambda s, p, b, q: s.commit(p["id"])),
         ("POST", "/actions/{id}/deny"): ("reviewer", lambda s, p, b, q: s.deny(p["id"], b)),
+        ("GET", "/files"): ("agent", lambda s, p, b, q: s.list_files()),
+        ("GET", "/files/content"): ("agent", lambda s, p, b, q: s.read_file(q)),
+        ("POST", "/files/content"): ("reviewer", lambda s, p, b, q: s.save_file(b)),
         ("GET", "/memory"): ("agent", lambda s, p, b, q: s.list_memory(q)),
         ("POST", "/memory/recall"): ("agent", lambda s, p, b, q: s.recall(b)),
         ("GET", "/audit"): ("agent", lambda s, p, b, q: s.audit(q)),
@@ -402,6 +492,10 @@ class _Handler(BaseHTTPRequestHandler):
         except HttpError as exc:
             self._reply(exc.status, {"error": exc.message})
         except Exception as exc:  # never leak a stack over the wire
+            import sys
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)  # keep the detail in the local terminal
             self._reply(500, {"error": f"internal error: {type(exc).__name__}"})
 
     def do_GET(self) -> None:

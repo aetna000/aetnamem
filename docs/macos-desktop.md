@@ -27,35 +27,39 @@ chmod +x scripts/macos/aetnamem-desktop.command
 open scripts/macos/aetnamem-desktop.command
 ```
 
-The terminal prints:
+One launch does everything:
 
-- dashboard URL
-- agent token
-- reviewer token
-- workspace path
+1. Installs Ollama via Homebrew if it is missing (skipped when Homebrew is
+   unavailable; the app then runs in offline echo mode).
+2. Starts `ollama serve` in the background and pulls `qwen3:1.7b` on first run.
+3. Starts the control service and opens the dashboard in your browser,
+   already signed in — the tokens ride in the URL fragment, which never
+   leaves the browser, and are stored in `localStorage`.
+4. Selects the local Ollama provider automatically when the Ollama API is
+   reachable.
 
-Open the dashboard URL and paste both tokens into the Connect panel.
+The terminal still prints the dashboard URL, tokens, and workspace path as a
+fallback (for example if no browser opens). Pass `--no-open` to
+`python -m aetnamem.service` to suppress the auto-open.
 
-## First-run questions
+## Providers
 
-The dashboard checks:
+The default is the local Ollama model when Ollama is running. You can switch
+in Settings:
 
-- macOS
-- Python version
-- at least 1 GB free disk
-
-Then choose a provider:
-
-- `Local light (Ollama)` for a laptop-local model suitable for 12 GB Apple
+- `On this Mac (Ollama)` for a laptop-local model suitable for 12 GB Apple
   Silicon machines
 - `Offline echo` to test without an API key
 - `OpenAI`
 - `DeepSeek`
 - `OpenAI-compatible` for local gateways or custom providers
 
+Settings also shows a system check: macOS, Python version, free disk,
+Ollama install/API status, and the recommended local model.
+
 ## Local light model
 
-The desktop UI includes an Ollama-backed local provider. The default model is:
+The desktop launcher bootstraps the local model itself. The default model is:
 
 ```text
 qwen3:1.7b
@@ -64,7 +68,7 @@ qwen3:1.7b
 On an M1 laptop with 12 GB RAM, use this path first. It keeps inference local,
 avoids API keys, and leaves memory/audit data inside the `aetnamem` sidecar.
 
-Install and pull the model:
+If you want to prepare the model without starting the desktop app:
 
 ```bash
 chmod +x scripts/macos/install-light-local-model.command
@@ -78,8 +82,8 @@ ollama pull qwen3:1.7b
 ollama serve
 ```
 
-Then select `Local light (Ollama)` in the provider panel. The default base URL
-is `http://localhost:11434`.
+The default base URL is `http://localhost:11434`. Override the model with
+`AETNAMEM_LOCAL_MODEL`.
 
 ## Safe workspace
 
@@ -92,10 +96,21 @@ By default writes are confined to:
 The assistant can stage a write there, but cannot execute it until you approve
 and commit it in the dashboard.
 
+The dashboard's **Files** tab lists everything in the workspace. Markdown
+files open rendered in the browser; any text file can be edited and saved
+in place. Dashboard saves are made by you (the reviewer), so they skip
+staging but are still recorded on the audit chain as `user.file_saved`.
+Reads and writes are confined to the workspace — path traversal is rejected.
+
+Settings includes a **Data & security** panel showing where the live memory
+database lives, whether it is sealed encrypted at rest on quit (and to which
+path), and that the encryption key is stored in the macOS Keychain.
+
 ## Current limitations
 
 - This is a local web app, not a signed/notarized `.app` bundle yet.
-- Tokens are still printed in Terminal for this development build.
+- Tokens are auto-injected into the browser at launch, but are still printed
+  in Terminal as a fallback for this development build.
 - Provider API keys configured through the dashboard are stored in macOS
   Keychain. Environment-provided keys are not rewritten unless you save them in
   the dashboard.

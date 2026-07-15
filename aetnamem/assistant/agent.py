@@ -2,14 +2,46 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 import secrets
 from typing import Any
 
 from aetnamem.actions.policy import ActionPolicyViolation
 from aetnamem.assistant.providers import AssistantProvider
-from aetnamem.broker import AuthorityRef, BrokerContext, ToolBroker
+from aetnamem.broker import AuthorityRef, BrokerContext, ToolBroker, UnknownToolError
 from aetnamem.core.policy import is_forget_request
 from aetnamem.memory import Memory
+
+# Thinking models (e.g. qwen3) interleave <think> blocks with the reply, and
+# most models like wrapping tool-call JSON in markdown fences.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*\s*\n?|\n?```\s*$")
+
+
+def _clean_reply(text: str) -> str:
+    return _THINK_RE.sub("", text or "").strip()
+
+
+def _unfence(text: str) -> str:
+    return _FENCE_RE.sub("", text.strip()).strip()
+
+
+def _is_tool_call(text: str) -> bool:
+    try:
+        payload = json.loads(_unfence(text))
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and "tool" in payload
+
+
+def _summary_for(tool_result: dict[str, Any]) -> str:
+    status = tool_result.get("status")
+    if status == "awaiting_approval":
+        return "I've staged that action — it's waiting for your approval."
+    if status == "executed":
+        return "Done."
+    message = tool_result.get("message") or status or "the tool call failed"
+    return f"I couldn't complete that: {message}"
 
 
 @dataclass
@@ -56,6 +88,7 @@ class AssistantLoop:
             ],
             tools,
         )
+        assistant_text = _clean_reply(assistant_text)
         tool_result = self._maybe_call_tool(
             assistant_text,
             subject_id=subject_id,
@@ -75,6 +108,12 @@ class AssistantLoop:
                 ],
                 tools,
             )
+            followup = _clean_reply(followup)
+            # Small models often just repeat the tool call instead of
+            # summarizing; only the first call per turn is dispatched, so
+            # narrate the outcome deterministically instead.
+            if not followup or _is_tool_call(followup):
+                followup = _summary_for(tool_result)
             assistant_text = followup
 
         self.memory.log_action(
@@ -103,7 +142,7 @@ class AssistantLoop:
         user_message: str,
     ) -> dict[str, Any] | None:
         try:
-            payload = json.loads(text)
+            payload = json.loads(_unfence(text))
         except json.JSONDecodeError:
             return None
         if not isinstance(payload, dict) or "tool" not in payload:
@@ -111,7 +150,11 @@ class AssistantLoop:
         tool = str(payload["tool"])
         arguments = payload.get("arguments") or {}
         if not isinstance(arguments, dict):
-            raise ValueError("tool arguments must be an object")
+            return {
+                "ok": False,
+                "status": "invalid_arguments",
+                "message": "tool arguments must be a JSON object",
+            }
         try:
             result = self.broker.dispatch(
                 tool,
@@ -128,7 +171,11 @@ class AssistantLoop:
                     ),
                 ),
             )
+        except UnknownToolError:
+            return {"ok": False, "status": "unknown_tool", "message": f"unknown tool: {tool}"}
         except ActionPolicyViolation as exc:
+            return {"ok": False, "status": "refused", "message": str(exc)}
+        except ValueError as exc:
             return {"ok": False, "status": "refused", "message": str(exc)}
         return result.to_dict()
 
