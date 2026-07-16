@@ -3,17 +3,20 @@
 
 An assistant that remembers creates a durable information system. A sentence accepted today may be recalled months later, combined with other facts, shown to a model, or used while proposing a change to the outside world. The engineering question is therefore not only ``did retrieval find a relevant sentence?'' It is also: who said it, was that source trusted, what did it replace, can it be deleted, why did it surface, and does it grant authority to act?
 
+Most of those questions must be answerable \emph{after the fact}, from evidence, by someone who does not trust the assistant's own account of events. We call that capability \emph{recall forensics} (\cref{sec:forensics}) and treat it as a first-class design goal rather than a logging afterthought: each measured recall records a bounded candidate ledger and returned graph paths, the records they cite chain back to source commitments, and selected fields are digest-bound to a per-subject hash chain. A standard-library auditor can therefore reconstruct the measured decisions and detect the mutation classes evaluated in this paper, subject to explicit deletion and candidate-generation limits.
+
 Many memory implementations begin with a document store and semantic similarity. That is useful for search, but search alone does not define durable state. Similarity does not decide whether a web page may overwrite a user's preference; a vector does not itself express correction, quarantine, deletion, approval, or an uncertain external result. \system{} starts from these state-transition questions and treats retrieval as one subsystem inside a larger control plane.
 
 \plainbox{Think of the system as four ordinary things used together: a filing cabinet for the original statements, a card catalogue for finding them, a map connecting related people and facts, and a receipt book recording every important change. The map and catalogue can be rebuilt; the original statements and receipts are the durable evidence.}
 
-This paper documents the architecture implemented in the open-source \system{} release v0.3.0, at commit \code{69ebedea93ea95965867af5483dd9f63425b8e75}~\cite{aetnamem2026}. It makes five scoped contributions.
+This paper documents the core architecture implemented in the open-source \system{} release v0.3.0, at commit \code{69ebedea93ea95965867af5483dd9f63425b8e75}~\cite{aetnamem2026}. The recall-forensics bindings and evaluator are a later, content-addressed development snapshot based on commit \code{12925d3}; the evidence manifest, rather than that base commit alone, identifies its exact source bytes. The paper makes six scoped contributions.
 
 \begin{enumerate}
+  \item It defines \textbf{recall forensics} as five scoped questions --- attribution, provenance commitment, lifecycle consistency, decision replay, and integrity --- and evaluates them with a standard-library auditor: 14/14 rankings and 68/68 returned-result pairs reconstructed, 11/11 eligible turns re-executed exactly, 75/75 selected single-row mutations detected, and three privacy-affected turns explicitly excluded from engine re-execution.
   \item It defines a governed memory lifecycle in which origin determines initial trust and status, corrections supersede rather than overwrite, deletion purges payloads and emits a receipt, and recall considers only active records.
   \item It combines candidate-capped lexical retrieval with an optional bounded graph traversal. The graph is a provenance-preserving, rebuildable index rather than a second source of truth.
   \item It separates extraction confidence, source trust, retrieval score, entity-resolution confidence, and action outcome. None of these numbers silently becomes authority.
-  \item It binds memory, graph, retrieval, and effect transitions into one per-subject hash chain with externally anchorable checkpoints and crash-aware action states.
+  \item It binds memory, graph, retrieval, and effect transitions into one per-subject hash chain with externally anchorable checkpoints and crash-aware action states. The evaluated snapshot adds a versioned digest envelope for selected retrieval and record fields; it does not claim to authenticate every database column.
   \item It describes the implemented platform and filesystem security boundaries precisely, including important non-guarantees.
 \end{enumerate}
 
@@ -21,7 +24,7 @@ The claim is architectural, not a claim of priority or universal superiority. Th
 
 \subsection{How to read this paper}
 
-Non-specialist readers can follow the plain-language boxes, \cref{fig:architecture}, the lifecycle table in \cref{tab:lifecycle}, and the platform matrix in \cref{tab:platform-encryption}. Technical readers will find the scoring equations, graph bounds, transaction model, cryptographic construction, action state machine, implementation map, and reproducibility details in the main text and appendix.
+Non-specialist readers can follow the plain-language boxes, \cref{fig:architecture}, the lifecycle table in \cref{tab:lifecycle}, the forensics results in \cref{tab:forensics}, and the platform matrix in \cref{tab:platform-encryption}. Technical readers will find the scoring equations, graph bounds, transaction model, cryptographic construction, forensics protocol, action state machine, implementation map, and reproducibility details in the main text and appendix.
 
 \subsection{Terminology: is this RAG?}
 

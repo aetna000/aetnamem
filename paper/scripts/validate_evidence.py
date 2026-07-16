@@ -167,16 +167,165 @@ def validate_governed_memory_probe() -> None:
         require(fragment in manuscript, f"manuscript/probe mismatch: {fragment}")
 
 
+def validate_recall_forensics() -> None:
+    evidence = json.loads((DATA / "recall-forensics.json").read_text(encoding="utf-8"))
+    artifact = evidence["artifact"]
+    workload = evidence["workload"]
+    results = evidence["results"]
+
+    require(artifact["package_version"] == "0.3.0", "forensics package version drifted")
+    require(
+        artifact["script"] == "paper/scripts/run_recall_forensics_eval.py",
+        "forensics script path drifted",
+    )
+    require(
+        artifact["state"] == "content-addressed post-v0.3.0 development snapshot",
+        "forensics source-state label drifted",
+    )
+    require(len(artifact["base_commit"]) == 40, "forensics base commit is not full")
+    run("git", "cat-file", "-e", f'{artifact["base_commit"]}^{{commit}}')
+    source_files = artifact["source_files_sha256"]
+    require(len(source_files) == 42, "forensics source-manifest file count drifted")
+    required_files = {
+        "aetnamem/memory.py",
+        "aetnamem/graph.py",
+        "aetnamem/retrieve/rank.py",
+        "aetnamem/store/sqlite.py",
+        "paper/scripts/run_recall_forensics_eval.py",
+        "pyproject.toml",
+    }
+    require(required_files <= set(source_files), "forensics manifest misses core files")
+    for relative, expected in source_files.items():
+        path = (REPO / relative).resolve()
+        require(path.is_relative_to(REPO.resolve()), f"manifest path escapes repo: {relative}")
+        require(path.is_file(), f"manifest source file missing: {relative}")
+        require(sha256(path) == expected, f"manifest source digest mismatch: {relative}")
+    manifest_json = json.dumps(source_files, sort_keys=True, separators=(",", ":"))
+    manifest_sha256 = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+    require(
+        manifest_sha256 == artifact["source_manifest_sha256"],
+        "forensics source-manifest digest mismatch",
+    )
+
+    require(workload["recall_turns"] == 14, "forensics turn count drifted")
+    require(workload["filler_records"] == 1_000, "forensics filler count drifted")
+    require(workload["historical_turns"] == 3, "historical turn count drifted")
+    require(workload["stable_replay_turns"] == 11, "stable turn count drifted")
+    require(workload["graph_recall_turns"] == 9, "forensics graph turn count drifted")
+    require(workload["limits_tested"] == [3, 4, 5, 6, 7], "forensics limits drifted")
+    require(workload["min_scores_tested"] == [0.25], "forensics threshold drifted")
+    require(workload["candidate_cap"] == 200, "forensics candidate cap drifted")
+
+    require(results["baseline_chain_failures"] == 0, "baseline chain must verify")
+    require(results["baseline_digest_failures"] == 0, "baseline digests must verify")
+    require(results["baseline_lifecycle_failures"] == 0, "lifecycle replay must verify")
+    require(
+        results["baseline_turn_semantic_failures"] == 0,
+        "turn arithmetic and ordering must verify",
+    )
+    pairs = results["returned_pairs"]
+    require(pairs == 68, "returned-pair count drifted")
+    for key in (
+        "f1_attribution_recomputed",
+        "f2_provenance_commitments_complete",
+        "f3_lifecycle_admissible",
+    ):
+        require(results[key] == pairs, f"{key} is not complete over all pairs")
+    require(results["f1_ranking_turns_recomputed"] == 14, "ranking replay drifted")
+    require(
+        results["f1_historical_paths_valid"] == results["f1_graph_paths"] == 14,
+        "historical graph-path validation drifted",
+    )
+    require(
+        results["f1_paths_missing_from_current_graph"] == 1,
+        "historical/current graph-path boundary drifted",
+    )
+    require(results["f2_deleted_source_payload_pairs"] == 1, "deletion boundary drifted")
+    require(results["f3_promoted_record_pairs"] == 1, "promotion coverage drifted")
+    require(results["f3_promotion_transition_verified"], "promotion did not verify")
+    replay = results["f4_stable_engine_reexecution"]
+    require(
+        replay["returned_exact"]
+        == replay["candidate_ledgers_exact"]
+        == replay["query_confirmed"]
+        == replay["eligible_turns"]
+        == 11,
+        "eligible-turn engine re-execution is not exact",
+    )
+    require(replay["excluded_historical_turns"] == 3, "replay exclusion drifted")
+    tamper = results["f5_tamper"]
+    single_row = [
+        "audit_event_deletion",
+        "audit_payload_edit",
+        "audit_returned_set_edit",
+        "retrieval_candidate_score_edit",
+        "retrieval_returned_set_edit",
+        "retrieval_parameter_edit",
+        "retrieval_query_edit",
+        "retrieval_subject_edit",
+        "record_content_edit",
+        "record_status_edit",
+        "record_trust_edit",
+        "record_source_edit",
+        "record_confidence_edit",
+        "record_scope_edit",
+        "episode_message_edit",
+    ]
+    for name in single_row:
+        entry = tamper[name]
+        require(
+            entry["detected"] == entry["trials"] == 5,
+            f"tamper class {name} is not fully detected",
+        )
+    require(
+        tamper["tail_truncation_chain_only"]["detected"] == 0,
+        "chain-only truncation detection drifted (should be undetectable)",
+    )
+    require(
+        tamper["tail_truncation_with_checkpoint"]["detected"]
+        == tamper["tail_truncation_with_checkpoint"]["trials"]
+        == 5,
+        "checkpointed truncation detection drifted",
+    )
+    require(results["quarantined_results_returned"] == 0, "quarantined content surfaced")
+    require(
+        results["forgotten_results_returned_after_deletion"] == 0,
+        "forgotten content surfaced after deletion",
+    )
+    require(results["forgotten_content_rows_remaining"] == 0, "forgotten content persisted")
+    require(results["reconstruction_ms_total"] > 0, "invalid reconstruction timing")
+
+    manuscript = (
+        PAPER / "sections" / "governed-memory" / "07b-recall-forensics.tex"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "F1 ranking decisions recomputed & 14/14",
+        "F1 returned-result attribution & 68/68",
+        "historical graph paths valid & 14/14",
+        "F2 provenance commitments complete & 68/68",
+        "F3 lifecycle admissible at recall & 68/68",
+        "F4 stable returned sets re-executed exactly & 11/11",
+        "complete candidate ledgers exact & 11/11",
+        "F5 selected single-row mutations detected & 75/75",
+        "tail truncation, chain only & 0/5",
+        "tail truncation, anchored checkpoint & 5/5",
+        f'Auditor reconstruction time & {results["reconstruction_ms_total"] / 1000:.3f}\\,s',
+    ):
+        require(fragment in manuscript, f"manuscript/forensics mismatch: {fragment}")
+
+
 def main() -> None:
     validate_benchmark()
     validate_artifact_hashes()
     validate_demo_database()
     validate_standalone_verifiers()
     validate_governed_memory_probe()
+    validate_recall_forensics()
     print("OK   paper benchmark tables")
     print("OK   flagship artifact digests and database metrics")
     print("OK   standalone audit and action verifiers")
     print("OK   governed-memory probe and manuscript values")
+    print("OK   recall-forensics evidence and manuscript values")
 
 
 if __name__ == "__main__":

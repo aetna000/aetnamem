@@ -33,10 +33,10 @@
   linkcolor=aetnaBlue,
   citecolor=aetnaTeal,
   urlcolor=aetnaBlue,
-  pdftitle={Governed Memory Without Embeddings: Deterministic Recall, Rebuildable Graph Indexes, and Approval-Bound Effects in aetnamem},
+  pdftitle={Governed Memory Without Embeddings: Recall Forensics, Deterministic Retrieval, and Approval-Bound Effects in aetnamem},
   pdfauthor={aetna000.com},
-  pdfsubject={Technical white paper on aetnamem v0.3.0},
-  pdfkeywords={agent memory, knowledge graph, audit log, provenance, access control, local-first AI}
+  pdfsubject={Technical white paper on aetnamem v0.3.0 and a content-addressed recall-forensics snapshot},
+  pdfkeywords={agent memory, recall forensics, knowledge graph, audit log, provenance, access control, local-first AI}
 }
 
 \pagestyle{fancy}
@@ -81,21 +81,21 @@
     \parbox{0.94\columnwidth}{\small\textbf{Plain-language reading.} #1}}\end{center}}
 
 \title{\vspace{-1.3em}\textbf{Governed Memory Without Embeddings:}\\
-\textbf{Deterministic Recall, Rebuildable Graph Indexes, and\\Approval-Bound Effects in \system}}
+\textbf{Recall Forensics, Deterministic Retrieval, and\\Approval-Bound Effects in \system}}
 \author{aetna000.com\\\small Independent Researcher\\
 \small \href{mailto:aetna000@gmail.com}{aetna000@gmail.com} \quad
 \url{https://github.com/aetna000/aetnamem}}
-\date{July 2026\\\small Technical white paper; implementation release v0.3.0}
+\date{July 2026\\\small Technical white paper; v0.3.0 core plus a content-addressed evaluation snapshot}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Long-lived assistants need more than a larger prompt or a similarity index. They need rules for deciding what may become memory, how corrections and deletion change that memory, why a recalled item was selected, whether untrusted text may influence future behavior, and when remembered information may authorize an external effect. We describe the memory architecture implemented in \system{} v0.3.0. Canonical episodes and records carry provenance, categorical trust, lifecycle state, and append-only transition evidence. Retrieval uses bounded SQLite FTS5 candidates and an optional, derived entity-relation graph; the two rankings are fused deterministically. The graph adds explainable multi-hop joins while remaining disposable and rebuildable from canonical records. No embedding model or vector database is used.
+When a long-lived assistant answers from memory, the load-bearing question is often not ``was retrieval relevant?'' but ``can anyone prove, later, why that memory surfaced?'' We call this task \emph{recall forensics}: from a durable database and a published evidence format, an auditor reconstructs a logged result's ranking inputs, provenance commitment, lifecycle admissibility, and integrity evidence. We describe the governed-memory architecture in \system{} v0.3.0 and evaluate additional forensics bindings in a content-addressed post-release source snapshot. Across 14 turns containing a correction, quarantine, explicit promotion, deletion, and later graph rebuild, a standard-library auditor recomputed 14/14 ranking decisions and reconstructed 68/68 returned-result pairs. Exact engine re-execution is reported only for 11/11 turns whose canonical inputs remained unchanged; three earlier turns are excluded because retaining deleted plaintext for replay would contradict the deletion contract. The evaluator also detected 75/75 selected single-row mutations. Tail truncation remained undetectable from the chain alone (0/5) and detectable with an anchored checkpoint (5/5).
 
-The omission of embeddings is deliberate rather than universal advice. It removes model-version drift, re-embedding migrations, and opaque nearest-neighbor dependencies from the trusted retrieval path, while preserving deterministic replay, exact deletion, and path explanations. It also sacrifices some paraphrase and fuzzy-concept recall. We therefore characterize \system{} not as a conventional dense retrieval-augmented generation pipeline, but as a governed local state and effect-control plane whose recall output may still augment a language-model prompt.
+The architecture behind this capability treats memory as governed local state. Canonical episodes and records carry provenance, categorical trust, lifecycle state, and append-only transition evidence on one per-subject SHA-256 chain that also records graph, retrieval, approval, and action transitions. Retrieval uses bounded SQLite FTS5 candidates and an optional, derived entity-relation graph, fused deterministically; the graph adds explainable multi-hop joins while remaining disposable and rebuildable from canonical records. No embedding model or vector database is used --- a deliberate trade that avoids preserving an additional learned model, tokenizer, and vector-index artifact for replay, at the cost of some paraphrase recall. Exact-plan HMAC approvals, root-confined filesystem adapters, precondition revalidation, postcondition checks, compensation, and explicit uncertain states keep recalled information distinct from authority to act.
 
-The same per-subject SHA-256 chain records memory, graph, retrieval, approval, and action transitions. Exact-plan HMAC approvals, root-confined filesystem adapters, precondition revalidation, postcondition checks, compensation, and explicit uncertain states limit external mutation. On macOS, the desktop launcher seals the primary SQLite database with OpenSSL AES-256-CBC and HMAC-SHA256 using a random Keychain-held secret; the live database is plaintext while running. Linux and Windows use plaintext application databases and depend on operating-system disk encryption. We state these and other boundaries explicitly. A reproducible 10,002-record laptop probe demonstrates candidate-bounded recall and a successful two-hop result; it is a scale sanity check, not a comprehensive quality or million-record validation.
+We state platform boundaries explicitly: on macOS the desktop launcher seals the database with OpenSSL AES-256-CBC and HMAC-SHA256 under a Keychain-held secret while the live database remains plaintext during operation; Linux and Windows rely on operating-system disk encryption. A reproducible 10,002-record laptop probe additionally demonstrates candidate-bounded recall and a two-hop graph result; it is a scale sanity check, not a quality or million-record validation.
 \end{abstract}
 
 \input{sections/governed-memory/01-introduction}
@@ -105,6 +105,7 @@ The same per-subject SHA-256 chain records memory, graph, retrieval, approval, a
 \input{sections/governed-memory/05-graph-index}
 \input{sections/governed-memory/06-confidence-ambiguity}
 \input{sections/governed-memory/07-audit-faults}
+\input{sections/governed-memory/07b-recall-forensics}
 \input{sections/governed-memory/08-encryption}
 \input{sections/governed-memory/09-guarded-effects}
 \input{sections/governed-memory/10-evaluation}

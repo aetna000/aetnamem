@@ -136,6 +136,7 @@ class GraphIndex:
         status = str(record.get("status") or "active")
         graph_status = status if status in {"active", "quarantined", "superseded"} else "tombstoned"
         entity_status = "quarantined" if graph_status == "quarantined" else "active"
+        alias_status = graph_status
         created_at = str(record.get("created_at") or "")
         mutations: list[dict[str, Any]] = []
 
@@ -176,7 +177,7 @@ class GraphIndex:
                 f"my {fact.relation_label}",
                 source_record=record_id,
                 trust_tier=str(record.get("trust_tier") or "derived"),
-                status=entity_status,
+                status=alias_status,
                 created_at=created_at,
                 mutations=mutations,
             )

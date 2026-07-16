@@ -16,6 +16,8 @@ Record ranking & \path{aetnamem/retrieve/rank.py} & weight constants, tokenizati
 SQLite, FTS, and audit & \path{aetnamem/store/sqlite.py} & transactions, WAL, candidate cap, schemas, event chain, incremental verification \\
 Graph index & \path{aetnamem/graph.py} & extraction, lifecycle propagation, seeds, spread, merge proposals, partitions \\
 Graph fusion and checkpoints & \path{aetnamem/memory.py} & weighted RRF, path evidence, external checkpoint documents \\
+Forensic digest bindings & \path{aetnamem/memory.py} & \code{retrieval\_sha256} over retrieval evidence, \code{content\_sha256} on admission events \\
+Recall-forensics harness & \path{paper/scripts/run_recall_forensics_eval.py} & stdlib-only reconstruction, eligible-turn re-execution, mutation trials, checkpoint boundary \\
 Approval authority & \path{aetnamem/actions/approval.py} & exact-plan HMAC, nonce, TTL, constant-time comparison \\
 Action transitions & \path{aetnamem/actions/engine.py} & plan construction, verification, execution, uncertainty, compensation, recovery \\
 Filesystem boundary & \path{aetnamem/actions/adapters/filesystem.py} & root and symlink checks, snapshots, atomic write, postcondition and compensation \\
@@ -65,8 +67,10 @@ def recall(subject, query, use_graph=False, limit=10):
         records += active_records_nominated_outside_fts(graph_candidates)
     direct = rank(records, text=0.75, trust=0.15, recency=0.10)
     ranked = weighted_rrf(direct, graph_candidates) if use_graph else direct
-    audit_bounded_retrieval(query_digest, ranked[:50], returned=ranked[:limit])
-    return ranked[:limit]
+    returned = ranked[:limit]
+    ledger = ranked[:max(50, limit)]
+    audit_bounded_retrieval(query_digest, ledger, returned=returned)
+    return returned
 \end{lstlisting}
 
 \subsection{Guarded commit}
@@ -116,6 +120,6 @@ Stop the service before copying \code{memories.db}, or use a SQLite-aware online
 \section{Artifact and Authorship Statement}
 \label{app:artifact}
 
-This document is a technical white paper prepared for arXiv-style distribution. It has not been peer reviewed. The author and requested attribution for the manuscript are \textbf{aetna000.com}. The implementation artifact is \system{} v0.3.0 at commit \code{69ebedea93ea95965867af5483dd9f63425b8e75}. The benchmark JSON records a single local run and should remain paired with its script and interpretation limits.
+This document is a technical white paper prepared for arXiv-style distribution. It has not been peer reviewed. The author and requested attribution for the manuscript are \textbf{aetna000.com}. The core implementation artifact is \system{} v0.3.0 at commit \code{69ebedea93ea95965867af5483dd9f63425b8e75}. The recall-forensics evidence uses a later development snapshot identified by the 42-file SHA-256 manifest embedded in \path{paper/data/recall-forensics.json}; its base commit alone is not the evaluated source. Both evidence JSON files record single local runs and should remain paired with their scripts and interpretation limits.
 
 The paper intentionally distinguishes implemented behavior, deployment assumptions, measured evidence, design projections, and future work. Statements such as ``groundbreaking,'' ``unbreakable,'' ``always encrypted,'' ``exactly once,'' or ``massive scale proven'' are not supported by the current artifact and are deliberately not used.

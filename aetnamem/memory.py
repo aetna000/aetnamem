@@ -15,12 +15,25 @@ from aetnamem.core.policy import (
 )
 from aetnamem.extract import extract_facts
 from aetnamem.graph import GRAPH_EXTRACTOR_VERSION, GraphIndex
-from aetnamem.retrieve import ScoredRecord, query_tokens, rank_records
+from aetnamem.retrieve import (
+    ScoredRecord,
+    query_tokens,
+    rank_records,
+    token_overlap_components,
+)
+from aetnamem.retrieve.rank import RECENCY_WEIGHT, TEXT_WEIGHT, TRUST_WEIGHT
 from aetnamem.store import SQLiteStore
 from aetnamem.store.sqlite import utc_now
 
 
 _T = TypeVar("_T")
+
+_RETRIEVAL_EVIDENCE_FORMAT = "aetnamem-retrieval-evidence-v2"
+_RECORD_RANKER_VERSION = "record-rank-v1"
+_GRAPH_FUSION_VERSION = "weighted-rrf-v1"
+_RRF_RANK_CONSTANT = 60.0
+_GRAPH_RRF_WEIGHT = 2.0
+_CANDIDATE_LOG_WINDOW = 50
 
 
 def _atomic(method: Callable[..., _T]) -> Callable[..., _T]:
@@ -193,6 +206,11 @@ class Memory:
                     "status": status,
                     "fact_key": candidate.fact_key,
                     "supersedes": old_ids,
+                    "confidence": candidate.confidence,
+                    "scope": candidate.scope,
+                    # Binds the stored content to the chain so a direct edit
+                    # of the record row is detectable by an offline auditor.
+                    "content_sha256": _sha256(candidate.content),
                 },
             )
             stored_record = self.store.get_record(subject_id, record_id)
@@ -269,11 +287,20 @@ class Memory:
                     active_records.append(record)
                     candidate_ids.add(record_id)
 
-        scored = rank_records(
+        lexical_scored = rank_records(
             query,
             active_records,
             fts_scores=fts_scores if fts_scores else None,
         )
+        lexical_by_record = {
+            str(item.record["id"]): item for item in lexical_scored
+        }
+        lexical_rank = {
+            str(item.record["id"]): rank
+            for rank, item in enumerate(lexical_scored, start=1)
+        }
+        graph_rank = _graph_ranks(graph_by_record)
+        scored = lexical_scored
         if graph_result is not None:
             scored = _blend_graph_scores(scored, graph_by_record)
         all_scored = scored
@@ -282,31 +309,68 @@ class Memory:
         returned = scored[:limit]
         returned_ids = [item.record["id"] for item in returned]
 
-        candidates_payload = [
-            {
-                "record_id": item.record["id"],
+        by_recency = sorted(
+            active_records,
+            key=lambda record: (
+                str(record.get("created_at") or ""),
+                str(record.get("id")),
+            ),
+        )
+        recency_rank = {
+            str(record["id"]): rank
+            for rank, record in enumerate(by_recency)
+        }
+        recency_denominator = max(len(active_records) - 1, 1)
+        fts_max_raw = max(fts_scores.values(), default=0.0)
+        candidates_payload: list[dict[str, Any]] = []
+        returned_id_set = set(returned_ids)
+        for rank, item in enumerate(all_scored, start=1):
+            record_id = str(item.record["id"])
+            if rank > _CANDIDATE_LOG_WINDOW and record_id not in returned_id_set:
+                continue
+            lexical_item = lexical_by_record[record_id]
+            graph_candidate = graph_by_record.get(record_id)
+            overlap_matches, overlap_terms = token_overlap_components(
+                query, str(item.record.get("content") or "")
+            )
+            summary: dict[str, Any] = {
+                "record_id": record_id,
+                "rank": rank,
                 "score": item.score,
+                "base_score": lexical_item.score,
                 "text_score": item.text_score,
+                "text_method": "fts5" if fts_scores else "token-overlap",
+                "text_raw_score": round(float(fts_scores.get(record_id, 0.0)), 12),
+                "text_max_raw_score": round(float(fts_max_raw), 12),
+                "text_overlap_matches": overlap_matches,
+                "text_overlap_terms": overlap_terms,
                 "trust_score": item.trust_score,
+                "trust_tier": item.record["trust_tier"],
                 "recency_score": item.recency_score,
+                "recency_rank": recency_rank[record_id],
+                "recency_denominator": recency_denominator,
+                "lexical_rank": lexical_rank[record_id],
+                "graph_rank": graph_rank.get(record_id),
+                "graph_score": (
+                    round(float(graph_candidate["score"]), 6)
+                    if graph_candidate is not None
+                    else None
+                ),
+                "created_at": item.record["created_at"],
                 "status": item.record["status"],
                 "source_type": item.record["source_type"],
                 "above_threshold": min_score is None or item.score >= min_score,
-                "returned": item.record["id"] in returned_ids,
-                **(
-                    {
-                        "graph_score": graph_by_record[item.record["id"]]["score"],
-                        "graph_depth": graph_by_record[item.record["id"]]["depth"],
-                        "graph_path": graph_by_record[item.record["id"]]["path"],
-                    }
-                    if item.record["id"] in graph_by_record
-                    and item.record["id"] in returned_ids
-                    else {}
-                ),
+                "returned": record_id in returned_id_set,
             }
-            for item in all_scored[:50]
-        ]
-        graph_raw = {}
+            if graph_candidate is not None and record_id in returned_id_set:
+                summary.update(
+                    {
+                        "graph_depth": graph_candidate["depth"],
+                        "graph_path": graph_candidate["path"],
+                    }
+                )
+            candidates_payload.append(summary)
+        graph_raw: dict[str, Any] = {}
         if graph_result is not None:
             graph_raw = {
                 "algorithm": "graph-seed-spread-v1",
@@ -318,14 +382,52 @@ class Memory:
                 "visited_edges": graph_result.visited_edges,
                 "pruned_digest": graph_result.pruned_digest,
             }
+        graph_raw["replay"] = {
+            "use_graph": graph_result is not None,
+            "limit": limit,
+            "min_score": min_score,
+            "candidate_cap": self.recall_candidate_limit,
+            "ranker_version": _RECORD_RANKER_VERSION,
+            "record_weights": {
+                "text": TEXT_WEIGHT,
+                "trust": TRUST_WEIGHT,
+                "recency": RECENCY_WEIGHT,
+            },
+            "fusion_version": (
+                _GRAPH_FUSION_VERSION if graph_by_record else None
+            ),
+            "rrf_rank_constant": _RRF_RANK_CONSTANT,
+            "graph_rrf_weight": _GRAPH_RRF_WEIGHT,
+            "candidate_log_window": _CANDIDATE_LOG_WINDOW,
+        }
+        query_sha256 = _sha256(query)
+        retained_query = query if self.retain_query_text else ""
         retrieval_id = self.store.insert_retrieval_event(
             subject_id=subject_id,
             session_id=session_id,
-            query=query if self.retain_query_text else "",
-            query_sha256=_sha256(query),
+            query=retained_query,
+            query_sha256=query_sha256,
             candidates=candidates_payload,
             returned_ids=returned_ids,
             raw=graph_raw,
+        )
+        # Digest over the retrieval evidence itself. The retrieval_events row
+        # is not part of the hash chain; this binding makes edits to logged
+        # candidate scores or paths detectable by an offline auditor.
+        retrieval_sha256 = sha256_hex(
+            canonical_json(
+                {
+                    "format": _RETRIEVAL_EVIDENCE_FORMAT,
+                    "retrieval_id": retrieval_id,
+                    "subject_id": subject_id,
+                    "session_id": session_id,
+                    "query": retained_query,
+                    "query_sha256": query_sha256,
+                    "candidates": candidates_payload,
+                    "returned_ids": returned_ids,
+                    "raw": graph_raw,
+                }
+            )
         )
         self.store.append_audit_event(
             subject_id=subject_id,
@@ -334,8 +436,11 @@ class Memory:
             session_id=session_id,
             payload={
                 "retrieval_id": retrieval_id,
+                "retrieval_sha256": retrieval_sha256,
+                "retrieval_evidence_format": _RETRIEVAL_EVIDENCE_FORMAT,
                 "returned_ids": returned_ids,
                 "candidate_count": len(all_scored),
+                "logged_candidate_count": len(candidates_payload),
                 "min_score": min_score,
                 "limit": limit,
                 "algorithm": graph_raw.get("algorithm", "records-fts-v1"),
@@ -719,6 +824,8 @@ class Memory:
                 continue
 
             fact_key = proposal.get("fact_key")
+            normalized_fact_key = str(fact_key).lower().strip() if fact_key else None
+            confidence = float(proposal.get("confidence", 0.5))
             record_id = self.store.insert_record(
                 subject_id=subject_id,
                 content=content,
@@ -727,10 +834,10 @@ class Memory:
                 source_session_id=session_id,
                 source_turn_id=None,
                 episode_id=None,
-                confidence=float(proposal.get("confidence", 0.5)),
+                confidence=confidence,
                 scope="user_private",
                 status="quarantined",
-                fact_key=str(fact_key).lower().strip() if fact_key else None,
+                fact_key=normalized_fact_key,
                 raw={"evidence": evidence, "proposer": proposer},
             )
             self.store.append_audit_event(
@@ -743,6 +850,9 @@ class Memory:
                     "source_type": "derived",
                     "trust_tier": "derived",
                     "status": "quarantined",
+                    "fact_key": normalized_fact_key,
+                    "confidence": confidence,
+                    "scope": "user_private",
                     "evidence": evidence,
                     "content_sha256": _sha256(content),
                 },
@@ -1319,34 +1429,23 @@ def _blend_graph_scores(
     """Reciprocal-rank fusion over direct record and graph rankings."""
     if not graph_by_record:
         return lexical
-    rank_constant = 60.0
     lexical_rank = {
         str(item.record["id"]): rank for rank, item in enumerate(lexical, start=1)
     }
-    graph_rank = {
-        record_id: rank
-        for rank, (record_id, _candidate) in enumerate(
-            sorted(
-                graph_by_record.items(),
-                key=lambda item: (-float(item[1]["score"]), item[0]),
-            ),
-            start=1,
-        )
-    }
-    graph_weight = 2.0
-    maximum = (1.0 + graph_weight) / (rank_constant + 1.0)
+    graph_rank = _graph_ranks(graph_by_record)
+    maximum = (1.0 + _GRAPH_RRF_WEIGHT) / (_RRF_RANK_CONSTANT + 1.0)
     blended: list[ScoredRecord] = []
     for item in lexical:
         record_id = str(item.record["id"])
-        score = 1.0 / (rank_constant + lexical_rank[record_id])
+        score = 1.0 / (_RRF_RANK_CONSTANT + lexical_rank[record_id])
         if record_id in graph_rank:
             graph_strength = max(
                 0.0, min(float(graph_by_record[record_id]["score"]), 1.0)
             )
             score += (
-                graph_weight
+                _GRAPH_RRF_WEIGHT
                 * graph_strength
-                / (rank_constant + graph_rank[record_id])
+                / (_RRF_RANK_CONSTANT + graph_rank[record_id])
             )
         blended.append(
             ScoredRecord(
@@ -1365,6 +1464,21 @@ def _blend_graph_scores(
         )
     )
     return blended
+
+
+def _graph_ranks(
+    graph_by_record: dict[str, dict[str, Any]],
+) -> dict[str, int]:
+    return {
+        record_id: rank
+        for rank, (record_id, _candidate) in enumerate(
+            sorted(
+                graph_by_record.items(),
+                key=lambda item: (-float(item[1]["score"]), item[0]),
+            ),
+            start=1,
+        )
+    }
 
 
 def _selector_contains(selector: dict[str, Any] | str | None) -> str | None:

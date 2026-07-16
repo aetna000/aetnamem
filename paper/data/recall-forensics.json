@@ -1,0 +1,189 @@
+{
+  "artifact": {
+    "base_commit": "12925d3b428a113caeb4111902a1ef3b2b326e9d",
+    "package_version": "0.3.0",
+    "script": "paper/scripts/run_recall_forensics_eval.py",
+    "seed": 20260716,
+    "source_files_sha256": {
+      "aetnamem/__init__.py": "1283e6dbb54bbe3cbe7d2c58b037092c37e6687f51e0b8d9eb2b235499bbb83d",
+      "aetnamem/actions/__init__.py": "ed181998b14be2b8d0e18a2e9569fa884e2fa9f8de6b35574365726607cb5933",
+      "aetnamem/actions/adapters/__init__.py": "712d95e92f66691357a7f063d0df73426a5081c1ec1f1d8fec9763da03be6223",
+      "aetnamem/actions/adapters/base.py": "857def4105f448398ce48466297818d71fbb92039c8b5bb70e24fd7b453531d4",
+      "aetnamem/actions/adapters/filesystem.py": "8ebbcc2dc786352fb143958821b26432b27eebeb566adcd3d7b9a68f050336c6",
+      "aetnamem/actions/approval.py": "f9e22678649c100ab114bc40a410e4e4ede8b5da157f3ae710920c2bcff11f0a",
+      "aetnamem/actions/engine.py": "4245ce70eaafc6c0856b5cec2c0145a928d5f813e243cb235bd36d07519a81c1",
+      "aetnamem/actions/importers/__init__.py": "efbac8ada4a43eabf6ef01db06dfb4eabe9aedfec2833cd2d11ac9492f43a0d4",
+      "aetnamem/actions/importers/journal.py": "10e03adf5a6e43ed05ebb04648413d556bf53472882d141088512d70cc0aca20",
+      "aetnamem/actions/models.py": "8c07298a956e4ed6184d2329e711da37cafc50c75c8d8445dceee5fd8affee02",
+      "aetnamem/actions/policy.py": "d979018bd82dc51c7cff8bcc9df34c9fb436ea9702eb470a0068d1465e0c996c",
+      "aetnamem/actions/store.py": "8230cc8470a5822493b5792ad1764500e19bf06b3d7061bfb05bcb36cbafd57d",
+      "aetnamem/actions/verifier.py": "ff92531aab84dd90d38f919676321d7d0f5d473ecea7e3bb6407d182bc0dfb94",
+      "aetnamem/assistant/__init__.py": "84bbe3e06343f9fe12c5e539cfc05832d9b00f8f81f72b3d5bc13b0d3520c321",
+      "aetnamem/assistant/agent.py": "f4fe891a4fbb2e924716e7de3cc70f7927ea85c64642f912ce5e2c6e4de1269a",
+      "aetnamem/assistant/providers.py": "98ed4dba10853aac9cd5ede4451d54220b0a37efee27244e2e396f94ef2a10b0",
+      "aetnamem/broker/__init__.py": "359f4f675352c95c7829324f1ebb84aa918543092666f694651b196a17396eb0",
+      "aetnamem/broker/broker.py": "e28c1fc5f727fff737dda0507dde9645741db69f8f39b926dbdf20914241676e",
+      "aetnamem/cli.py": "8cd8a55f3f07cea7696a92fd760c29e0fe32ea08836f9b6bd5b34c70f8428a75",
+      "aetnamem/core/__init__.py": "f1aa44af3134a1fd4c087a2b4bf7b5119bc4978ca82250a7b7d947dad1c599f3",
+      "aetnamem/core/canonical.py": "5cc3c6bfd4d7ad09eefb6a5020bb1ab68a70fa212a5211ea2b35b92a64c46b23",
+      "aetnamem/core/policy.py": "1c3c4aa8b0306eb02cd84a695b8c7edee0065846c34c7bf6a160fef19fb1ac2d",
+      "aetnamem/extract/__init__.py": "a9d7c0a86a7a84f4cd7cf9c07cba7a613f656901cf1aeff0261f667f894a6a95",
+      "aetnamem/extract/rules.py": "04bb878a010d5e6310647ccbd95f65b01b34fbc74fc9e8432b6f3f53cea366be",
+      "aetnamem/graph.py": "45b66dc3ea967b0e696616771f488838a881c818db09707265bba16740cba3aa",
+      "aetnamem/maintenance.py": "20611e09731610c2fd2c6cac09794ce2b006f671adf18a5210e13881cb71aa57",
+      "aetnamem/mcp/__init__.py": "011d7e724f219f467de3c26685a160552b796c6e1e61470f57271dde7f9148fa",
+      "aetnamem/mcp/gate.py": "86aafbec81737dda9808979e42661af04dc9c82f1ef4326a9428b6d16700a7e8",
+      "aetnamem/mcp/server.py": "f2acd8b882865e60d82ef1c46eab9b23e5b79277ab3275625f79e45f2ad3b671",
+      "aetnamem/memory.py": "40968b265d5490be49f3e5b160596467d6a6007c9c21479c87d3b3347e004807",
+      "aetnamem/retrieve/__init__.py": "03f9042b8d333387f63983a6c7e15a5c92cb870233395cfee81af373b0aac76b",
+      "aetnamem/retrieve/rank.py": "205af45532859c9f19cab9167a5a3e56436e4b9e40816b2e5b96fdaaa2460bfd",
+      "aetnamem/service/__init__.py": "cc108e07076a7143c961ed7624903d0480ac62e887150ec0cf1022bf6114476f",
+      "aetnamem/service/__main__.py": "0bc1f8eaa80af8f45a099a01cdc44f3c7b57d6c4e46c9bb2b4a2f88a46bc190b",
+      "aetnamem/service/app.py": "3ed388d9d3258f8d075124257ba79eb669bfc6b17b341dcd4d2873373d420cde",
+      "aetnamem/service/encrypted_db.py": "a039e0754281ba1a82a3b1369fa938bf5fcfecc2b7bf4f5a81020c648de3302e",
+      "aetnamem/service/secrets.py": "4caed4aecfac3003530752fc64cf377c67dc323c7a320b86bcb300f3e484e798",
+      "aetnamem/service/ui.py": "81c1ee683b5dfe78d4f6101b6e4dfa744a4396e0baa921869477037c735ba7b2",
+      "aetnamem/store/__init__.py": "e4fe060220d63d52ad05f344ee24ce2daaa930e1a931705a26f13b0ed9637ff2",
+      "aetnamem/store/sqlite.py": "c8498337edbeaa64c3552da755eb788b21ccdfe17b2848759b30a3c1642b2044",
+      "paper/scripts/run_recall_forensics_eval.py": "4e3f8933f75f96290673c1c0c2b15ae514f020f42af631a2d31968b1b48322dc",
+      "pyproject.toml": "ea278b6eb6e9ca226236aaefa2cd9ac9a2ab5e6f2d6ad6f79f601999e2dcfdef"
+    },
+    "source_manifest_sha256": "8972c5d761412199ff2dd99e86e33f3dbbee2211fb070753f92de7c0943ee313",
+    "state": "content-addressed post-v0.3.0 development snapshot"
+  },
+  "host": {
+    "machine": "x86_64",
+    "operating_system": "Darwin",
+    "python": "3.12.2",
+    "release": "25.5.0"
+  },
+  "interpretation_limits": [
+    "Single host, synthetic workload, fixed query list.",
+    "Ranking arithmetic is recomputed from the bounded, digest-bound candidate ledger; candidate generation outside that ledger is not independently rerun.",
+    "Three historical turns precede correction or deletion. Their decisions and paths remain reconstructable, but engine re-execution is intentionally excluded because deletion removes canonical plaintext by design.",
+    "For a later-deleted source, the auditor verifies its ingestion digest, origin metadata, and deletion transition but cannot recover the plaintext.",
+    "With query retention disabled, a query hypothesis can be checked against its digest; an unknown query cannot be recovered.",
+    "Tamper trials cover the named single-row mutation classes. Whole-database rewriting and chain recomputation require an external checkpoint to detect.",
+    "The source identity is a file-digest manifest over the exact development snapshot, not a claim that base release v0.3.0 contains these changes."
+  ],
+  "results": {
+    "baseline_chain_failures": 0,
+    "baseline_digest_failures": 0,
+    "baseline_lifecycle_failures": 0,
+    "baseline_turn_semantic_failures": 0,
+    "f1_attribution_recomputed": 68,
+    "f1_graph_paths": 14,
+    "f1_historical_paths_valid": 14,
+    "f1_paths_missing_from_current_graph": 1,
+    "f1_ranking_turns_recomputed": 14,
+    "f2_deleted_source_payload_pairs": 1,
+    "f2_provenance_commitments_complete": 68,
+    "f3_lifecycle_admissible": 68,
+    "f3_promoted_record_pairs": 1,
+    "f3_promotion_transition_verified": true,
+    "f4_stable_engine_reexecution": {
+      "candidate_ledgers_exact": 11,
+      "eligible_turns": 11,
+      "excluded_historical_turns": 3,
+      "query_confirmed": 11,
+      "returned_exact": 11
+    },
+    "f5_tamper": {
+      "audit_event_deletion": {
+        "detected": 5,
+        "trials": 5
+      },
+      "audit_payload_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "audit_returned_set_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "episode_message_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_confidence_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_content_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_scope_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_source_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_status_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "record_trust_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "retrieval_candidate_score_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "retrieval_parameter_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "retrieval_query_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "retrieval_returned_set_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "retrieval_subject_edit": {
+        "detected": 5,
+        "trials": 5
+      },
+      "tail_truncation_chain_only": {
+        "detected": 0,
+        "trials": 5
+      },
+      "tail_truncation_with_checkpoint": {
+        "detected": 5,
+        "trials": 5
+      }
+    },
+    "forgotten_content_rows_remaining": 0,
+    "forgotten_results_returned_after_deletion": 0,
+    "quarantined_results_returned": 0,
+    "reconstruction_ms_total": 1154.492,
+    "returned_pairs": 68
+  },
+  "workload": {
+    "candidate_cap": 200,
+    "checkpoint_sha256": "8e2520a9cefa5c0ce4a6088df994fdae8ed3bbe310ed23d0778073fd3ae305ab",
+    "filler_records": 1000,
+    "forget_receipt_sha256": "2b08732d922ab0f46064010194c4f25f7654ac13da72b503abc99038a3914e6b",
+    "graph_recall_turns": 9,
+    "historical_turns": 3,
+    "limits_tested": [
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "min_scores_tested": [
+      0.25
+    ],
+    "recall_turns": 14,
+    "scenario_records_before_correction": 9,
+    "stable_replay_start_sequence": 5057,
+    "stable_replay_turns": 11
+  }
+}

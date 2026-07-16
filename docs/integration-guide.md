@@ -75,8 +75,9 @@ sources appear with `"status": "quarantined"`.
 
 Top-k retrieval over **active** records only (quarantined, superseded, and
 tombstoned records are never candidates). Prints a JSON array of records,
-best first. Every call also writes a retrieval event with a bounded sample of
-candidate score breakdowns — see it via `inspect`.
+best first. Every call also writes a retrieval event with a bounded ledger of
+candidate score inputs and breakdowns (the first 50 plus every returned
+result), digest-bound to its chained recall event. See it via `inspect`.
 
 ```bash
 aetnamem recall ./mem.db user-1 "Which airport should I book from?" --limit 3

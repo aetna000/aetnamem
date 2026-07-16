@@ -434,8 +434,9 @@ Recall has top-k semantics. SQLite FTS5 selects a bounded
 candidate set (200 by default), trust and recency priors rank it, and the best
 `limit` records are returned. Quarantined, superseded, and tombstoned records
 are never candidates. Retrieval events record the algorithm, cap, candidate
-count, and a bounded score sample so audit payloads do not grow with the whole
-database. Pass `min_score=` to drop weak matches.
+count, score inputs, and a bounded ledger (the first 50 plus every returned
+result). A versioned digest binds the selected retrieval fields to the audit
+chain. Pass `min_score=` to drop weak matches.
 
 Graph recall is opt-in with `use_graph=True`, CLI `--graph`, or service
 `AETNAMEM_GRAPH_RECALL=1`. It extracts a conservative entity/edge index from

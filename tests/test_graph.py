@@ -50,6 +50,28 @@ def test_graph_recall_spreads_from_alias_and_logs_bounded_paths() -> None:
     assert all("graph_path" not in item or len(item["graph_path"]) <= 3 for item in event["candidates"])
 
 
+def test_graph_rebuild_preserves_superseded_alias_status_and_recall_scores() -> None:
+    memory = Memory(":memory:")
+    memory.remember("u1", "My preferred airport is SFO.")
+    memory.remember("u1", "Use OAK as my preferred airport going forward.")
+
+    before_rows = memory.recall("u1", "Which airport do I prefer?", use_graph=True)
+    before_event = memory.get_retrieval_log("u1")[-1]
+    memory.backfill_graph("u1", rebuild=True)
+    after_rows = memory.recall("u1", "Which airport do I prefer?", use_graph=True)
+    after_event = memory.get_retrieval_log("u1")[-1]
+
+    active_aliases = [
+        alias
+        for alias in memory.inspect_graph("u1")["aliases"]
+        if alias["surface"] == "my preferred airport" and alias["status"] == "active"
+    ]
+    assert len(active_aliases) == 1
+    assert [row["id"] for row in after_rows] == [row["id"] for row in before_rows]
+    assert after_event["candidates"] == before_event["candidates"]
+    assert after_event["raw"] == before_event["raw"]
+
+
 def test_quarantined_graph_objects_cannot_seed_or_bridge() -> None:
     memory = Memory(":memory:")
     result = memory.remember(

@@ -41,11 +41,13 @@ Every `remember()` produces an `episode.ingested` event (with the message's
 SHA-256, not the message) plus a `memory.record_created` /
 `memory.record_quarantined` / `memory.duplicate_ignored` event per candidate
 fact. Every `recall()` produces a retrieval event whose bounded `candidates`
-sample carries score breakdowns (`text_score`, `trust_score`,
-`recency_score`) and returned markers. Graph recall additionally records its
-seed/cap metadata and path evidence for returned graph hits, so you can answer
-*"why did the agent see this?"* without making audit payloads grow with the
-database.
+ledger carries ranks, score inputs and breakdowns (`text_score`,
+`trust_score`, `recency_score`, and `base_score`), threshold decisions, and
+returned markers. It retains the first 50 candidates plus every returned
+candidate. Graph recall additionally records seed/cap metadata, fusion inputs,
+and path evidence for returned graph hits. A versioned digest of the retrieval
+row is stored in the chained recall event, so direct edits to these selected
+fields are detectable.
 
 By default the query text itself is not retained, only `query_sha256`. If
 you need raw queries for local debugging:
@@ -53,6 +55,12 @@ you need raw queries for local debugging:
 ```python
 m = Memory("./memories.db", retain_query_text=True)   # opt-in, off in prod
 ```
+
+The retrieval digest supports reconstruction within the logged ledger. It
+does not independently regenerate a past FTS candidate set, and exact engine
+re-execution is not expected after correction or deletion changes canonical
+inputs. A deleted source remains represented by its digest and deletion
+transition, not recoverable plaintext.
 
 ### 2. Checkpoint on a schedule, anchor externally
 

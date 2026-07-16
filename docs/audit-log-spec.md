@@ -79,6 +79,44 @@ live content columns in `records`, `episodes`, and `action_payloads` can be
 logically purged. It does not sanitize SQLite free pages, WAL files, backups,
 snapshots, exports, or replicas.
 
+### Retrieval evidence (`aetnamem-retrieval-evidence-v2`)
+
+`retrieval_events` is outside the audit chain. Each `memory.recall` audit
+event therefore carries `retrieval_sha256`, the SHA-256 of this canonical
+object reconstructed from the referenced retrieval row:
+
+```json
+{
+  "format": "aetnamem-retrieval-evidence-v2",
+  "retrieval_id": "ret_...",
+  "subject_id": "...",
+  "session_id": null,
+  "query": "",
+  "query_sha256": "...",
+  "candidates": [],
+  "returned_ids": [],
+  "raw": {}
+}
+```
+
+The chained recall payload also records the evidence format, result limit,
+threshold, candidate cap, total candidate count, and logged candidate count.
+`raw.replay` records those parameters plus ranker/fusion versions and scoring
+constants. Candidate summaries include final and lexical ranks, the text,
+trust, and recency inputs, the base score, graph rank/strength when used, and
+path evidence for returned graph nominees. The ledger is bounded to the first
+50 ranked candidates plus every returned candidate, so a result remains
+represented even when `limit > 50`.
+
+Record admission events carry `content_sha256` plus source type, trust tier,
+initial status, fact key, confidence, scope, and episode ID. Promotion and
+later lifecycle changes remain separate events. An independent verifier can
+therefore compare selected live-row metadata with the transition history.
+This binding does not authenticate every column in `retrieval_events` or
+`records`, does not regenerate the historical FTS candidate set, and cannot
+recover query or source plaintext that was never retained or was later
+purged.
+
 ## Checkpoints (`aetnamem-checkpoint-v1`)
 
 A checkpoint pins every subject's chain head at a moment in time:
@@ -136,6 +174,7 @@ tamper-evident as the chain itself.
 | deleting events from the middle of a chain | chain rule |
 | deleting events from the **end** of a chain | checkpoint containment only |
 | replacing the whole database | checkpoint containment only |
+| editing bound retrieval, record, or episode fields | retrieval/admission/episode digest checks plus the chain |
 | backdating via the system clock at write time | not detected — anchor checkpoints to a trusted timestamp source |
 
 `reset_subject()` erases a subject wholesale (it exists for test harnesses);

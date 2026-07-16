@@ -51,6 +51,13 @@ def query_tokens(query: str) -> list[str]:
     ]
 
 
+def token_overlap_components(query: str, content: str) -> tuple[int, int]:
+    """Return matched and total normalized query terms for fallback scoring."""
+    query_stems = {_stem(token) for token in query_tokens(query)}
+    content_stems = {_stem(token) for token in _TOKEN_RE.findall(content.lower())}
+    return len(query_stems & content_stems), len(query_stems)
+
+
 def rank_records(
     query: str,
     records: list[dict[str, Any]],

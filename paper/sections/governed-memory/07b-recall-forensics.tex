@@ -1,0 +1,183 @@
+\section{Recall Forensics}
+\label{sec:forensics}
+
+Memory evaluations usually ask whether retrieval found a relevant item. A
+different question matters after deployment: \emph{given a particular result
+shown at a particular turn, what durable evidence explains why it appeared,
+where it came from, and whether the evidence was later altered?} We call this
+task \emph{recall forensics}. We have not identified a directly comparable
+assistant-memory evaluation in the systems reviewed in \cref{sec:related};
+this is a scoped observation, not a claim that no other system can implement
+the task.
+
+\plainbox{If the assistant said something surprising last Tuesday, the
+database should show which accepted statement contributed to that result,
+who supplied it, which score or connection selected it, and whether the
+recorded trail still verifies. If the source was later deleted, the system
+should prove the deletion rather than retain the words for convenience.}
+
+\subsection{Task definition}
+\label{sec:forensics-task}
+
+The auditor receives the database, the evidence-format specification, and a
+content-addressed source manifest. The reconstruction code does not call the
+engine's ranking, graph, lifecycle, or audit helpers. For a logged result $X$
+at recall turn $T$, it asks:
+
+\begin{enumerate}
+  \item[\textbf{F1}] \textbf{Attribution.} Recompute the text, trust, and
+  recency components, Eq.~\ref{eq:record-score}, graph fusion when present,
+  rank order, threshold decision, and result-limit decision from the bounded
+  candidate ledger. A graph-nominated result must also carry a typed path
+  whose objects were active according to graph events before $T$.
+  \item[\textbf{F2}] \textbf{Provenance commitment.} Resolve record
+  $\rightarrow$ admission $\rightarrow$ episode $\rightarrow$ origin and
+  verify the chained content commitments. If a later deletion purged the
+  source text, verify its prior digest and deletion transition without
+  pretending the plaintext remains available.
+  \item[\textbf{F3}] \textbf{Lifecycle consistency.} Replay admission,
+  quarantine, explicit promotion, supersession, consolidation, and forgetting
+  up to $T$. A returned record must be active at that point; the final row's
+  status, source, trust tier, confidence, scope, and episode link must agree
+  with the complete transition history.
+  \item[\textbf{F4}] \textbf{Replay.} First, replay the recorded ranking
+  decision for every turn. Separately report exact engine re-execution only
+  for turns whose canonical inputs still exist unchanged. A turn before a
+  later privacy deletion is deliberately ineligible for engine re-execution.
+  \item[\textbf{F5}] \textbf{Integrity.} Test named mutation classes against
+  copies of the database and report each class. This supports only the tested
+  adversary model, not the universal statement that every possible forged
+  field must be detected.
+\end{enumerate}
+
+Deterministic retrieval reduces the artifact set needed for F4; it does not
+make embedding retrieval unreplayable in principle. A dense retriever can be
+replayed if the exact model and tokenizer bytes, vector-index state,
+preprocessing, numerical environment, dependencies, and code are preserved.
+The narrower advantage here is that replay does not require preserving an
+additional learned-model artifact.
+
+\subsection{Evidence bindings}
+\label{sec:forensics-binding}
+
+Candidate summaries and paths live in a retrieval-event row rather than
+directly in the audit chain. The evaluated post-v0.3.0 development snapshot
+therefore stores a versioned evidence envelope and places its digest in the
+chained \code{memory.recall} event:
+\begin{equation}
+D_{\mathrm{ret}}=\sha\!\left(\canon(v,i,s,u,q,q_{\mathrm{sha}},C,R,G)\right),
+\label{eq:retrieval-binding}
+\end{equation}
+where $v$ is the format version, $i$ the retrieval identifier, $s$ and $u$
+the subject and session, $q$ the retained query (empty by default),
+$q_{\mathrm{sha}}$
+its digest, $C$ the bounded candidate ledger, $R$ the ordered returned set,
+and $G$ the graph and replay parameters. The envelope records one-based final
+and lexical ranks, raw text-normalization inputs, trust tier, recency rank and
+denominator, base score, graph rank and strength, and the typed path for each
+returned graph nominee. The first 50 ranked candidates are retained, plus
+every returned candidate when \code{limit} exceeds 50.
+
+Admission events bind record content and the lifecycle metadata used by the
+auditor: source type, initial trust and status, fact key, extraction
+confidence, scope, and episode identifier. Promotion and later transitions
+remain separate chained events. Episode ingestion already binds the original
+message digest. These commitments detect direct changes to the selected
+retrieval, record, and episode fields while preserving the rule that a
+tombstone removes content.
+
+The forensics experiment is not attributed to release commit
+\code{12925d3} alone. That commit is only the snapshot's base. The evidence
+file contains SHA-256 digests for 42 source files, including the evaluator and
+the modified package, plus a digest over the manifest. Reproduction therefore
+targets those bytes rather than an incorrect clean-commit claim.
+
+\subsection{Protocol}
+\label{sec:forensics-protocol}
+
+The harness is stored at:
+\begin{center}
+\path{paper/scripts/run_recall_forensics_eval.py}
+\end{center}
+It creates nine initial scenario records, including an unreviewed web claim,
+a second web-derived record that is explicitly promoted, a correction target,
+a secret later deleted, and a two-hop relation, plus 1{,}000 filler records.
+It executes three recall turns, then applies a correction and deletion,
+executes eleven stable-state turns, and finally rebuilds the derived graph.
+Across 14 turns it varies limits from 3 to 7, exercises a non-null threshold,
+and enables graph recall in nine turns.
+
+The standard-library reconstruction verifies all turns after the later
+mutations and graph rebuild. Engine re-execution uses the logged
+\code{limit}, \code{min\_score}, candidate cap, and graph-mode fields; it is
+restricted to the eleven stable-state turns. The three earlier turns remain
+decision-reconstructable but are excluded from engine re-execution because a
+correction or deletion changed their canonical inputs. Fifteen selected
+single-row mutation classes cover audit payload and event changes, retrieval
+scores, returned sets, parameters, query and subject fields, record content
+and lifecycle metadata, and episode text. Five trials are run per class.
+
+\begin{table}[t]
+\centering
+\caption{Recall-forensics results for the content-addressed snapshot.}
+\label{tab:forensics}
+\small
+\begin{tabularx}{\columnwidth}{@{}Yr@{}}
+\toprule
+Measure & Result \\
+\midrule
+Untampered chain, digest, lifecycle, turn failures & 0 \\
+F1 ranking decisions recomputed & 14/14 \\
+F1 returned-result attribution & 68/68 \\
+\quad historical graph paths valid & 14/14 \\
+\quad paths absent from current graph & 1 \\
+F2 provenance commitments complete & 68/68 \\
+\quad later-deleted source payloads unavailable & 1 \\
+F3 lifecycle admissible at recall & 68/68 \\
+\quad explicit promotion transition verified & yes \\
+F4 stable returned sets re-executed exactly & 11/11 \\
+\quad complete candidate ledgers exact & 11/11 \\
+\quad historical turns excluded from re-execution & 3 \\
+F5 selected single-row mutations detected & 75/75 \\
+\quad tail truncation, chain only & 0/5 \\
+\quad tail truncation, anchored checkpoint & 5/5 \\
+Quarantined / post-deletion results returned & 0 / 0 \\
+Forgotten content rows remaining & 0 \\
+Auditor reconstruction time & 1.154\,s \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Results and boundaries}
+\label{sec:forensics-results}
+
+\Cref{tab:forensics} reports the pinned run. The auditor independently
+recomputed score arithmetic, ranking, thresholds, and limits for all 14
+turns, and reconstructed attribution, provenance commitments, and lifecycle
+admissibility for all 68 returned-result pairs. All 14 typed graph paths were
+valid against historical graph events. One old path no longer resolved in the
+current derived graph after deletion and rebuilding, demonstrating why
+historical evidence must not depend on current index rows. The explicitly
+promoted record surfaced only after its promotion event.
+
+All eleven turns whose canonical inputs remained stable reproduced both the
+returned identifiers and complete bounded candidate ledgers. The three prior
+turns were not counted as exact engine replays: retaining deleted plaintext
+solely to make a benchmark replayable would violate the deletion contract.
+For one returned-result pair, the later-deleted source is represented by its
+ingestion digest, origin metadata, and deletion event; the source words are
+correctly unavailable.
+
+All 75 selected single-row mutations were detected. This is mutation coverage,
+not a proof against arbitrary database rewriting. A coherent attacker who
+rewrites the complete file and recomputes an unanchored chain remains outside
+the file-only trust model. Tail truncation was correspondingly undetectable
+from the chain alone (0/5) and detected against an anchored head (5/5).
+
+Further limits are material. The candidate ledger is bounded; the auditor
+recomputes selection within that sealed ledger but does not independently
+regenerate every FTS candidate from historical corpus state. With query-text
+retention disabled, it can confirm a proposed query against the digest but
+cannot discover an unknown query. The workload is synthetic and single-host,
+and the results establish neither fact truth nor general retrieval quality.
+They establish what the measured evidence can and cannot reconstruct.
