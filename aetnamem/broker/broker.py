@@ -229,11 +229,19 @@ class ToolBroker:
             "Search durable memory for facts relevant to a query.",
             {
                 "type": "object",
-                "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer"},
+                    "use_graph": {"type": "boolean"},
+                },
                 "required": ["query"],
             },
-            lambda ctx, query, limit=10: m.recall(
-                ctx.subject_id, query, session_id=ctx.session_id, limit=limit
+            lambda ctx, query, limit=10, use_graph=None: m.recall(
+                ctx.subject_id,
+                query,
+                session_id=ctx.session_id,
+                limit=limit,
+                use_graph=use_graph,
             ),
         )
         self.register_read_only(

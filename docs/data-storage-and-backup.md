@@ -5,6 +5,12 @@ workspace. Back up both if you want a complete copy of your local data. The
 Ollama model is managed by Ollama and does not need to be included; it can be
 downloaded again.
 
+Optional graph history partitions live under `graph-archive/` beside the
+configured data directory unless `AETNAMEM_GRAPH_ARCHIVE_DIR` overrides it.
+They contain inactive derived edges partitioned by subject/year. They are not
+required to recover canonical records, but back them up if historical graph
+browsing matters.
+
 ## Default desktop locations
 
 | Platform | Memory database | Assistant workspace | At-rest protection |
@@ -39,6 +45,9 @@ and startup terminal output show the paths used by the current process.
    ```
 
 3. Back up `~/Aetnamem Workspace` if you also need assistant-created files.
+   If graph archival was explicitly enabled, also back up and separately
+   encrypt `~/Library/Application Support/aetnamem/graph-archive`. These
+   archive SQLite files are **not** protected by the main `.enc` seal.
 4. Keep a recoverable copy of the `aetnamem` login-Keychain item. A file
    backup without the key cannot be opened on a replacement Mac. To display
    the recovery value for transfer into a trusted password manager:
@@ -77,6 +86,8 @@ cp "${XDG_DATA_HOME:-$HOME/.local/share}/aetnamem/memories.db" /path/to/backup/
 cp -R "$HOME/aetnamem-workspace" /path/to/backup/
 ```
 
+Also copy the configured `graph-archive` directory when archival is enabled.
+
 On Windows, after closing the service, copy these locations using File
 Explorer, Windows Backup, or your normal backup software:
 
@@ -84,6 +95,10 @@ Explorer, Windows Backup, or your normal backup software:
 %LOCALAPPDATA%\aetnamem\memories.db
 %USERPROFILE%\Aetnamem Workspace
 ```
+
+Graph archive files are plaintext on every platform unless the destination
+filesystem supplies encryption. Their SHA-256 registry detects modification,
+not disclosure.
 
 Restore the database and workspace to the same locations before restarting
 the app. Preserve the file as binary data; do not open or rewrite it with a

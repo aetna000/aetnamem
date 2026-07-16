@@ -40,10 +40,12 @@ m.recall("user-1", "Which airport should I book from?", session_id="s1")
 Every `remember()` produces an `episode.ingested` event (with the message's
 SHA-256, not the message) plus a `memory.record_created` /
 `memory.record_quarantined` / `memory.duplicate_ignored` event per candidate
-fact. Every `recall()` produces a retrieval event whose `candidates` list
-carries the score breakdown (`text_score`, `trust_score`, `recency_score`)
-for every considered record — so you can answer *"why did the agent see
-this?"* later.
+fact. Every `recall()` produces a retrieval event whose bounded `candidates`
+sample carries score breakdowns (`text_score`, `trust_score`,
+`recency_score`) and returned markers. Graph recall additionally records its
+seed/cap metadata and path evidence for returned graph hits, so you can answer
+*"why did the agent see this?"* without making audit payloads grow with the
+database.
 
 By default the query text itself is not retained, only `query_sha256`. If
 you need raw queries for local debugging:
@@ -86,6 +88,19 @@ result = m.verify(checkpoints_path="./checkpoints.jsonl")
 result["valid"]                       # overall boolean
 result["subjects"]["user-1"]          # chain_valid, checkpoints_checked, failures
 ```
+
+For frequent local health checks, suffix verification avoids replaying an
+ever-growing chain:
+
+```bash
+aetnamem verify ./memories.db --incremental
+```
+
+The cached head is re-read and hash-checked before each suffix verification.
+SQLite triggers invalidate the cache if an audit row is updated or deleted,
+forcing a full replay next time. The cache is stored in the same database and
+therefore improves performance only; it does not replace an externally
+anchored checkpoint.
 
 For anything adversarial (or for a third party), use the standalone
 verifier, which implements the spec without importing aetnamem:

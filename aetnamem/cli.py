@@ -40,6 +40,63 @@ def main() -> None:
     recall_parser.add_argument("--limit", type=int, default=10)
     recall_parser.add_argument("--min-score", type=float, default=None)
     recall_parser.add_argument("--session", default=None)
+    recall_parser.add_argument(
+        "--graph", action="store_true", help="Blend bounded graph seed-and-spread recall"
+    )
+
+    graph_backfill_parser = subparsers.add_parser(
+        "graph-backfill", help="Build the derived graph index from canonical records"
+    )
+    graph_backfill_parser.add_argument("path")
+    graph_backfill_parser.add_argument("subject_id")
+    graph_backfill_parser.add_argument(
+        "--rebuild", action="store_true", help="Drop and deterministically rebuild graph rows"
+    )
+
+    graph_inspect_parser = subparsers.add_parser(
+        "graph-inspect", help="Inspect derived entities, aliases, edges, and counts"
+    )
+    graph_inspect_parser.add_argument("path")
+    graph_inspect_parser.add_argument("subject_id")
+
+    graph_consolidate_parser = subparsers.add_parser(
+        "graph-consolidate",
+        help="Backfill graph state, propose entity merges, and optionally archive history",
+    )
+    graph_consolidate_parser.add_argument("path")
+    graph_consolidate_parser.add_argument("subject_id")
+    graph_consolidate_parser.add_argument("--archive-root", default=None)
+    graph_consolidate_parser.add_argument("--archive-before", default=None)
+    graph_consolidate_parser.add_argument("--no-prune", action="store_true")
+
+    graph_merges_parser = subparsers.add_parser(
+        "graph-merges", help="List reviewer-gated entity merge proposals"
+    )
+    graph_merges_parser.add_argument("path")
+    graph_merges_parser.add_argument("subject_id")
+    graph_merges_parser.add_argument("--status", default=None)
+
+    graph_merge_parser = subparsers.add_parser(
+        "graph-merge", help="Approve, reject, or revert an entity merge proposal"
+    )
+    graph_merge_parser.add_argument("path")
+    graph_merge_parser.add_argument("subject_id")
+    graph_merge_parser.add_argument("proposal_id")
+    graph_merge_parser.add_argument("decision", choices=("approve", "reject", "revert"))
+    graph_merge_parser.add_argument("--winner", default=None)
+    graph_merge_parser.add_argument("--actor", default="reviewer")
+
+    graph_history_parser = subparsers.add_parser(
+        "graph-history", help="Read verified inactive-edge archive partitions"
+    )
+    graph_history_parser.add_argument("path")
+    graph_history_parser.add_argument("subject_id")
+    graph_history_parser.add_argument("--year", type=int, default=None)
+
+    optimize_parser = subparsers.add_parser(
+        "optimize", help="Run SQLite PRAGMA optimize maintenance"
+    )
+    optimize_parser.add_argument("path")
 
     list_parser = subparsers.add_parser("list", help="List a subject's records")
     list_parser.add_argument("path")
@@ -137,6 +194,11 @@ def main() -> None:
     verify_parser.add_argument("--subject", default=None)
     verify_parser.add_argument(
         "--checkpoints", default=None, help="JSONL checkpoint file to check against"
+    )
+    verify_parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="verify only the suffix after a locally cached, hash-checked head",
     )
 
     mcp_parser = subparsers.add_parser(
@@ -296,8 +358,46 @@ def main() -> None:
                 session_id=args.session,
                 limit=args.limit,
                 min_score=args.min_score,
+                use_graph=args.graph,
             )
         )
+    elif args.command == "graph-backfill":
+        _print(memory.backfill_graph(args.subject_id, rebuild=args.rebuild))
+    elif args.command == "graph-inspect":
+        _print(memory.inspect_graph(args.subject_id))
+    elif args.command == "graph-consolidate":
+        _print(
+            memory.consolidate_graph(
+                args.subject_id,
+                archive_root=args.archive_root,
+                archive_before=args.archive_before,
+                prune_archive=not args.no_prune,
+            )
+        )
+    elif args.command == "graph-merges":
+        _print(memory.list_graph_merge_proposals(args.subject_id, status=args.status))
+    elif args.command == "graph-merge":
+        if args.decision == "revert":
+            _print(
+                memory.revert_graph_merge(
+                    args.subject_id, args.proposal_id, actor=args.actor
+                )
+            )
+        else:
+            _print(
+                memory.decide_graph_merge(
+                    args.subject_id,
+                    args.proposal_id,
+                    approve=args.decision == "approve",
+                    actor=args.actor,
+                    winner_entity=args.winner,
+                )
+            )
+    elif args.command == "graph-history":
+        _print(memory.read_graph_archive(args.subject_id, partition_year=args.year))
+    elif args.command == "optimize":
+        memory.optimize()
+        _print({"optimized": True})
     elif args.command == "list":
         _print(memory.list(args.subject_id, include_inactive=args.all))
     elif args.command == "forget":
@@ -341,7 +441,11 @@ def main() -> None:
     elif args.command == "checkpoint":
         _print(memory.checkpoint(sink_path=args.sink))
     elif args.command == "verify":
-        result = memory.verify(args.subject, checkpoints_path=args.checkpoints)
+        result = memory.verify(
+            args.subject,
+            checkpoints_path=args.checkpoints,
+            incremental=args.incremental,
+        )
         _print(result)
         if not result["valid"]:
             sys.exit(1)

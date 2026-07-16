@@ -70,7 +70,43 @@ def main() -> None:
         )
         assert isinstance(recalled, list) and recalled
         assert "Vim" in recalled[0]["content"]
-        memory_verification = json_run(str(executable), "verify", str(database))
+        json_run(
+            str(executable),
+            "remember",
+            str(database),
+            "release-smoke",
+            "My boss is Sarah.",
+        )
+        json_run(
+            str(executable),
+            "remember",
+            str(database),
+            "release-smoke",
+            "Sarah's preferred airport is SEA.",
+        )
+        graph_recalled = json_run(
+            str(executable),
+            "recall",
+            str(database),
+            "release-smoke",
+            "What airport does my boss prefer?",
+            "--graph",
+        )
+        assert isinstance(graph_recalled, list)
+        assert any(
+            "SEA" in item["content"] and "graph" in item
+            for item in graph_recalled
+        ), graph_recalled
+        graph_report = json_run(
+            str(executable),
+            "graph-consolidate",
+            str(database),
+            "release-smoke",
+        )
+        assert graph_report["counts"]["edges"] >= 3, graph_report
+        memory_verification = json_run(
+            str(executable), "verify", str(database), "--incremental"
+        )
         assert memory_verification["valid"] is True, memory_verification
 
         staged = json_run(

@@ -128,7 +128,14 @@ class ControlService:
         query = body.get("query")
         if not subject or not query:
             raise HttpError(400, "recall requires subject_id and query")
-        return {"records": self.memory.recall(subject, query, limit=int(body.get("limit", 10)))}
+        return {
+            "records": self.memory.recall(
+                subject,
+                query,
+                limit=int(body.get("limit", 10)),
+                use_graph=body.get("use_graph"),
+            )
+        }
 
     def list_memory(self, query: dict[str, list[str]]) -> dict[str, Any]:
         subject = _one(query, "subject")
@@ -136,6 +143,96 @@ class ControlService:
             raise HttpError(400, "missing 'subject'")
         include = _one(query, "include_inactive") in {"1", "true", "yes"}
         return {"records": self.memory.list(subject, include_inactive=include)}
+
+    def inspect_graph(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        subject = _one(query, "subject")
+        if not subject:
+            raise HttpError(400, "missing 'subject'")
+        return self.memory.inspect_graph(subject)
+
+    def backfill_graph(self, body: dict[str, Any]) -> dict[str, Any]:
+        subject = body.get("subject_id")
+        if not subject:
+            raise HttpError(400, "graph backfill requires subject_id")
+        return self.memory.backfill_graph(
+            str(subject),
+            rebuild=bool(body.get("rebuild", False)),
+            session_id=body.get("session_id"),
+            actor="reviewer",
+        )
+
+    def consolidate_graph(self, body: dict[str, Any]) -> dict[str, Any]:
+        subject = body.get("subject_id")
+        if not subject:
+            raise HttpError(400, "graph consolidation requires subject_id")
+        archive_before = body.get("archive_before")
+        archive_root = body.get("archive_root")
+        if archive_before and not archive_root:
+            archive_root = self.db_info.get("graph_archive_path")
+            if not archive_root:
+                db_path = self.db_info.get("db_path")
+                if db_path:
+                    archive_root = str(Path(db_path).parent / "graph-archive")
+        report = self.memory.consolidate_graph(
+            str(subject),
+            archive_root=archive_root,
+            archive_before=archive_before,
+            prune_archive=bool(body.get("prune", True)),
+            session_id=body.get("session_id"),
+            actor="reviewer",
+        )
+        self.memory.optimize()
+        return report
+
+    def list_graph_merges(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        subject = _one(query, "subject")
+        if not subject:
+            raise HttpError(400, "missing 'subject'")
+        return {
+            "merges": self.memory.list_graph_merge_proposals(
+                subject, status=_one(query, "status")
+            )
+        }
+
+    def decide_graph_merge(
+        self, proposal_id: str, body: dict[str, Any], decision: str
+    ) -> dict[str, Any]:
+        subject = body.get("subject_id")
+        if not subject:
+            raise HttpError(400, "graph merge decision requires subject_id")
+        try:
+            if decision == "revert":
+                return self.memory.revert_graph_merge(
+                    str(subject),
+                    proposal_id,
+                    actor=body.get("actor") or "reviewer",
+                    session_id=body.get("session_id"),
+                )
+            return self.memory.decide_graph_merge(
+                str(subject),
+                proposal_id,
+                approve=decision == "approve",
+                actor=body.get("actor") or "reviewer",
+                winner_entity=body.get("winner_entity"),
+                session_id=body.get("session_id"),
+            )
+        except ValueError as exc:
+            raise HttpError(409, str(exc)) from exc
+
+    def graph_history(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        subject = _one(query, "subject")
+        if not subject:
+            raise HttpError(400, "missing 'subject'")
+        year_text = _one(query, "year")
+        try:
+            year = int(year_text) if year_text else None
+            return {
+                "edges": self.memory.read_graph_archive(
+                    subject, partition_year=year
+                )
+            }
+        except ValueError as exc:
+            raise HttpError(409, str(exc)) from exc
 
     def audit(self, query: dict[str, list[str]]) -> dict[str, Any]:
         subject = _one(query, "subject")
@@ -150,7 +247,12 @@ class ControlService:
         subject = _one(query, "subject")
         if not subject:
             raise HttpError(400, "verify requires 'subject' or 'action'")
-        return {"audit_chain_valid": self.memory.store.verify_audit_chain(subject)}
+        incremental = _one(query, "incremental") in {"1", "true", "yes"}
+        result = self.memory.verify(subject, incremental=incremental)
+        return {
+            "audit_chain_valid": result["valid"],
+            "verification": result["subjects"][subject],
+        }
 
     def system_check(self) -> dict[str, Any]:
         import platform
@@ -401,6 +503,14 @@ def _routes() -> dict[tuple[str, str], Route]:
         ("POST", "/files/content"): ("reviewer", lambda s, p, b, q: s.save_file(b)),
         ("GET", "/memory"): ("agent", lambda s, p, b, q: s.list_memory(q)),
         ("POST", "/memory/recall"): ("agent", lambda s, p, b, q: s.recall(b)),
+        ("GET", "/graph"): ("agent", lambda s, p, b, q: s.inspect_graph(q)),
+        ("POST", "/graph/backfill"): ("reviewer", lambda s, p, b, q: s.backfill_graph(b)),
+        ("POST", "/graph/consolidate"): ("reviewer", lambda s, p, b, q: s.consolidate_graph(b)),
+        ("GET", "/graph/merges"): ("agent", lambda s, p, b, q: s.list_graph_merges(q)),
+        ("POST", "/graph/merges/{id}/approve"): ("reviewer", lambda s, p, b, q: s.decide_graph_merge(p["id"], b, "approve")),
+        ("POST", "/graph/merges/{id}/reject"): ("reviewer", lambda s, p, b, q: s.decide_graph_merge(p["id"], b, "reject")),
+        ("POST", "/graph/merges/{id}/revert"): ("reviewer", lambda s, p, b, q: s.decide_graph_merge(p["id"], b, "revert")),
+        ("GET", "/graph/history"): ("agent", lambda s, p, b, q: s.graph_history(q)),
         ("GET", "/audit"): ("agent", lambda s, p, b, q: s.audit(q)),
         ("GET", "/verify"): ("agent", lambda s, p, b, q: s.verify(q)),
     }

@@ -722,21 +722,60 @@ function renderMarkdown(src){
 /* ---------- approvals ---------- */
 async function refreshActions(){
   try {
-    const r = await api("/actions?subject=" + encodeURIComponent(subject));
+    const [r, g] = await Promise.all([
+      api("/actions?subject=" + encodeURIComponent(subject)),
+      api("/graph/merges?subject=" + encodeURIComponent(subject) + "&status=pending")
+    ]);
     const pending = (r.actions || []).filter(a => a.state === "awaiting_approval");
+    const graphMerges = g.merges || [];
     const badge = $("approvalBadge");
-    badge.textContent = pending.length;
-    badge.classList.toggle("show", pending.length > 0);
+    badge.textContent = pending.length + graphMerges.length;
+    badge.classList.toggle("show", pending.length + graphMerges.length > 0);
     const box = $("actions");
     box.innerHTML = "";
-    if (!pending.length) {
+    if (!pending.length && !graphMerges.length) {
       box.innerHTML = "<div class='hint'>No actions waiting for approval.<br>When the assistant wants to change a file, it will ask here first.</div>";
       return;
     }
+    for (const merge of graphMerges) box.appendChild(graphMergeCard(merge));
     for (const a of pending) box.appendChild(await approvalCard(a));
   } catch (e) {
     $("actions").innerHTML = "<div class='hint'>" + escapeHtml(e.message) + "</div>";
   }
+}
+function graphMergeCard(merge){
+  const div = document.createElement("div");
+  div.className = "approval";
+  const left = merge.left_canonical || merge.left_entity;
+  const right = merge.right_canonical || merge.right_entity;
+  div.innerHTML =
+    `<div class="approval-head">Entity merge review</div>` +
+    `<div class="approval-body"><div><b>${escapeHtml(left)}</b> and <b>${escapeHtml(right)}</b></div>` +
+    `<div class="approval-meta">${escapeHtml(merge.reason || "exact alias match")} · confidence ${Number(merge.confidence || 0).toFixed(2)}</div>` +
+    `<label class="approval-meta">Keep as <select class="merge-winner">` +
+    `<option value="${escapeHtml(merge.left_entity)}">${escapeHtml(left)}</option>` +
+    `<option value="${escapeHtml(merge.right_entity)}">${escapeHtml(right)}</option>` +
+    `</select></label></div>` +
+    `<div class="approval-actions"><button class="btn approve">Merge</button><button class="btn deny">Keep separate</button></div>`;
+  div.querySelector(".approve").onclick = async () => {
+    try {
+      await api(`/graph/merges/${encodeURIComponent(merge.id)}/approve`, {
+        role:"reviewer", method:"POST",
+        body:{subject_id:subject, winner_entity:div.querySelector(".merge-winner").value, actor:"local-user"}
+      });
+      appendMsg("notice", "Entities merged. The decision remains reversible.");
+    } catch (e) { appendMsg("notice", "Merge failed: " + e.message); }
+    refreshActions(); refreshMemory(); refreshAudit();
+  };
+  div.querySelector(".deny").onclick = async () => {
+    try {
+      await api(`/graph/merges/${encodeURIComponent(merge.id)}/reject`, {
+        role:"reviewer", method:"POST", body:{subject_id:subject, actor:"local-user"}
+      });
+    } catch (e) { appendMsg("notice", "Reject failed: " + e.message); }
+    refreshActions(); refreshAudit();
+  };
+  return div;
 }
 async function approvalCard(a){
   const id = a.id || a.transaction_id;

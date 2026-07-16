@@ -9,6 +9,7 @@ from typing import Any, Iterator
 import uuid
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.policy import normalize_content
 
 
 class SQLiteStore:
@@ -24,6 +25,7 @@ class SQLiteStore:
         self._conn.row_factory = sqlite3.Row
         self._transaction_depth = 0
         self._fts_enabled = False
+        self._graph_fts_enabled = False
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         if self.path != ":memory:":
@@ -81,10 +83,19 @@ class SQLiteStore:
                     "DELETE FROM action_transactions WHERE subject_id = ?", (subject_id,)
                 )
             if self._fts_enabled:
-                self._conn.execute("DELETE FROM records_fts WHERE subject_id = ?", (subject_id,))
+                self._delete_records_fts_subject(subject_id)
+            if self._graph_fts_enabled:
+                self._delete_graph_fts_subject(subject_id)
+            self._conn.execute("DELETE FROM graph_merge_proposals WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM graph_archive_members WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM graph_archive_partitions WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM edges WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM entity_aliases WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM entities WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM records WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM episodes WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM retrieval_events WHERE subject_id = ?", (subject_id,))
+            self._conn.execute("DELETE FROM audit_verification_state WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM audit_log WHERE subject_id = ?", (subject_id,))
 
     def insert_episode(
@@ -144,17 +155,18 @@ class SQLiteStore:
             self._conn.execute(
                 """
                 INSERT INTO records (
-                  id, subject_id, content, source_type, trust_tier,
+                  id, subject_id, content, content_normalized, source_type, trust_tier,
                   source_session_id, source_turn_id, episode_id, created_at,
                   updated_at, deleted_at, confidence, scope, status,
                   supersedes_id, fact_key, raw
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record_id,
                     subject_id,
                     content,
+                    normalize_content(content),
                     source_type,
                     trust_tier,
                     source_session_id,
@@ -179,6 +191,54 @@ class SQLiteStore:
             (subject_id, record_id),
         ).fetchone()
         return _record_from_row(row) if row else None
+
+    def find_duplicate_record(
+        self,
+        subject_id: str,
+        content: str,
+        *,
+        statuses: tuple[str, ...],
+    ) -> dict[str, Any] | None:
+        normalized = normalize_content(content)
+        if not normalized or not statuses:
+            return None
+        placeholders = ",".join("?" for _ in statuses)
+        row = self._conn.execute(
+            f"""
+            SELECT * FROM records
+            WHERE subject_id = ? AND content_normalized = ?
+              AND status IN ({placeholders})
+            ORDER BY created_at, id
+            LIMIT 1
+            """,
+            (subject_id, normalized, *statuses),
+        ).fetchone()
+        return _record_from_row(row) if row else None
+
+    def active_records_for_fact_key(
+        self,
+        subject_id: str,
+        fact_key: str | None,
+        *,
+        exclude_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not fact_key:
+            return []
+        params: list[Any] = [subject_id, fact_key]
+        exclusion = ""
+        if exclude_id is not None:
+            exclusion = "AND id != ?"
+            params.append(exclude_id)
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM records
+            WHERE subject_id = ? AND fact_key = ? AND status = 'active'
+              {exclusion}
+            ORDER BY created_at, id
+            """,
+            params,
+        ).fetchall()
+        return [_record_from_row(row) for row in rows]
 
     def promote_record(
         self,
@@ -249,9 +309,9 @@ class SQLiteStore:
     ) -> tuple[list[str], list[str]]:
         """Tombstone + purge records; returns (record_ids, episode_ids) purged.
 
-        Applies to active and quarantined records alike — deletion must also
-        empty the quarantine. Purging clears content *and* fact_key, since the
-        fact slot name itself can reveal what was stored.
+        Applies to active, quarantined, and superseded records alike. Purging
+        clears content *and* fact_key, since the fact slot name itself can
+        reveal what was stored.
         """
         if not record_ids:
             return [], []
@@ -263,7 +323,7 @@ class SQLiteStore:
                     """
                     SELECT id FROM records
                     WHERE subject_id = ? AND id = ?
-                      AND status IN ('active', 'quarantined')
+                      AND status IN ('active', 'quarantined', 'superseded')
                     """,
                     (subject_id, record_id),
                 ).fetchone()
@@ -274,6 +334,7 @@ class SQLiteStore:
                     UPDATE records
                     SET status = 'tombstoned',
                         content = '',
+                        content_normalized = NULL,
                         fact_key = NULL,
                         updated_at = ?,
                         deleted_at = ?,
@@ -329,6 +390,48 @@ class SQLiteStore:
         ).fetchall()
         return [_record_from_row(row) for row in rows]
 
+    def recall_candidates(
+        self,
+        subject_id: str,
+        terms: list[str],
+        *,
+        limit: int = 200,
+    ) -> tuple[list[dict[str, Any]], dict[str, float]]:
+        """Bound recall work to FTS matches plus the most recent actives."""
+        limit = max(1, min(int(limit), 2000))
+        scores = self.fts_match_scores(subject_id, terms, limit=limit)
+        matched_ids = list(scores)
+        rows: list[sqlite3.Row] = []
+        if matched_ids:
+            placeholders = ",".join("?" for _ in matched_ids)
+            rows.extend(
+                self._conn.execute(
+                    f"SELECT * FROM records WHERE subject_id = ? AND status = 'active' "
+                    f"AND id IN ({placeholders})",
+                    (subject_id, *matched_ids),
+                ).fetchall()
+            )
+        seen = {str(row["id"]) for row in rows}
+        if len(rows) < limit:
+            recent = self._conn.execute(
+                """
+                SELECT * FROM records
+                WHERE subject_id = ? AND status = 'active'
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (subject_id, limit + len(seen)),
+            ).fetchall()
+            for row in recent:
+                if str(row["id"]) not in seen:
+                    rows.append(row)
+                    seen.add(str(row["id"]))
+                    if len(rows) >= limit:
+                        break
+        records = [_record_from_row(row) for row in rows]
+        records.sort(key=lambda record: (record["created_at"], record["id"]))
+        return records, scores
+
     def list_episodes(self, subject_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """
@@ -349,6 +452,7 @@ class SQLiteStore:
         query_sha256: str,
         candidates: list[dict[str, Any]],
         returned_ids: list[str],
+        raw: dict[str, Any] | None = None,
     ) -> str:
         event_id = _new_id("ret")
         created_at = utc_now()
@@ -370,7 +474,7 @@ class SQLiteStore:
                     _json(candidates),
                     _json(returned_ids),
                     created_at,
-                    _json({}),
+                    _json(raw or {}),
                 ),
             )
         return event_id
@@ -459,7 +563,9 @@ class SQLiteStore:
             )
         return event_id
 
-    def fts_match_scores(self, subject_id: str, terms: list[str]) -> dict[str, float]:
+    def fts_match_scores(
+        self, subject_id: str, terms: list[str], *, limit: int | None = None
+    ) -> dict[str, float]:
         """Full-text relevance for active records, higher is better.
 
         Returns {} when FTS5 is unavailable or the query has no usable terms,
@@ -473,14 +579,17 @@ class SQLiteStore:
         if not match_expr:
             return {}
         try:
-            rows = self._conn.execute(
-                """
+            sql = """
                 SELECT record_id, bm25(records_fts) AS rank
                 FROM records_fts
                 WHERE records_fts MATCH ? AND subject_id = ?
-                """,
-                (match_expr, subject_id),
-            ).fetchall()
+                ORDER BY bm25(records_fts), record_id
+                """
+            params: tuple[Any, ...] = (match_expr, subject_id)
+            if limit is not None:
+                sql += " LIMIT ?"
+                params = (*params, max(1, int(limit)))
+            rows = self._conn.execute(sql, params).fetchall()
         except sqlite3.OperationalError:
             return {}
         # SQLite bm25() is lower-is-better (usually negative); negate it.
@@ -557,6 +666,129 @@ class SQLiteStore:
             previous_hash = event["event_hash"]
         return True
 
+    def verify_audit_chain_incremental(
+        self, subject_id: str, *, reset: bool = False
+    ) -> dict[str, Any]:
+        """Verify only the suffix after a locally cached, hash-checked head.
+
+        This is a performance cache, not an external trust anchor. The cached
+        event is re-read and hash-compared on every run; externally anchored
+        checkpoints remain necessary against whole-database replacement.
+        """
+        if reset:
+            with self.transaction():
+                self._conn.execute(
+                    "DELETE FROM audit_verification_state WHERE subject_id = ?",
+                    (subject_id,),
+                )
+        state = None if reset else self._conn.execute(
+            "SELECT * FROM audit_verification_state WHERE subject_id = ?",
+            (subject_id,),
+        ).fetchone()
+        previous_hash: str | None = None
+        start_sequence = 0
+        if state is not None:
+            anchor = self.event_at_sequence(subject_id, int(state["sequence"]))
+            anchor_expected = (
+                _event_hash(
+                    {
+                        "event_id": anchor["event_id"],
+                        "subject_id": anchor["subject_id"],
+                        "event_type": anchor["event_type"],
+                        "created_at": anchor["created_at"],
+                        "actor": anchor["actor"],
+                        "session_id": anchor["session_id"],
+                        "turn_id": anchor["turn_id"],
+                        "record_id": anchor["record_id"],
+                        "payload": anchor["payload"],
+                        "prev_hash": anchor["prev_hash"],
+                    }
+                )
+                if anchor is not None
+                else None
+            )
+            if (
+                anchor is None
+                or anchor["event_hash"] != state["event_hash"]
+                or anchor_expected != anchor["event_hash"]
+            ):
+                return {
+                    "valid": False,
+                    "cached_from_sequence": int(state["sequence"]),
+                    "verified_events": 0,
+                    "failure": "cached verification anchor is missing or changed",
+                }
+            start_sequence = int(state["sequence"])
+            previous_hash = str(state["event_hash"])
+
+        rows = self._conn.execute(
+            """
+            SELECT * FROM audit_log
+            WHERE subject_id = ? AND sequence > ?
+            ORDER BY sequence ASC
+            """,
+            (subject_id, start_sequence),
+        ).fetchall()
+        verified = 0
+        last_sequence = start_sequence
+        for row in rows:
+            event = _audit_from_row(row)
+            expected = _event_hash(
+                {
+                    "event_id": event["event_id"],
+                    "subject_id": event["subject_id"],
+                    "event_type": event["event_type"],
+                    "created_at": event["created_at"],
+                    "actor": event["actor"],
+                    "session_id": event["session_id"],
+                    "turn_id": event["turn_id"],
+                    "record_id": event["record_id"],
+                    "payload": event["payload"],
+                    "prev_hash": previous_hash,
+                }
+            )
+            if event["prev_hash"] != previous_hash or event["event_hash"] != expected:
+                return {
+                    "valid": False,
+                    "cached_from_sequence": start_sequence,
+                    "verified_events": verified,
+                    "failure": f"audit mismatch at sequence {event['sequence']}",
+                }
+            previous_hash = str(event["event_hash"])
+            last_sequence = int(event["sequence"])
+            verified += 1
+
+        if last_sequence:
+            with self.transaction():
+                self._conn.execute(
+                    """
+                    INSERT INTO audit_verification_state (
+                      subject_id, sequence, event_hash, verified_at
+                    ) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(subject_id) DO UPDATE SET
+                      sequence = excluded.sequence,
+                      event_hash = excluded.event_hash,
+                      verified_at = excluded.verified_at
+                    """,
+                    (subject_id, last_sequence, previous_hash, utc_now()),
+                )
+        return {
+            "valid": True,
+            "cached_from_sequence": start_sequence,
+            "verified_through_sequence": last_sequence,
+            "verified_events": verified,
+            "failure": None,
+        }
+
+    def subject_ids(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT subject_id FROM audit_log ORDER BY subject_id"
+        ).fetchall()
+        return [str(row["subject_id"]) for row in rows]
+
+    def optimize(self) -> None:
+        self._conn.execute("PRAGMA optimize")
+
     def _migrate(self) -> None:
         with self.transaction():
             self._conn.executescript(
@@ -576,6 +808,7 @@ class SQLiteStore:
                   id TEXT PRIMARY KEY,
                   subject_id TEXT NOT NULL,
                   content TEXT NOT NULL,
+                  content_normalized TEXT,
                   source_type TEXT NOT NULL,
                   trust_tier TEXT NOT NULL,
                   source_session_id TEXT,
@@ -601,6 +834,15 @@ class SQLiteStore:
 
                 CREATE INDEX IF NOT EXISTS idx_records_subject_key
                   ON records(subject_id, fact_key, status);
+
+                CREATE TABLE IF NOT EXISTS records_fts_map (
+                  record_id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  fts_rowid INTEGER NOT NULL UNIQUE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_records_fts_map_subject
+                  ON records_fts_map(subject_id);
 
                 CREATE TABLE IF NOT EXISTS retrieval_events (
                   id TEXT PRIMARY KEY,
@@ -631,11 +873,184 @@ class SQLiteStore:
 
                 CREATE INDEX IF NOT EXISTS idx_audit_subject_sequence
                   ON audit_log(subject_id, sequence);
+
+                CREATE TABLE IF NOT EXISTS entities (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  canonical TEXT NOT NULL,
+                  normalized TEXT NOT NULL,
+                  kind TEXT NOT NULL,
+                  status TEXT NOT NULL CHECK (
+                    status IN ('active', 'quarantined', 'merged', 'tombstoned')
+                  ),
+                  merged_into TEXT,
+                  source_record TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT,
+                  UNIQUE (subject_id, normalized, kind),
+                  FOREIGN KEY (merged_into) REFERENCES entities(id),
+                  FOREIGN KEY (source_record) REFERENCES records(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_entities_subject_status
+                  ON entities(subject_id, status, kind);
+
+                CREATE TABLE IF NOT EXISTS entity_aliases (
+                  id TEXT PRIMARY KEY,
+                  entity_id TEXT NOT NULL,
+                  subject_id TEXT NOT NULL,
+                  surface TEXT NOT NULL,
+                  normalized TEXT NOT NULL,
+                  source_record TEXT,
+                  trust_tier TEXT NOT NULL,
+                  status TEXT NOT NULL CHECK (
+                    status IN ('active', 'quarantined', 'superseded', 'tombstoned')
+                  ),
+                  created_at TEXT NOT NULL,
+                  UNIQUE (subject_id, entity_id, normalized, source_record),
+                  FOREIGN KEY (entity_id) REFERENCES entities(id),
+                  FOREIGN KEY (source_record) REFERENCES records(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_aliases_subject_surface
+                  ON entity_aliases(subject_id, normalized, status);
+
+                CREATE TABLE IF NOT EXISTS edges (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  src_entity TEXT NOT NULL,
+                  relation TEXT NOT NULL,
+                  relation_label TEXT NOT NULL,
+                  dst_entity TEXT,
+                  dst_value TEXT,
+                  record_id TEXT NOT NULL,
+                  trust_tier TEXT NOT NULL,
+                  confidence REAL,
+                  status TEXT NOT NULL CHECK (
+                    status IN ('active', 'superseded', 'quarantined', 'tombstoned')
+                  ),
+                  supersedes_id TEXT,
+                  extractor_version TEXT NOT NULL DEFAULT 'graph-rules-v1',
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT,
+                  UNIQUE (subject_id, record_id),
+                  FOREIGN KEY (record_id) REFERENCES records(id),
+                  FOREIGN KEY (src_entity) REFERENCES entities(id),
+                  FOREIGN KEY (dst_entity) REFERENCES entities(id),
+                  FOREIGN KEY (supersedes_id) REFERENCES edges(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_edges_src
+                  ON edges(subject_id, src_entity, relation, status);
+
+                CREATE INDEX IF NOT EXISTS idx_edges_dst
+                  ON edges(subject_id, dst_entity, status);
+
+                CREATE INDEX IF NOT EXISTS idx_edges_record
+                  ON edges(subject_id, record_id, status);
+
+                CREATE TABLE IF NOT EXISTS graph_fts_map (
+                  object_type TEXT NOT NULL,
+                  object_id TEXT NOT NULL,
+                  subject_id TEXT NOT NULL,
+                  fts_rowid INTEGER NOT NULL UNIQUE,
+                  PRIMARY KEY (object_type, object_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_graph_fts_map_subject
+                  ON graph_fts_map(subject_id);
+
+                CREATE TABLE IF NOT EXISTS graph_merge_proposals (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  left_entity TEXT NOT NULL,
+                  right_entity TEXT NOT NULL,
+                  confidence REAL NOT NULL,
+                  reason TEXT NOT NULL,
+                  evidence_record_ids TEXT NOT NULL DEFAULT '[]',
+                  status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'approved', 'rejected', 'reverted')
+                  ),
+                  winner_entity TEXT,
+                  proposed_at TEXT NOT NULL,
+                  decided_at TEXT,
+                  decided_by TEXT,
+                  UNIQUE (subject_id, left_entity, right_entity),
+                  FOREIGN KEY (left_entity) REFERENCES entities(id),
+                  FOREIGN KEY (right_entity) REFERENCES entities(id),
+                  FOREIGN KEY (winner_entity) REFERENCES entities(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_graph_merge_status
+                  ON graph_merge_proposals(subject_id, status, proposed_at);
+
+                CREATE TABLE IF NOT EXISTS graph_archive_partitions (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  partition_year INTEGER NOT NULL,
+                  path TEXT NOT NULL,
+                  cutoff TEXT NOT NULL,
+                  row_count INTEGER NOT NULL,
+                  content_sha256 TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  UNIQUE (subject_id, partition_year, path)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_graph_archive_subject
+                  ON graph_archive_partitions(subject_id, partition_year);
+
+                CREATE TABLE IF NOT EXISTS graph_archive_members (
+                  subject_id TEXT NOT NULL,
+                  object_type TEXT NOT NULL,
+                  object_id TEXT NOT NULL,
+                  source_record_id TEXT NOT NULL,
+                  partition_id TEXT NOT NULL,
+                  archived_at TEXT NOT NULL,
+                  PRIMARY KEY (object_type, object_id),
+                  FOREIGN KEY (partition_id) REFERENCES graph_archive_partitions(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_graph_archive_record
+                  ON graph_archive_members(subject_id, source_record_id);
+
+                CREATE TABLE IF NOT EXISTS audit_verification_state (
+                  subject_id TEXT PRIMARY KEY,
+                  sequence INTEGER NOT NULL,
+                  event_hash TEXT NOT NULL,
+                  verified_at TEXT NOT NULL
+                );
+
+                CREATE TRIGGER IF NOT EXISTS invalidate_audit_verification_update
+                AFTER UPDATE ON audit_log
+                BEGIN
+                  DELETE FROM audit_verification_state
+                  WHERE subject_id IN (OLD.subject_id, NEW.subject_id);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS invalidate_audit_verification_delete
+                AFTER DELETE ON audit_log
+                BEGIN
+                  DELETE FROM audit_verification_state
+                  WHERE subject_id = OLD.subject_id;
+                END;
                 """
             )
             self._ensure_column("records", "fact_key", "TEXT")
+            self._ensure_column("records", "content_normalized", "TEXT")
             self._ensure_column("retrieval_events", "query_sha256", "TEXT")
+            self._ensure_column(
+                "edges", "extractor_version", "TEXT NOT NULL DEFAULT 'graph-rules-v1'"
+            )
+            self._migrate_alias_status()
+            self._backfill_record_normalization()
+            self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_records_subject_normalized
+                ON records(subject_id, status, content_normalized)
+                """
+            )
             self._migrate_fts()
+            self._migrate_graph_fts()
 
     def _ensure_column(self, table: str, column: str, column_type: str) -> None:
         columns = {
@@ -644,6 +1059,65 @@ class SQLiteStore:
         }
         if column not in columns:
             self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+    def _backfill_record_normalization(self) -> None:
+        rows = self._conn.execute(
+            """
+            SELECT id, content FROM records
+            WHERE content_normalized IS NULL AND status != 'tombstoned'
+            """
+        ).fetchall()
+        for row in rows:
+            self._conn.execute(
+                "UPDATE records SET content_normalized = ? WHERE id = ?",
+                (normalize_content(str(row["content"])), row["id"]),
+            )
+
+    def _migrate_alias_status(self) -> None:
+        schema = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entity_aliases'"
+        ).fetchone()
+        if schema is None or "'superseded'" in str(schema["sql"]):
+            return
+        self._conn.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_legacy")
+        self._conn.execute(
+            """
+            CREATE TABLE entity_aliases (
+              id TEXT PRIMARY KEY,
+              entity_id TEXT NOT NULL,
+              subject_id TEXT NOT NULL,
+              surface TEXT NOT NULL,
+              normalized TEXT NOT NULL,
+              source_record TEXT,
+              trust_tier TEXT NOT NULL,
+              status TEXT NOT NULL CHECK (
+                status IN ('active', 'quarantined', 'superseded', 'tombstoned')
+              ),
+              created_at TEXT NOT NULL,
+              UNIQUE (subject_id, entity_id, normalized, source_record),
+              FOREIGN KEY (entity_id) REFERENCES entities(id),
+              FOREIGN KEY (source_record) REFERENCES records(id)
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            INSERT INTO entity_aliases (
+              id, entity_id, subject_id, surface, normalized, source_record,
+              trust_tier, status, created_at
+            )
+            SELECT id, entity_id, subject_id, surface, normalized, source_record,
+                   trust_tier, status, created_at
+            FROM entity_aliases_legacy
+            """
+        )
+        self._conn.execute("DROP TABLE entity_aliases_legacy")
+        self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_aliases_subject_surface
+            ON entity_aliases(subject_id, normalized, status)
+            """
+        )
 
     def _migrate_fts(self) -> None:
         try:
@@ -665,10 +1139,47 @@ class SQLiteStore:
             self._fts_enabled = True
             if existing is None:
                 self._rebuild_fts()
+            elif self._conn.execute(
+                "SELECT 1 FROM records_fts LIMIT 1"
+            ).fetchone() is not None and self._conn.execute(
+                "SELECT 1 FROM records_fts_map LIMIT 1"
+            ).fetchone() is None:
+                self._rebuild_fts()
         except sqlite3.OperationalError:
             self._fts_enabled = False
 
+    def _migrate_graph_fts(self) -> None:
+        try:
+            self._conn.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS graph_fts
+                USING fts5(
+                  object_type UNINDEXED, object_id UNINDEXED,
+                  subject_id UNINDEXED, text,
+                  tokenize='porter unicode61'
+                )
+                """
+            )
+            self._graph_fts_enabled = True
+            if self._conn.execute(
+                "SELECT 1 FROM graph_fts LIMIT 1"
+            ).fetchone() is not None and self._conn.execute(
+                "SELECT 1 FROM graph_fts_map LIMIT 1"
+            ).fetchone() is None:
+                self._conn.execute(
+                    """
+                    INSERT INTO graph_fts_map (
+                      object_type, object_id, subject_id, fts_rowid
+                    )
+                    SELECT object_type, object_id, subject_id, rowid
+                    FROM graph_fts
+                    """
+                )
+        except sqlite3.OperationalError:
+            self._graph_fts_enabled = False
+
     def _rebuild_fts(self) -> None:
+        self._conn.execute("DELETE FROM records_fts_map")
         self._conn.execute("DELETE FROM records_fts")
         self._conn.execute(
             """
@@ -676,19 +1187,140 @@ class SQLiteStore:
             SELECT id, subject_id, content FROM records WHERE status = 'active'
             """
         )
+        self._conn.execute(
+            """
+            INSERT INTO records_fts_map(record_id, subject_id, fts_rowid)
+            SELECT record_id, subject_id, rowid FROM records_fts
+            """
+        )
 
     def _upsert_fts(self, record_id: str, subject_id: str, content: str) -> None:
         if not self._fts_enabled:
             return
-        self._conn.execute("DELETE FROM records_fts WHERE record_id = ?", (record_id,))
+        mapped = self._conn.execute(
+            "SELECT fts_rowid FROM records_fts_map WHERE record_id = ?", (record_id,)
+        ).fetchone()
+        if mapped is None:
+            cursor = self._conn.execute(
+                "INSERT INTO records_fts(record_id, subject_id, content) VALUES (?, ?, ?)",
+                (record_id, subject_id, content),
+            )
+            self._conn.execute(
+                "INSERT INTO records_fts_map(record_id, subject_id, fts_rowid) VALUES (?, ?, ?)",
+                (record_id, subject_id, cursor.lastrowid),
+            )
+            return
+        rowid = int(mapped["fts_rowid"])
+        self._conn.execute("DELETE FROM records_fts WHERE rowid = ?", (rowid,))
         self._conn.execute(
-            "INSERT INTO records_fts(record_id, subject_id, content) VALUES (?, ?, ?)",
-            (record_id, subject_id, content),
+            "INSERT INTO records_fts(rowid, record_id, subject_id, content) VALUES (?, ?, ?, ?)",
+            (rowid, record_id, subject_id, content),
+        )
+        self._conn.execute(
+            "UPDATE records_fts_map SET subject_id = ? WHERE record_id = ?",
+            (subject_id, record_id),
         )
 
     def _delete_fts(self, record_id: str) -> None:
-        if self._fts_enabled:
-            self._conn.execute("DELETE FROM records_fts WHERE record_id = ?", (record_id,))
+        if not self._fts_enabled:
+            return
+        mapped = self._conn.execute(
+            "SELECT fts_rowid FROM records_fts_map WHERE record_id = ?", (record_id,)
+        ).fetchone()
+        if mapped is None:
+            return
+        self._conn.execute(
+            "DELETE FROM records_fts WHERE rowid = ?", (mapped["fts_rowid"],)
+        )
+        self._conn.execute(
+            "DELETE FROM records_fts_map WHERE record_id = ?", (record_id,)
+        )
+
+    def _delete_records_fts_subject(self, subject_id: str) -> None:
+        rows = self._conn.execute(
+            "SELECT fts_rowid FROM records_fts_map WHERE subject_id = ?", (subject_id,)
+        ).fetchall()
+        for row in rows:
+            self._conn.execute(
+                "DELETE FROM records_fts WHERE rowid = ?", (row["fts_rowid"],)
+            )
+        self._conn.execute(
+            "DELETE FROM records_fts_map WHERE subject_id = ?", (subject_id,)
+        )
+
+    def _upsert_graph_fts(
+        self, object_type: str, object_id: str, subject_id: str, text: str
+    ) -> None:
+        if not self._graph_fts_enabled:
+            return
+        mapped = self._conn.execute(
+            """
+            SELECT fts_rowid FROM graph_fts_map
+            WHERE object_type = ? AND object_id = ?
+            """,
+            (object_type, object_id),
+        ).fetchone()
+        if mapped is None:
+            cursor = self._conn.execute(
+                """
+                INSERT INTO graph_fts(object_type, object_id, subject_id, text)
+                VALUES (?, ?, ?, ?)
+                """,
+                (object_type, object_id, subject_id, text),
+            )
+            self._conn.execute(
+                """
+                INSERT INTO graph_fts_map (
+                  object_type, object_id, subject_id, fts_rowid
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (object_type, object_id, subject_id, cursor.lastrowid),
+            )
+            return
+        rowid = int(mapped["fts_rowid"])
+        self._conn.execute("DELETE FROM graph_fts WHERE rowid = ?", (rowid,))
+        self._conn.execute(
+            """
+            INSERT INTO graph_fts(rowid, object_type, object_id, subject_id, text)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (rowid, object_type, object_id, subject_id, text),
+        )
+        self._conn.execute(
+            """
+            UPDATE graph_fts_map SET subject_id = ?
+            WHERE object_type = ? AND object_id = ?
+            """,
+            (subject_id, object_type, object_id),
+        )
+
+    def _delete_graph_fts(self, object_type: str, object_id: str) -> None:
+        if not self._graph_fts_enabled:
+            return
+        mapped = self._conn.execute(
+            """
+            SELECT fts_rowid FROM graph_fts_map
+            WHERE object_type = ? AND object_id = ?
+            """,
+            (object_type, object_id),
+        ).fetchone()
+        if mapped is None:
+            return
+        self._conn.execute(
+            "DELETE FROM graph_fts WHERE rowid = ?", (mapped["fts_rowid"],)
+        )
+        self._conn.execute(
+            "DELETE FROM graph_fts_map WHERE object_type = ? AND object_id = ?",
+            (object_type, object_id),
+        )
+
+    def _delete_graph_fts_subject(self, subject_id: str) -> None:
+        rows = self._conn.execute(
+            "SELECT object_type, object_id FROM graph_fts_map WHERE subject_id = ?",
+            (subject_id,),
+        ).fetchall()
+        for row in rows:
+            self._delete_graph_fts(str(row["object_type"]), str(row["object_id"]))
 
 
 def utc_now() -> str:

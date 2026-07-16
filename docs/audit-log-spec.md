@@ -25,7 +25,7 @@ Table `audit_log`, one row per event:
 | `sequence` | global monotonically increasing integer (SQLite AUTOINCREMENT) |
 | `event_id` | `aud_<uuid4hex>` |
 | `subject_id` | tenant/user scope; chains are per subject |
-| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `agent.*`, `action.*` |
+| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `graph.*`, `entity.*`, `edge.*`, `alias.*`, `agent.*`, `action.*` |
 | `created_at` | ISO-8601 UTC timestamp |
 | `actor` | `user`, `system`, `agent`, … |
 | `session_id`, `turn_id`, `record_id` | optional context, may be null |
@@ -98,6 +98,12 @@ owner cannot rewrite** — WORM/object-lock storage, a transparency log, an
 RFC 3161 timestamp, or at minimum a different trust domain. A checkpoint
 stored next to the database detects accidents, not adversaries.
 
+`audit_verification_state` is a local performance cache for incremental
+verification. Its cached event is re-read and hash-checked before verifying
+the suffix; audit-row update/delete triggers invalidate it and force a full
+replay. Because the cache is in the same database, it is not part of this
+trust format and cannot replace an externally stored checkpoint.
+
 **Containment rule.** For each pinned subject: the event at `sequence` must
 exist and its `event_hash` must equal the pinned value.
 
@@ -111,6 +117,7 @@ exist and its `event_hash` must equal the pinned value.
   "subject_id": ..., "created_at": ...,
   "selector_sha256": ...,
   "purged_record_ids": [...], "purged_episode_ids": [...],
+  "purged_graph_ids": [...],
   "audit_event_id": ..., "audit_event_hash": ...,
   "receipt_sha256": "<hash of the receipt without this field>"
 }
@@ -118,7 +125,7 @@ exist and its `event_hash` must equal the pinned value.
 
 To verify: recompute `receipt_sha256`; look up `audit_event_id` in the
 chain; its `event_hash` must equal `audit_event_hash` and its payload must
-list the same purged IDs. Because the event is chained, the receipt is as
+list the same purged record, episode, and derived graph IDs. Because the event is chained, the receipt is as
 tamper-evident as the chain itself.
 
 ## Threat model — what each layer detects

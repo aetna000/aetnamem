@@ -11,6 +11,7 @@ import argparse
 import os
 import signal
 import secrets
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import quote
@@ -26,6 +27,7 @@ from aetnamem.assistant.providers import (
 from aetnamem.service.app import _ollama_available, build_service, serve
 from aetnamem.broker import ToolBroker
 from aetnamem.service.encrypted_db import EncryptedDatabaseManager
+from aetnamem.maintenance import GraphMaintenanceWorker
 
 
 def main() -> None:
@@ -61,7 +63,13 @@ def main() -> None:
     secret = os.environ.get("AETNAMEM_APPROVAL_KEY") or secrets.token_hex(32)
     authority = ApprovalAuthority(secret)
 
-    memory = Memory(db_path)
+    graph_recall = os.environ.get("AETNAMEM_GRAPH_RECALL", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    memory = Memory(db_path, graph_recall=graph_recall)
     engine = ActionEngine(
         memory,
         adapters=[FilesystemAdapter(workspace)],
@@ -89,6 +97,14 @@ def main() -> None:
             str(encrypted_manager.encrypted_path) if encrypted_manager is not None else None
         ),
         "db_key_storage": "macos-keychain" if encrypted_manager is not None else None,
+        "graph_archive_path": str(
+            (
+                encrypted_manager.encrypted_path.parent
+                if encrypted_manager is not None
+                else Path(db_path).parent
+            )
+            / "graph-archive"
+        ),
     }
     provider_config = config_from_env()
     if provider_config.kind == "echo" and _ollama_available(DEFAULT_OLLAMA_BASE_URL):
@@ -98,16 +114,72 @@ def main() -> None:
     service.provider_config = provider_config
     server = serve(service, host=args.host, port=args.port)
 
-    def checkpoint_and_seal() -> None:
+    maintenance_interval = max(
+        0.0,
+        float(
+            os.environ.get(
+                "AETNAMEM_GRAPH_MAINTENANCE_SECONDS",
+                "3600" if graph_recall else "0",
+            )
+        ),
+    )
+    maintenance: GraphMaintenanceWorker | None = None
+    if maintenance_interval:
+        default_archive_root = str(service.db_info["graph_archive_path"])
+        archive_root = Path(
+            os.environ.get(
+                "AETNAMEM_GRAPH_ARCHIVE_DIR",
+                default_archive_root,
+            )
+        ).expanduser()
+        archive_days = int(
+            os.environ.get(
+                "AETNAMEM_GRAPH_ARCHIVE_AFTER_DAYS",
+                "0" if encrypted_manager is not None else "365",
+            )
+        )
+        maintenance = GraphMaintenanceWorker(
+            db_path,
+            interval_seconds=maintenance_interval,
+            archive_root=archive_root,
+            archive_after_days=archive_days,
+            on_error=lambda exc: print(
+                f"warning: graph maintenance failed: {exc}", flush=True
+            ),
+        )
+        maintenance.start()
+
+    seal_interval = max(
+        0.0, float(os.environ.get("AETNAMEM_SEAL_INTERVAL_SECONDS", "15"))
+    )
+    last_sealed = 0.0
+    seal_dirty = False
+
+    def checkpoint_and_seal(*, force: bool = False) -> None:
+        nonlocal last_sealed, seal_dirty
         if encrypted_manager is None:
+            return
+        now = time.monotonic()
+        if force and last_sealed and not seal_dirty:
+            return
+        if not force:
+            seal_dirty = True
+        if not force and last_sealed and now - last_sealed < seal_interval:
             return
         try:
             memory.store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # noqa: SLF001
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"warning: database checkpoint failed; seal deferred: {exc}", flush=True)
+            return
         encrypted_manager.seal()
+        last_sealed = now
+        seal_dirty = False
 
-    service.after_mutation = checkpoint_and_seal if encrypted_manager is not None else None
+    service.after_mutation = (
+        (lambda: checkpoint_and_seal(force=False))
+        if encrypted_manager is not None
+        else None
+    )
 
     print(f"aetnamem control service on http://{args.host}:{args.port}", flush=True)
     print(f"  dashboard : http://{args.host}:{args.port}/app", flush=True)
@@ -116,6 +188,12 @@ def main() -> None:
         print(f"  sealed db : {encrypted_manager.encrypted_path}", flush=True)
     print(f"  workspace : {workspace}", flush=True)
     print(f"  provider  : {provider_config.kind} / {provider_config.model}", flush=True)
+    print(f"  graph recall : {'enabled' if graph_recall else 'disabled'}", flush=True)
+    print(
+        "  graph maintenance : "
+        + (f"every {maintenance_interval:g}s" if maintenance else "disabled"),
+        flush=True,
+    )
     print(f"  agent token    (assistant loop): {service.agent_token}", flush=True)
     print(f"  reviewer token (dashboard)     : {service.reviewer_token}", flush=True)
     print("Ctrl-C to stop.", flush=True)
@@ -145,7 +223,9 @@ def main() -> None:
         pass
     finally:
         server.shutdown()
-        checkpoint_and_seal()
+        if maintenance is not None:
+            maintenance.stop()
+        checkpoint_and_seal(force=True)
         memory.close()
         if encrypted_manager is not None:
             encrypted_manager.__exit__(None, None, None)

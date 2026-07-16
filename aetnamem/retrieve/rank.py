@@ -1,11 +1,10 @@
 """General-purpose recall ranking.
 
-recall() has top-k semantics, like every vector store: candidates are all of
-the subject's *active* records, scored by text relevance + trust + recency,
-and the best `limit` are returned. There is no keyword table and no special
-case per query; when nothing matches lexically the trust/recency prior still
-surfaces the subject's most reliable recent facts, and every score is logged
-to the retrieval event so the ranking is auditable.
+Recall has top-k semantics: a bounded set of the subject's *active* records
+is scored by text relevance + trust + recency and the best `limit` are
+returned. There is no query-specific keyword table; when nothing matches
+lexically the trust/recency prior still surfaces recent, reliable candidates.
+Retrieval events retain a bounded score sample.
 """
 
 from __future__ import annotations

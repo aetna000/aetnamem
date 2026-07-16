@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.2.2" src="https://img.shields.io/badge/version-0.2.2-315A7D?style=flat-square">
+  <img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -179,6 +179,10 @@ m.remember("user-1", "Actually, use OAK as my preferred airport going forward.",
 m.recall("user-1", "Which airport should I fly from?")
 # -> [{'content': "User's preferred airport is OAK.", 'status': 'active', ...}]
 
+# Optional graph recall adds bounded multi-hop retrieval while preserving
+# direct record fallback and the same governance rules.
+m.recall("user-1", "What airport does my boss prefer?", use_graph=True)
+
 m.forget("user-1", utterance="Forget my preferred airport.")
 m.inspect("user-1")                  # full evidence dump, incl. audit chain check
 ```
@@ -313,7 +317,10 @@ The agent gets `memory_remember`, `memory_recall`, `memory_recall_block`
 (bounded prompt-injection block), `memory_persona`, `memory_capture`
 (auto-capture with digest-only assistant/tool logging), `memory_list`,
 `memory_forget`, `memory_promote`, `memory_audit`, `memory_verify`, and
-`memory_log_action`.
+`memory_graph_status`, `memory_graph_merges`, `memory_graph_history`, and
+`memory_log_action`. Graph merge decisions are deliberately absent from MCP;
+they require the reviewer-authenticated dashboard/HTTP surface or explicit
+CLI use.
 
 `subject_id` is a storage scope chosen by the caller, not an authenticated
 tenant identity. Likewise, exposing `memory_promote` lets the agent request a
@@ -423,12 +430,27 @@ for the precise integrity threat model.
 
 ## How recall works
 
-Recall has top-k semantics, like a vector store: every *active* record is
-scored (SQLite FTS5 full-text relevance with porter stemming, plus trust and
-recency priors) and the best `limit` are returned. Quarantined, superseded,
-and tombstoned records are never candidates. Every recall writes a retrieval
-event containing all candidate scores, so the ranking itself is auditable.
-Pass `min_score=` to drop weak matches.
+Recall has top-k semantics. SQLite FTS5 selects a bounded
+candidate set (200 by default), trust and recency priors rank it, and the best
+`limit` records are returned. Quarantined, superseded, and tombstoned records
+are never candidates. Retrieval events record the algorithm, cap, candidate
+count, and a bounded score sample so audit payloads do not grow with the whole
+database. Pass `min_score=` to drop weak matches.
+
+Graph recall is opt-in with `use_graph=True`, CLI `--graph`, or service
+`AETNAMEM_GRAPH_RECALL=1`. It extracts a conservative entity/edge index from
+governed records, seeds it with FTS5, spreads through at most two bounded
+hops, and blends the result with direct record recall. Returned graph hits
+include their path evidence. The index inherits quarantine, promotion,
+supersession, and forgetting; it can be recreated at any time:
+
+```bash
+aetnamem graph-backfill ./memories.db user-1
+aetnamem recall ./memories.db user-1 "What airport does my boss prefer?" --graph
+aetnamem graph-consolidate ./memories.db user-1
+aetnamem graph-merges ./memories.db user-1 --status pending
+aetnamem graph-inspect ./memories.db user-1
+```
 
 ## What v0 is and is not
 
@@ -436,11 +458,13 @@ v0 extraction is deterministic (generic sentence patterns: "my X is Y",
 "use Y as my X", "remember that …", "I avoid …") so that policy failures are
 debuggable, not probabilistic. The local Python API, CLI, MCP server,
 deterministic consolidation, persona snapshots, scenes, checkpoints, and
-independent memory verifier are implemented. Guarded Actions additionally
+independent memory verifier are implemented. An optional, deterministic graph
+index provides bounded multi-hop recall with path evidence and direct-record
+fallback. Guarded Actions additionally
 ships an action ledger, exact-plan shared-key approvals, filesystem reference
 adapter, recovery fencing, external journal import, and independent action
 verifier. The MCP action gate, authenticated host identity, encrypted payloads,
-LLM-backed extraction, vector similarity, HTTP deployments, and additional
+LLM-backed graph extraction, HTTP deployments, and additional
 storage backends remain roadmap work — see the [roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md).
 The policy gates in [aetnamem/core/policy.py](https://github.com/aetna000/aetnamem/blob/main/aetnamem/core/policy.py) are
 the product; nothing in the engine may reference the vocabulary of a
@@ -464,6 +488,10 @@ benchmark scenario.
   runtime sequence, the quarantine gate, and the external audit loop.
 - **[Grok/xAI guide](https://github.com/aetna000/aetnamem/blob/main/docs/grok-xai.md)** — Grok/xAI function-calling
   quickstart, local playground, and Remote MCP deployment notes.
+- **[Graph memory design](https://github.com/aetna000/aetnamem/blob/main/docs/graph-memory-design.md)** — implemented
+  Phase 0–4 graph index: entities and typed edges over governed records,
+  bounded seed+spread recall, reviewer-gated reversible merges, scheduled
+  consolidation, cold history partitions, and incremental audit verification.
 - **[Auditing guide](https://github.com/aetna000/aetnamem/blob/main/docs/auditing-guide.md)** — how to *use* the
   auditability: checkpoint cadence and anchoring recipes, verifying after an
   incident, handling erasure/access/rectification requests with receipts,

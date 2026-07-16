@@ -21,7 +21,7 @@ The public comparison mixes native memory agents, managed services, direct APIs,
 
 \paragraph{Adapter-coupled verification.} The same adapter family prepares, executes, and verifies. Separate observer credentials and implementations would reduce correlated failure.
 
-\paragraph{Deterministic extraction and lexical retrieval.} Generic patterns and FTS5 make behavior reproducible but limit semantic coverage. Model-backed extraction and vector retrieval remain future work and must preserve quarantine semantics.
+\paragraph{Deterministic extraction and lexical retrieval.} Generic patterns and FTS5 make behavior reproducible but limit paraphrase coverage. Model-backed extraction remains future work and must preserve quarantine semantics.
 
 \paragraph{Storage and deployment maturity.} SQLite is the only storage backend. Payload encryption, remote multi-tenant service hardening, KMS integration, role-based administration, secure checkpoint publication, and operational observability remain deployment work.
 
@@ -38,7 +38,7 @@ The highest-leverage next steps are:
   \item \textbf{Provider adapters:} implement conditional/idempotent adapters for email, calendars, Git, cloud storage, databases, browsers, and messaging.
   \item \textbf{Formal protocol publication:} version and publish \worldpatch{}, approval, receipt, and verifier schemas as a permissively licensed protocol package.
   \item \textbf{Broader evaluation:} add guarded-action tracks to \benchmark{}, hidden/adaptive scenarios, multiple models/hosts, crash injection, concurrency, fuzzing, and repeated performance experiments.
-  \item \textbf{Policy-preserving semantic memory:} add LLM extraction and embeddings only behind the same admission, provenance, deletion, and retrieval-evidence boundaries.
+  \item \textbf{Policy-preserving graph memory:} broaden deterministic relation extraction and multi-hop evaluation behind the same admission, provenance, deletion, and retrieval-evidence boundaries.
   \item \textbf{External witnessing:} integrate transparency logs, WORM storage, or trusted timestamping for production checkpoint anchors.
 \end{enumerate}
 

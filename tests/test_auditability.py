@@ -94,6 +94,7 @@ def test_deletion_receipt_binds_to_the_audit_chain() -> None:
     assert receipt["format"] == "aetnamem-deletion-receipt-v1"
     assert receipt["purged_record_ids"] == result["record_ids"]
     assert receipt["purged_episode_ids"]
+    assert receipt["purged_graph_ids"]
 
     body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
     assert receipt["receipt_sha256"] == sha256_hex(canonical_json(body))
@@ -102,6 +103,30 @@ def test_deletion_receipt_binds_to_the_audit_chain() -> None:
     assert event is not None
     assert event["event_hash"] == receipt["audit_event_hash"]
     assert event["payload"]["purged_record_ids"] == receipt["purged_record_ids"]
+    assert event["payload"]["purged_graph_ids"] == receipt["purged_graph_ids"]
+
+
+def test_incremental_audit_verification_caches_and_checks_suffix() -> None:
+    memory = Memory(":memory:")
+    memory.remember("user-1", "My home city is Sydney.")
+
+    first = memory.store.verify_audit_chain_incremental("user-1")
+    memory.remember("user-1", "My preferred airport is SYD.")
+    second = memory.store.verify_audit_chain_incremental("user-1")
+
+    assert first["valid"] is True
+    assert first["verified_events"] > 0
+    assert second["valid"] is True
+    assert second["cached_from_sequence"] == first["verified_through_sequence"]
+    assert second["verified_events"] > 0
+
+    memory.store._conn.execute(
+        "UPDATE audit_log SET payload = '{}' WHERE subject_id = ? AND sequence = ?",
+        ("user-1", second["verified_through_sequence"]),
+    )
+    failed = memory.store.verify_audit_chain_incremental("user-1")
+    assert failed["valid"] is False
+    assert failed["cached_from_sequence"] == 0
 
 
 def test_checkpoint_roundtrip_verifies(tmp_path: Path) -> None:

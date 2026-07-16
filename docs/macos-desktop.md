@@ -85,6 +85,26 @@ ollama serve
 The default base URL is `http://localhost:11434`. Override the model with
 `AETNAMEM_LOCAL_MODEL`.
 
+## Graph maintenance
+
+When `AETNAMEM_GRAPH_RECALL=1`, the service runs graph consolidation hourly by
+default. It backfills derived edges, creates reviewer-gated merge proposals,
+and runs incremental audit verification and SQLite optimization. Automatic
+archive writes are disabled in Keychain-sealed mode because archive files are
+ordinary SQLite and are not covered by the main database seal. Configure an
+archive only on storage with appropriate encryption:
+
+```bash
+export AETNAMEM_GRAPH_MAINTENANCE_SECONDS=3600  # 0 disables the worker
+export AETNAMEM_GRAPH_ARCHIVE_AFTER_DAYS=365  # 0 disables archive writes
+export AETNAMEM_GRAPH_ARCHIVE_DIR="$HOME/Library/Application Support/aetnamem/graph-archive"
+```
+
+Merge proposals appear in the dashboard's Approvals tab. Archive databases
+are derived but can still contain sensitive historical values. Protect and
+back them up separately if historical graph browsing matters; canonical
+records remain in `memories.db`.
+
 ## Safe workspace
 
 By default writes are confined to:

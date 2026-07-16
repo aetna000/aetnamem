@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.2.2"
+    SERVER_VERSION = "0.3.0"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -132,6 +132,9 @@ class MCPServer:
             "memory_promote": self._tool_promote,
             "memory_audit": self._tool_audit,
             "memory_verify": self._tool_verify,
+            "memory_graph_status": self._tool_graph_status,
+            "memory_graph_merges": self._tool_graph_merges,
+            "memory_graph_history": self._tool_graph_history,
             "memory_log_action": self._tool_log_action,
         }
         handler = handlers.get(name)
@@ -179,6 +182,7 @@ class MCPServer:
             session_id=arguments.get("session_id"),
             limit=int(arguments.get("limit", 10)),
             min_score=arguments.get("min_score"),
+            use_graph=arguments.get("use_graph"),
         )
 
     def _tool_recall_block(self, arguments: dict[str, Any]) -> Any:
@@ -189,6 +193,7 @@ class MCPServer:
             max_records=int(arguments.get("max_records", 5)),
             max_chars=int(arguments.get("max_chars", 2000)),
             min_score=float(arguments.get("min_score", 0.3)),
+            use_graph=arguments.get("use_graph"),
         )
 
     def _tool_persona(self, arguments: dict[str, Any]) -> Any:
@@ -237,6 +242,22 @@ class MCPServer:
         return self.memory.verify(
             arguments.get("subject_id"),
             checkpoints_path=arguments.get("checkpoints_path", self.checkpoints_path),
+            incremental=bool(arguments.get("incremental", False)),
+        )
+
+    def _tool_graph_status(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.inspect_graph(self._subject(arguments))
+
+    def _tool_graph_merges(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.list_graph_merge_proposals(
+            self._subject(arguments), status=arguments.get("status")
+        )
+
+    def _tool_graph_history(self, arguments: dict[str, Any]) -> Any:
+        year = arguments.get("partition_year")
+        return self.memory.read_graph_archive(
+            self._subject(arguments),
+            partition_year=int(year) if year is not None else None,
         )
 
     def _tool_log_action(self, arguments: dict[str, Any]) -> Any:
@@ -273,7 +294,7 @@ class MCPServer:
                 "memory_recall",
                 "Retrieve the most relevant active memories for a query "
                 "(text relevance + trust + recency). Every recall is logged "
-                "with per-candidate scores for auditability.",
+                "with a bounded score sample for auditability.",
                 {
                     **_SUBJECT_PROPERTY,
                     "query": {"type": "string"},
@@ -281,6 +302,10 @@ class MCPServer:
                     "min_score": {
                         "type": "number",
                         "description": "Drop matches scoring below this.",
+                    },
+                    "use_graph": {
+                        "type": "boolean",
+                        "description": "Blend bounded graph seed-and-spread recall.",
                     },
                     **_SESSION_PROPERTIES,
                 },
@@ -298,6 +323,7 @@ class MCPServer:
                     "max_records": {"type": "integer", "default": 5},
                     "max_chars": {"type": "integer", "default": 2000},
                     "min_score": {"type": "number", "default": 0.3},
+                    "use_graph": {"type": "boolean"},
                     **_SESSION_PROPERTIES,
                 },
                 required=["query"],
@@ -379,6 +405,31 @@ class MCPServer:
                 {
                     **_SUBJECT_PROPERTY,
                     "checkpoints_path": {"type": "string"},
+                    "incremental": {"type": "boolean", "default": False},
+                },
+            ),
+            _tool(
+                "memory_graph_status",
+                "Inspect derived graph entities, edges, merge proposals, and archives.",
+                {**_SUBJECT_PROPERTY},
+            ),
+            _tool(
+                "memory_graph_merges",
+                "List entity merge proposals. Decisions require the reviewer HTTP or CLI surface.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "approved", "rejected", "reverted"],
+                    },
+                },
+            ),
+            _tool(
+                "memory_graph_history",
+                "Read digest-verified inactive graph edges from cold partitions.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "partition_year": {"type": "integer"},
                 },
             ),
             _tool(

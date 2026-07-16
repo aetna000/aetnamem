@@ -12,10 +12,10 @@ from aetnamem.core.policy import (
     forget_needle,
     initial_status,
     normalize_content,
-    records_to_supersede,
 )
 from aetnamem.extract import extract_facts
-from aetnamem.retrieve import query_tokens, rank_records
+from aetnamem.graph import GRAPH_EXTRACTOR_VERSION, GraphIndex
+from aetnamem.retrieve import ScoredRecord, query_tokens, rank_records
 from aetnamem.store import SQLiteStore
 from aetnamem.store.sqlite import utc_now
 
@@ -53,9 +53,14 @@ class Memory:
         path: str | Path = ":memory:",
         *,
         retain_query_text: bool = False,
+        graph_recall: bool = False,
+        recall_candidate_limit: int = 200,
     ) -> None:
         self.store = SQLiteStore(path)
+        self.graph = GraphIndex(self.store)
         self.retain_query_text = retain_query_text
+        self.graph_recall = graph_recall
+        self.recall_candidate_limit = max(1, int(recall_candidate_limit))
 
     def close(self) -> None:
         self.store.close()
@@ -118,15 +123,15 @@ class Memory:
         records: list[dict[str, Any]] = []
         duplicate_ids: list[str] = []
         for candidate in candidates:
-            visible = self.store.list_records(
-                subject_id, statuses=("active", "quarantined")
-            )
-            active = [record for record in visible if record["status"] == "active"]
             status = initial_status(candidate.trust_tier)
             # A trusted statement only dedupes against active records — a
             # quarantined copy must never swallow a user-confirmed fact.
-            duplicate = find_duplicate(
-                candidate.content, active if status == "active" else visible
+            duplicate = self.store.find_duplicate_record(
+                subject_id,
+                candidate.content,
+                statuses=("active",)
+                if status == "active"
+                else ("active", "quarantined"),
             )
             if duplicate is not None:
                 duplicate_ids.append(duplicate["id"])
@@ -142,7 +147,9 @@ class Memory:
                 continue
 
             old_records = (
-                records_to_supersede(candidate.fact_key, active)
+                self.store.active_records_for_fact_key(
+                    subject_id, candidate.fact_key
+                )
                 if status == "active"
                 else []
             )
@@ -188,7 +195,20 @@ class Memory:
                     "supersedes": old_ids,
                 },
             )
-            records.append(self.store.get_record(subject_id, record_id))
+            stored_record = self.store.get_record(subject_id, record_id)
+            assert stored_record is not None
+            graph_mutations = self.graph.supersede_records(
+                subject_id, old_ids, record_id
+            )
+            graph_mutations.extend(self.graph.index_record(stored_record))
+            self._audit_graph_mutations(
+                subject_id,
+                graph_mutations,
+                session_id=session_id,
+                turn_id=turn,
+                record_id=record_id,
+            )
+            records.append(stored_record)
 
         if not candidates and source != "user_message":
             self.store.append_audit_event(
@@ -215,21 +235,47 @@ class Memory:
         session_id: str | None = None,
         limit: int = 10,
         min_score: float | None = None,
+        use_graph: bool | None = None,
     ) -> list[dict[str, Any]]:
-        """Top-k recall over *active* records only.
+        """Top-k recall over bounded active record and optional graph candidates."""
+        active_records, fts_scores = self.store.recall_candidates(
+            subject_id,
+            query_tokens(query),
+            limit=self.recall_candidate_limit,
+        )
+        graph_result = None
+        graph_by_record: dict[str, dict[str, Any]] = {}
+        if self.graph_recall if use_graph is None else use_graph:
+            graph_result = self.graph.recall(subject_id, query)
+            for candidate in graph_result.candidates:
+                record_id = str(candidate["record_id"])
+                current = graph_by_record.get(record_id)
+                if current is None or candidate["score"] > current["score"]:
+                    graph_by_record[record_id] = candidate
 
-        Like a vector store, recall ranks every active record (text relevance
-        + trust + recency) and returns the best `limit`; pass `min_score` to
-        drop weak matches. All candidate scores are logged to the retrieval
-        event, so the ranking is fully auditable.
-        """
-        active_records = self.list(subject_id)
-        fts_scores = self.store.fts_match_scores(subject_id, query_tokens(query))
+            # Graph spread is allowed to nominate records outside the direct
+            # FTS window; otherwise multi-hop recall would collapse back to
+            # lexical recall as soon as the database exceeds the candidate cap.
+            candidate_ids = {str(record["id"]) for record in active_records}
+            for record_id in graph_by_record:
+                if record_id in candidate_ids:
+                    continue
+                record = self.store.get_record(subject_id, record_id)
+                if (
+                    record is not None
+                    and record["subject_id"] == subject_id
+                    and record["status"] == "active"
+                ):
+                    active_records.append(record)
+                    candidate_ids.add(record_id)
+
         scored = rank_records(
             query,
             active_records,
             fts_scores=fts_scores if fts_scores else None,
         )
+        if graph_result is not None:
+            scored = _blend_graph_scores(scored, graph_by_record)
         all_scored = scored
         if min_score is not None:
             scored = [item for item in scored if item.score >= min_score]
@@ -247,9 +293,31 @@ class Memory:
                 "source_type": item.record["source_type"],
                 "above_threshold": min_score is None or item.score >= min_score,
                 "returned": item.record["id"] in returned_ids,
+                **(
+                    {
+                        "graph_score": graph_by_record[item.record["id"]]["score"],
+                        "graph_depth": graph_by_record[item.record["id"]]["depth"],
+                        "graph_path": graph_by_record[item.record["id"]]["path"],
+                    }
+                    if item.record["id"] in graph_by_record
+                    and item.record["id"] in returned_ids
+                    else {}
+                ),
             }
             for item in all_scored[:50]
         ]
+        graph_raw = {}
+        if graph_result is not None:
+            graph_raw = {
+                "algorithm": "graph-seed-spread-v1",
+                "extractor_version": "graph-rules-v1",
+                "seeds": list(graph_result.seeds),
+                "seed_limit": graph_result.seed_limit,
+                "frontier_cap": graph_result.frontier_cap,
+                "max_depth": graph_result.max_depth,
+                "visited_edges": graph_result.visited_edges,
+                "pruned_digest": graph_result.pruned_digest,
+            }
         retrieval_id = self.store.insert_retrieval_event(
             subject_id=subject_id,
             session_id=session_id,
@@ -257,6 +325,7 @@ class Memory:
             query_sha256=_sha256(query),
             candidates=candidates_payload,
             returned_ids=returned_ids,
+            raw=graph_raw,
         )
         self.store.append_audit_event(
             subject_id=subject_id,
@@ -269,9 +338,24 @@ class Memory:
                 "candidate_count": len(all_scored),
                 "min_score": min_score,
                 "limit": limit,
+                "algorithm": graph_raw.get("algorithm", "records-fts-v1"),
+                "candidate_cap": self.recall_candidate_limit,
             },
         )
-        return [item.record for item in returned]
+        results: list[dict[str, Any]] = []
+        for item in returned:
+            record = dict(item.record)
+            graph_candidate = graph_by_record.get(record["id"])
+            if graph_candidate is not None:
+                record["graph"] = {
+                    "edge_id": graph_candidate["edge_id"],
+                    "relation": graph_candidate["relation"],
+                    "score": graph_candidate["score"],
+                    "depth": graph_candidate["depth"],
+                    "path": graph_candidate["path"],
+                }
+            results.append(record)
+        return results
 
     def list(
         self,
@@ -318,7 +402,7 @@ class Memory:
         candidates = [
             record
             for record in self.store.list_records(
-                subject_id, statuses=("active", "quarantined")
+                subject_id, statuses=("active", "quarantined", "superseded")
             )
             if needle in str(record.get("content") or "").lower()
         ]
@@ -328,12 +412,25 @@ class Memory:
         purged_ids, purged_episode_ids = self.store.tombstone_records(
             subject_id=subject_id, record_ids=record_ids
         )
+        graph_mutations = self.graph.tombstone_records(subject_id, purged_ids)
+        purged_graph_ids = [
+            str(item["object_id"])
+            for item in graph_mutations
+            if item.get("object_id")
+        ]
+        self._audit_graph_mutations(
+            subject_id,
+            graph_mutations,
+            session_id=session_id,
+            turn_id=turn,
+        )
         # The audit event carries the selector digest, never its text — the
         # needle usually names exactly the thing being erased.
         payload = {
             "selector_sha256": selector_sha256,
             "purged_record_ids": purged_ids,
             "purged_episode_ids": purged_episode_ids,
+            "purged_graph_ids": purged_graph_ids,
             "purged_count": len(purged_ids),
         }
         if utterance_sha256 is not None:
@@ -354,6 +451,7 @@ class Memory:
             "selector_sha256": selector_sha256,
             "purged_record_ids": purged_ids,
             "purged_episode_ids": purged_episode_ids,
+            "purged_graph_ids": purged_graph_ids,
             "audit_event_id": event_id,
             "audit_event_hash": event["event_hash"],
         }
@@ -430,6 +528,7 @@ class Memory:
         max_records: int = 5,
         max_chars: int = 2000,
         min_score: float = 0.3,
+        use_graph: bool | None = None,
     ) -> dict[str, Any]:
         """Deterministic, bounded <relevant_memories> block for prompt injection.
 
@@ -445,6 +544,7 @@ class Memory:
             session_id=session_id,
             limit=max_records,
             min_score=min_score,
+            use_graph=use_graph,
         )
         lines: list[str] = []
         included: list[str] = []
@@ -648,6 +748,13 @@ class Memory:
                 },
             )
             record = self.store.get_record(subject_id, record_id)
+            assert record is not None
+            self._audit_graph_mutations(
+                subject_id,
+                self.graph.index_record(record),
+                session_id=session_id,
+                record_id=record_id,
+            )
             quarantined.append(record)
             visible.append(record)
 
@@ -676,6 +783,7 @@ class Memory:
         active = self.list(subject_id)
 
         duplicate_ids: list[str] = []
+        graph_mutations: list[dict[str, Any]] = []
         survivors: list[dict[str, Any]] = []
         by_content: dict[str, list[dict[str, Any]]] = {}
         for record in active:
@@ -690,6 +798,9 @@ class Memory:
                     subject_id=subject_id,
                     record_ids=older_ids,
                     superseded_by_id=keeper["id"],
+                )
+                graph_mutations.extend(
+                    self.graph.supersede_records(subject_id, older_ids, keeper["id"])
                 )
                 duplicate_ids.extend(older_ids)
             survivors.append(keeper)
@@ -710,6 +821,9 @@ class Memory:
                 record_ids=older_ids,
                 superseded_by_id=keeper["id"],
             )
+            graph_mutations.extend(
+                self.graph.supersede_records(subject_id, older_ids, keeper["id"])
+            )
             repaired_ids.extend(older_ids)
 
         report = {
@@ -724,6 +838,9 @@ class Memory:
             actor="system",
             session_id=session_id,
             payload=report,
+        )
+        self._audit_graph_mutations(
+            subject_id, graph_mutations, session_id=session_id
         )
         return report
 
@@ -744,12 +861,9 @@ class Memory:
         if record is None:
             raise ValueError(f"record {record_id} is not quarantined for {subject_id}")
 
-        active = [
-            item
-            for item in self.list(subject_id)
-            if item["id"] != record_id
-        ]
-        old_records = records_to_supersede(record.get("fact_key"), active)
+        old_records = self.store.active_records_for_fact_key(
+            subject_id, record.get("fact_key"), exclude_id=record_id
+        )
         old_ids = [item["id"] for item in old_records]
         self.store.supersede_records(
             subject_id=subject_id,
@@ -769,7 +883,252 @@ class Memory:
                 "supersedes": old_ids,
             },
         )
-        return self.store.get_record(subject_id, record_id)
+        promoted = self.store.get_record(subject_id, record_id)
+        assert promoted is not None
+        graph_mutations = self.graph.supersede_records(subject_id, old_ids, record_id)
+        graph_mutations.extend(self.graph.index_record(promoted))
+        self._audit_graph_mutations(
+            subject_id,
+            graph_mutations,
+            session_id=session_id,
+            turn_id=_turn_id(turn_id),
+            record_id=record_id,
+        )
+        return promoted
+
+    @_atomic
+    def backfill_graph(
+        self,
+        subject_id: str,
+        *,
+        rebuild: bool = False,
+        session_id: str | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """Populate the derived graph from canonical records.
+
+        Backfill is idempotent. ``rebuild=True`` drops only graph index rows;
+        records, episodes, retrieval events, and the audit chain are untouched.
+        """
+        if rebuild:
+            self.graph.clear(subject_id)
+        report = self.graph.backfill(subject_id)
+        summary = {key: value for key, value in report.items() if key != "mutations"}
+        summary["mutation_count"] = len(report["mutations"])
+        summary["mutations_sha256"] = sha256_hex(canonical_json(report["mutations"]))
+        self._audit_graph_mutations(
+            subject_id,
+            [
+                mutation
+                for mutation in report["mutations"]
+                if mutation["event_type"] == "edge.reextracted"
+            ],
+            session_id=session_id,
+        )
+        if rebuild or report["records_indexed"]:
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="graph.rebuilt" if rebuild else "graph.backfilled",
+                actor=actor,
+                session_id=session_id,
+                payload=summary,
+            )
+        return summary
+
+    def inspect_graph(self, subject_id: str) -> dict[str, Any]:
+        return self.graph.inspect(subject_id)
+
+    @_atomic
+    def consolidate_graph(
+        self,
+        subject_id: str,
+        *,
+        archive_root: str | Path | None = None,
+        archive_before: str | None = None,
+        prune_archive: bool = True,
+        session_id: str | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """Refresh derived graph state and propose only conservative merges."""
+        backfill = self.graph.backfill(subject_id)
+        self._audit_graph_mutations(
+            subject_id,
+            [
+                mutation
+                for mutation in backfill["mutations"]
+                if mutation["event_type"] == "edge.reextracted"
+            ],
+            session_id=session_id,
+        )
+        merge_mutations = self.graph.propose_entity_merges(subject_id)
+        self._audit_graph_mutations(
+            subject_id, merge_mutations, session_id=session_id
+        )
+        archive = None
+        if archive_root is not None and archive_before is not None:
+            archive = self.graph.archive_history(
+                subject_id,
+                archive_root,
+                before=archive_before,
+                prune=prune_archive,
+            )
+            if archive["archived_edges"]:
+                self.store.append_audit_event(
+                    subject_id=subject_id,
+                    event_type="graph.history_archived",
+                    actor=actor,
+                    session_id=session_id,
+                    payload={
+                        "before": archive_before,
+                        "pruned": prune_archive,
+                        "archived_edges": archive["archived_edges"],
+                        "partitions": [
+                            {
+                                "id": item["id"],
+                                "year": item["year"],
+                                "row_count": item["row_count"],
+                                "content_sha256": item["content_sha256"],
+                                "archived_edge_ids_sha256": item[
+                                    "archived_edge_ids_sha256"
+                                ],
+                            }
+                            for item in archive["partitions"]
+                        ],
+                    },
+                )
+        report = {
+            "extractor_version": GRAPH_EXTRACTOR_VERSION,
+            "records_seen": backfill["records_seen"],
+            "records_indexed": backfill["records_indexed"],
+            "backfill_mutation_count": len(backfill["mutations"]),
+            "backfill_mutations_sha256": sha256_hex(
+                canonical_json(backfill["mutations"])
+            ),
+            "merge_proposals_created": len(merge_mutations),
+            "pending_merge_proposals": len(
+                self.graph.list_merge_proposals(subject_id, status="pending")
+            ),
+            "archive": archive,
+            "counts": self.graph.counts(subject_id),
+        }
+        self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="graph.consolidated",
+            actor=actor,
+            session_id=session_id,
+            payload={
+                **report,
+                "archive": (
+                    {
+                        "archived_edges": archive["archived_edges"],
+                        "partition_ids": [item["id"] for item in archive["partitions"]],
+                    }
+                    if archive is not None
+                    else None
+                ),
+            },
+        )
+        return report
+
+    def list_graph_merge_proposals(
+        self, subject_id: str, *, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        return self.graph.list_merge_proposals(subject_id, status=status)
+
+    @_atomic
+    def decide_graph_merge(
+        self,
+        subject_id: str,
+        proposal_id: str,
+        *,
+        approve: bool,
+        actor: str = "reviewer",
+        winner_entity: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        mutation = self.graph.decide_merge(
+            subject_id,
+            proposal_id,
+            approve=approve,
+            actor=actor,
+            winner_entity=winner_entity,
+        )
+        self._audit_graph_mutations(
+            subject_id, [mutation], session_id=session_id
+        )
+        return next(
+            item
+            for item in self.graph.list_merge_proposals(subject_id)
+            if item["id"] == proposal_id
+        )
+
+    @_atomic
+    def revert_graph_merge(
+        self,
+        subject_id: str,
+        proposal_id: str,
+        *,
+        actor: str = "reviewer",
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        mutation = self.graph.revert_merge(subject_id, proposal_id, actor=actor)
+        self._audit_graph_mutations(
+            subject_id, [mutation], session_id=session_id
+        )
+        return next(
+            item
+            for item in self.graph.list_merge_proposals(subject_id)
+            if item["id"] == proposal_id
+        )
+
+    @_atomic
+    def archive_graph_history(
+        self,
+        subject_id: str,
+        archive_root: str | Path,
+        *,
+        before: str,
+        prune: bool = True,
+        actor: str = "system",
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        report = self.graph.archive_history(
+            subject_id, archive_root, before=before, prune=prune
+        )
+        if report["archived_edges"]:
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="graph.history_archived",
+                actor=actor,
+                session_id=session_id,
+                payload={
+                    "before": before,
+                    "pruned": prune,
+                    "archived_edges": report["archived_edges"],
+                    "partitions": [
+                        {
+                            key: item[key]
+                            for key in (
+                                "id",
+                                "year",
+                                "row_count",
+                                "content_sha256",
+                                "archived_edge_ids_sha256",
+                            )
+                        }
+                        for item in report["partitions"]
+                    ],
+                },
+            )
+        return report
+
+    def read_graph_archive(
+        self, subject_id: str, *, partition_year: int | None = None
+    ) -> list[dict[str, Any]]:
+        return self.graph.read_archive(subject_id, partition_year=partition_year)
+
+    def optimize(self) -> None:
+        self.store.optimize()
 
     def checkpoint(
         self,
@@ -801,6 +1160,7 @@ class Memory:
         subject_id: str | None = None,
         *,
         checkpoints_path: str | Path | None = None,
+        incremental: bool = False,
     ) -> dict[str, Any]:
         """Verify audit-chain integrity, optionally against anchored checkpoints.
 
@@ -810,14 +1170,34 @@ class Memory:
         """
         heads = self.store.chain_heads()
         subject_ids = [subject_id] if subject_id is not None else sorted(heads)
-        subjects: dict[str, Any] = {
-            sid: {
-                "chain_valid": self.store.verify_audit_chain(sid),
+        subjects: dict[str, Any] = {}
+        for sid in subject_ids:
+            incremental_report = (
+                self.store.verify_audit_chain_incremental(sid)
+                if incremental
+                else None
+            )
+            subjects[sid] = {
+                "chain_valid": (
+                    incremental_report["valid"]
+                    if incremental_report is not None
+                    else self.store.verify_audit_chain(sid)
+                ),
+                "verification_mode": "incremental" if incremental else "full",
+                "incremental": incremental_report,
                 "checkpoints_checked": 0,
-                "failures": [],
+                "failures": (
+                    [
+                        {
+                            "checkpoint": None,
+                            "reason": incremental_report["failure"],
+                        }
+                    ]
+                    if incremental_report is not None
+                    and not incremental_report["valid"]
+                    else []
+                ),
             }
-            for sid in subject_ids
-        }
 
         for document in _load_checkpoints(checkpoints_path):
             recomputed = dict(document)
@@ -857,6 +1237,7 @@ class Memory:
         return {
             "records": self.list(subject_id, include_inactive=True),
             "episodes": self.store.list_episodes(subject_id),
+            "graph": self.inspect_graph(subject_id),
             "retrieval_events": self.store.list_retrieval_events(subject_id),
             "audit_log": self.store.list_audit_events(subject_id),
             "audit_chain_valid": self.store.verify_audit_chain(subject_id),
@@ -897,6 +1278,29 @@ class Memory:
     ) -> list[dict[str, Any]]:
         return self.store.list_retrieval_events(subject_id, session_id=session_id)
 
+    def _audit_graph_mutations(
+        self,
+        subject_id: str,
+        mutations: list[dict[str, Any]],
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        record_id: str | None = None,
+    ) -> None:
+        for mutation in mutations:
+            payload = {
+                key: value for key, value in mutation.items() if key != "event_type"
+            }
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type=str(mutation["event_type"]),
+                actor="graph-indexer",
+                session_id=session_id,
+                turn_id=turn_id,
+                record_id=str(mutation.get("record_id") or record_id or "") or None,
+                payload=payload,
+            )
+
     def reset_subject(self, subject_id: str) -> None:
         self.store.reset_subject(subject_id)
 
@@ -907,6 +1311,60 @@ def _turn_id(value: str | int | None) -> str | None:
     if isinstance(value, int):
         return f"t{value}"
     return str(value)
+
+
+def _blend_graph_scores(
+    lexical: list[ScoredRecord], graph_by_record: dict[str, dict[str, Any]]
+) -> list[ScoredRecord]:
+    """Reciprocal-rank fusion over direct record and graph rankings."""
+    if not graph_by_record:
+        return lexical
+    rank_constant = 60.0
+    lexical_rank = {
+        str(item.record["id"]): rank for rank, item in enumerate(lexical, start=1)
+    }
+    graph_rank = {
+        record_id: rank
+        for rank, (record_id, _candidate) in enumerate(
+            sorted(
+                graph_by_record.items(),
+                key=lambda item: (-float(item[1]["score"]), item[0]),
+            ),
+            start=1,
+        )
+    }
+    graph_weight = 2.0
+    maximum = (1.0 + graph_weight) / (rank_constant + 1.0)
+    blended: list[ScoredRecord] = []
+    for item in lexical:
+        record_id = str(item.record["id"])
+        score = 1.0 / (rank_constant + lexical_rank[record_id])
+        if record_id in graph_rank:
+            graph_strength = max(
+                0.0, min(float(graph_by_record[record_id]["score"]), 1.0)
+            )
+            score += (
+                graph_weight
+                * graph_strength
+                / (rank_constant + graph_rank[record_id])
+            )
+        blended.append(
+            ScoredRecord(
+                record=item.record,
+                score=round(score / maximum, 6),
+                text_score=item.text_score,
+                trust_score=item.trust_score,
+                recency_score=item.recency_score,
+            )
+        )
+    blended.sort(
+        key=lambda item: (
+            -item.score,
+            str(item.record.get("created_at") or ""),
+            str(item.record.get("id")),
+        )
+    )
+    return blended
 
 
 def _selector_contains(selector: dict[str, Any] | str | None) -> str | None:

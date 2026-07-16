@@ -101,8 +101,9 @@ score stays honest.
    contracts, OpenClaw hooks, and independent verification.
 
 2. **Improve retrieval quality without weakening auditability.**
-   Add optional embeddings/vector search behind the existing retrieval event
-   model. Every returned result must still be explainable by scores and IDs.
+   Expand deterministic graph extraction and multi-hop benchmarks behind the
+   existing retrieval event model. Every returned result must remain
+   explainable by scores, paths, and record IDs.
 
 3. **Add LLM-backed extraction as a quarantined proposal path.**
    LLM output should propose evidence-cited facts. Activation still requires
@@ -114,7 +115,7 @@ score stays honest.
    independent verifier.
 
 5. **Add stronger storage/security backends.**
-   Postgres/pgvector, crypto-shredding, retention policies, signatures for
+   Postgres, crypto-shredding, retention policies, signatures for
    checkpoints/receipts, and optional Firestore support should all be storage
    or deployment layers over the same semantics.
 

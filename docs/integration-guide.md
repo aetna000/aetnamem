@@ -71,20 +71,23 @@ $ aetnamem remember ./mem.db user-1 "My preferred airport is SFO." --session s1 
 instead of creating a second record. Records extracted from untrusted
 sources appear with `"status": "quarantined"`.
 
-### `aetnamem recall <db> <subject> <query> [--limit N] [--min-score X] [--session S]`
+### `aetnamem recall <db> <subject> <query> [--limit N] [--min-score X] [--session S] [--graph]`
 
 Top-k retrieval over **active** records only (quarantined, superseded, and
 tombstoned records are never candidates). Prints a JSON array of records,
-best first. Every call also writes a retrieval event with per-candidate
-score breakdowns — see it via `inspect`.
+best first. Every call also writes a retrieval event with a bounded sample of
+candidate score breakdowns — see it via `inspect`.
 
 ```bash
 aetnamem recall ./mem.db user-1 "Which airport should I book from?" --limit 3
 ```
 
-With no `--min-score`, recall has vector-store semantics: it returns the
-best `limit` records even if none matched lexically (trust/recency prior).
+With no `--min-score`, recall returns the best `limit` records even if none
+matched lexically (using the trust/recency prior).
 Set `--min-score 0.5` (range roughly 0–1) to require a real text match.
+`--graph` additionally performs bounded entity/edge traversal and blends those
+hits with direct record candidates. Graph-derived records include a `graph`
+object with edge, relation, depth, score, and path evidence.
 
 ### `aetnamem list <db> <subject> [--all]`
 
@@ -94,9 +97,10 @@ review.
 
 ### `aetnamem forget <db> <subject> (--contains TEXT | --utterance TEXT) [--session S]`
 
-Deletes every active or quarantined record whose content contains the
-selector (case-insensitive), purging record content, fact key, and the
-source episode text. `--utterance` accepts natural language
+Deletes every active, quarantined, or superseded record whose content contains
+the selector (case-insensitive), purging record content, fact key, source
+episode text, hot graph objects, and registered cold-history edges.
+Archive partition digests are recomputed after deletion. `--utterance` accepts natural language
 (`"Forget my preferred airport."`) and reduces it to the selector;
 `--contains` is the exact substring form. Exactly one is required — an
 empty selector is refused rather than interpreted as "delete everything".
@@ -141,6 +145,49 @@ Runs the deterministic cleanup pass: exact duplicate active records collapse
 to the newest copy, and fact-key conflicts are repaired by superseding older
 records. The pass writes a `memory.consolidated` audit event.
 
+### `aetnamem graph-backfill <db> <subject> [--rebuild]`
+
+Indexes existing governed records into the derived entity/edge graph. The
+operation is idempotent. `--rebuild` first removes graph rows for that subject;
+episodes, records, and their audit history remain canonical and unchanged.
+The command prints indexed-record and graph-object counts.
+
+### `aetnamem graph-inspect <db> <subject>`
+
+Prints entities, aliases, edges, merge proposals, archive partitions, and
+aggregate counts. This maintenance/debug view includes inactive graph objects.
+
+### `aetnamem graph-consolidate <db> <subject> [--archive-root DIR --archive-before ISO_TIME] [--no-prune]`
+
+Backfills missing derived edges, creates conservative pending merge proposals,
+and optionally moves inactive edge history older than the cutoff into
+digest-verified SQLite partitions by subject/year. Canonical records and
+episodes stay in the primary database. `--no-prune` copies without removing
+the inactive hot rows.
+
+### `aetnamem graph-merges` / `graph-merge`
+
+```bash
+aetnamem graph-merges ./mem.db user-1 --status pending
+aetnamem graph-merge ./mem.db user-1 gmp_ID approve --winner ent_ID
+aetnamem graph-merge ./mem.db user-1 gmp_ID reject
+aetnamem graph-merge ./mem.db user-1 gmp_ID revert
+```
+
+Only exact same-kind name/alias evidence creates proposals. Approval records a
+reversible `merged_into` pointer; reject and revert are also audited. The
+desktop dashboard exposes pending proposals through its Approvals tab.
+
+### `aetnamem graph-history <db> <subject> [--year YYYY]`
+
+Reads inactive edges from registered archive partitions after verifying each
+file's SHA-256 digest. Missing or modified partitions are rejected.
+
+### `aetnamem optimize <db>`
+
+Runs SQLite `PRAGMA optimize`. The desktop maintenance worker also runs this
+on its configured schedule.
+
 ### `aetnamem persona <db> <subject> [--max-chars N]`
 
 Builds a live-derived `<user_persona>` snapshot from active records. It is
@@ -183,11 +230,14 @@ subset for audit review (audit log + retrieval events + chain check).
 `inspect` output is the machine-readable disclosure for access/portability
 requests.
 
-### `aetnamem checkpoint <db> [sink.jsonl]` / `aetnamem verify <db> [--subject S] [--checkpoints sink.jsonl]`
+### `aetnamem checkpoint <db> [sink.jsonl]` / `aetnamem verify <db> [--subject S] [--checkpoints sink.jsonl] [--incremental]`
 
 Chain anchoring and verification — semantics, cadence, and anchoring
 recipes are in the [auditing guide](auditing-guide.md). `verify` exits 1 on
-any failure, so both are cron/CI-ready as-is.
+any failure, so both are cron/CI-ready as-is. `--incremental` hash-checks its
+locally cached anchor and verifies only new events. This reduces routine work
+but is not an external trust anchor; use checkpoint files in another trust
+domain for tail-truncation and database-replacement detection.
 
 ### `aetnamem actions …`
 
@@ -286,15 +336,18 @@ not as protocol errors, so the agent can read and recover.
 | tool | required args | optional args | returns |
 |---|---|---|---|
 | `memory_remember` | `message` | `subject_id`, `source_type`, `session_id`, `turn_id` | `{episode_id, records, duplicate_ids}` |
-| `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id` | array of records, best first |
-| `memory_recall_block` | `query` | `subject_id`, `max_records` (5), `max_chars` (2000), `min_score` (0.3), `session_id` | `{block, record_ids, count}` — bounded `<relevant_memories>` block; injection is audited |
+| `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id`, `use_graph` (false) | array of records, best first; graph hits include path evidence |
+| `memory_recall_block` | `query` | `subject_id`, `max_records` (5), `max_chars` (2000), `min_score` (0.3), `session_id`, `use_graph` (false) | `{block, record_ids, count}` — bounded `<relevant_memories>` block; injection is audited |
 | `memory_persona` | — | `subject_id`, `max_chars` (1500), `session_id` | `{block, record_ids, count}` — live-derived `<user_persona>` snapshot, audited |
 | `memory_capture` | `role`, `content` | `subject_id`, `tool_name`, `session_id`, `turn_id` | user → full pipeline; assistant/tool\_\* → digest-only audit event |
 | `memory_list` | — | `subject_id`, `include_inactive` (false) | array of records |
 | `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id`, `turn_id` | `{deleted, record_ids, receipt}` |
 | `memory_promote` | `record_id` | `subject_id`, `session_id` | the activated record |
 | `memory_audit` | — | `subject_id` | `{audit_log, retrieval_events, audit_chain_valid}` |
-| `memory_verify` | — | `subject_id`, `checkpoints_path` | `{valid, subjects}` |
+| `memory_verify` | — | `subject_id`, `checkpoints_path`, `incremental` (false) | `{valid, subjects}` |
+| `memory_graph_status` | — | `subject_id` | graph entities, edges, merge proposals, archives, and counts |
+| `memory_graph_merges` | — | `subject_id`, `status` | merge proposals; decisions stay on reviewer surfaces |
+| `memory_graph_history` | — | `subject_id`, `partition_year` | digest-verified inactive archived edges |
 | `memory_log_action` | `action_type` | `subject_id`, `payload`, `session_id`, `turn_id` | `{event_id}` |
 
 Suggested system-prompt guidance for the calling agent:

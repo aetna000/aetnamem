@@ -42,6 +42,14 @@ _COPULAR_RE = re.compile(
     re.I,
 )
 
+# "Sarah's preferred airport is SEA". Named slots use a namespaced fact key
+# so they never supersede the user's slot with the same label.
+_NAMED_COPULAR_RE = re.compile(
+    r"^\s*(?P<owner>[A-Z][A-Za-z0-9 ._-]{0,60}?)'s\s+"
+    r"(?P<attr>[a-z][a-z0-9 ]{1,60}?)\s+(?:is|are)\s+"
+    r"(?P<value>\S.*?)\s*[.?!]*\s*$"
+)
+
 # "use OAK as my preferred airport (going forward)"
 _USE_AS_RE = re.compile(
     r"\buse\s+(?P<value>\S.*?)\s+as\s+my\s+(?P<attr>[a-z][a-z0-9 ]{1,60}?)"
@@ -151,6 +159,14 @@ def _parse_slot(text: str) -> tuple[str, str, float] | None:
             value = _clean(copular.group("value")).rstrip(" .?!")
             if attr and value:
                 return f"User's {attr} is {value}.", attr, 0.9
+        named = _NAMED_COPULAR_RE.match(line)
+        if named:
+            owner = _clean(named.group("owner")).strip()
+            attr = _normalize_attr(named.group("attr"))
+            value = _clean(named.group("value")).rstrip(" .?!")
+            if owner and attr and value:
+                fact_key = f"{owner.lower()}::{attr}"
+                return f"{owner}'s {attr} is {value}.", fact_key, 0.88
     return None
 
 

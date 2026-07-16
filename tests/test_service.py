@@ -277,3 +277,97 @@ def test_files_rejects_path_traversal(running):
             running.base, "GET", f"/files/content?path={path}", token=running.agent_token
         )
         assert status == 400, path
+
+
+def test_graph_inspect_and_reviewer_backfill_endpoints(running):
+    status, _ = call(
+        running.base,
+        "POST",
+        "/memory/remember-user",
+        token=running.reviewer_token,
+        body={"subject_id": "u1", "message": "My boss is Sarah."},
+    )
+    assert status == 200
+
+    status, graph = call(
+        running.base, "GET", "/graph?subject=u1", token=running.agent_token
+    )
+    assert status == 200
+    assert graph["counts"]["edges"] == 1
+
+    status, _ = call(
+        running.base,
+        "POST",
+        "/graph/backfill",
+        token=running.agent_token,
+        body={"subject_id": "u1", "rebuild": True},
+    )
+    assert status == 403
+
+    status, report = call(
+        running.base,
+        "POST",
+        "/graph/backfill",
+        token=running.reviewer_token,
+        body={"subject_id": "u1", "rebuild": True},
+    )
+    assert status == 200
+    assert report["after"]["edges"] == 1
+
+
+def test_graph_merge_review_requires_reviewer(running):
+    for message in (
+        "My boss is J.",
+        "J's preferred airport is SEA.",
+        "My boss is Javad.",
+    ):
+        status, _ = call(
+            running.base,
+            "POST",
+            "/memory/remember-user",
+            token=running.reviewer_token,
+            body={"subject_id": "merge-user", "message": message},
+        )
+        assert status == 200
+
+    status, report = call(
+        running.base,
+        "POST",
+        "/graph/consolidate",
+        token=running.reviewer_token,
+        body={"subject_id": "merge-user"},
+    )
+    assert status == 200
+    assert report["merge_proposals_created"] == 1
+
+    status, payload = call(
+        running.base,
+        "GET",
+        "/graph/merges?subject=merge-user&status=pending",
+        token=running.agent_token,
+    )
+    assert status == 200
+    [proposal] = payload["merges"]
+
+    endpoint = f"/graph/merges/{proposal['id']}/approve"
+    status, _ = call(
+        running.base,
+        "POST",
+        endpoint,
+        token=running.agent_token,
+        body={"subject_id": "merge-user"},
+    )
+    assert status == 403
+
+    status, decided = call(
+        running.base,
+        "POST",
+        endpoint,
+        token=running.reviewer_token,
+        body={
+            "subject_id": "merge-user",
+            "winner_entity": proposal["right_entity"],
+        },
+    )
+    assert status == 200
+    assert decided["status"] == "approved"
