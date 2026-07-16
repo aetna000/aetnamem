@@ -1,0 +1,21 @@
+\resizebox{0.98\columnwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  entity/.style={circle, draw=aetnaBlue!85, fill=aetnaBlue!7, minimum size=15mm, align=center, line width=0.8pt},
+  value/.style={circle, draw=aetnaGreen!85, fill=aetnaGreen!8, minimum size=15mm, align=center, line width=0.8pt},
+  record/.style={draw=aetnaGold!90, fill=aetnaGold!8, rounded corners=2pt, align=center, minimum width=24mm, minimum height=9mm},
+  edge/.style={-{Latex[length=2.2mm]}, line width=0.9pt, draw=aetnaInk!85},
+  prov/.style={-{Latex[length=1.9mm]}, dashed, draw=aetnaGold!90, line width=0.7pt},
+]
+  \node[entity] (you) {You};
+  \node[entity, right=27mm of you] (sarah) {Sarah};
+  \node[value, right=31mm of sarah] (sea) {SEA};
+  \draw[edge] (you) -- node[above, align=center] {boss\\\scriptsize depth 1} (sarah);
+  \draw[edge] (sarah) -- node[above, align=center] {preferred airport\\\scriptsize depth 2} (sea);
+  \node[record, below=15mm of $(you)!0.5!(sarah)$] (r1) {record 1\\\scriptsize ``my boss is Sarah''};
+  \node[record, below=15mm of $(sarah)!0.5!(sea)$] (r2) {record 2\\\scriptsize ``Sarah's ... is SEA''};
+  \draw[prov] ($(you)!0.5!(sarah)$) -- (r1);
+  \draw[prov] ($(sarah)!0.5!(sea)$) -- (r2);
+  \node[above=9mm of sarah, align=center, text=aetnaTeal] {query seed: ``boss''\\\scriptsize returned path is recorded};
+\end{tikzpicture}%
+}

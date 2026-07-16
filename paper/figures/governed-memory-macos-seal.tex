@@ -1,0 +1,21 @@
+\resizebox{0.80\columnwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  node distance=6mm,
+  phasebox/.style={draw=aetnaInk!65, rounded corners=2pt, align=center, minimum width=40mm, minimum height=9mm, fill=white},
+  sealed/.style={phasebox, draw=aetnaGreen!85, fill=aetnaGreen!8},
+  live/.style={phasebox, draw=aetnaRed!80, fill=aetnaRed!6},
+  flow/.style={-{Latex[length=2mm]}, line width=0.75pt, draw=aetnaInk!80},
+]
+  \node[sealed] (idle) {Idle files\\AES-256-CBC ciphertext + HMAC};
+  \node[phasebox, below=of idle] (start) {Startup\\Keychain secret + HMAC verification};
+  \node[live, below=of start] (runtime) {Running\\plaintext temporary SQLite + WAL};
+  \node[phasebox, below=of runtime] (checkpoint) {Mutation / clean shutdown\\WAL checkpoint, encrypt, HMAC};
+  \node[sealed, below=of checkpoint] (newidle) {Published sealed snapshot\\temporary directory cleanup};
+  \draw[flow] (idle) -- (start);
+  \draw[flow] (start) -- node[right] {decrypt} (runtime);
+  \draw[flow] (runtime) -- (checkpoint);
+  \draw[flow] (checkpoint) -- (newidle);
+  \draw[flow, dashed] (newidle.east) to[bend left=40] node[right, align=left] {next\\startup} (start.east);
+\end{tikzpicture}%
+}

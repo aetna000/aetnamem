@@ -1,0 +1,65 @@
+\section{The Graph as a Rebuildable Index}
+\label{sec:graph}
+
+Lexical ranking cannot perform a join when the query and answer use different words. Suppose memory contains ``my boss is Sarah'' and ``Sarah's preferred airport is SEA.'' A query asking ``what does my boss use for flights?'' may touch the first fact but not the second. The derived graph makes the shared entity explicit.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/governed-memory-graph}
+  \caption{A two-hop recall path. Each edge cites a canonical record, and each record cites its source episode. The path explains why \code{SEA} was nominated even when the answer record did not share query terms.}
+  \label{fig:graph-path}
+\end{figure}
+
+\plainbox{The graph is a map drawn from the filing cabinet. If the map is damaged or an extraction rule improves, aetnamem can redraw it from the filed records. Destroying the map does not destroy the original memory.}
+
+\subsection{Derived schema and provenance}
+
+The graph stores subject-scoped entities, aliases, and typed edges. Entity and edge identifiers are content-derived. Every non-root entity records the record that introduced it; aliases cite their source records; every edge cites one record and carries that record's trust tier, confidence annotation, status, and extractor version. The chain is therefore
+
+\begin{equation}
+\text{graph edge}\rightarrow\text{record}\rightarrow\text{episode}\rightarrow\text{source origin}.
+\end{equation}
+
+The relation vocabulary is deliberately small, including \code{boss}, \code{manager}, \code{preferred\_airport}, \code{works\_with}, \code{stored\_in}, and a conservative \code{related\_to} escape relation. A versioned rule extractor converts supported records into edges. Records that cannot be converted remain available through direct FTS recall.
+
+Lifecycle changes propagate. An edge from a quarantined record is quarantined; an active correction supersedes the prior single-valued edge; forgetting tombstones corresponding graph objects and removes them from graph FTS. Only active entities, aliases, and edges are seedable or traversable. Consequently, untrusted content cannot become an active bridge between trusted facts merely because it connects two names.
+
+\subsection{Seed and bounded spread}
+
+Graph FTS indexes active entity names, aliases, relation labels, source names, and destination values. For a query, it returns at most $M=16$ seeds by default. Entity and alias seeds activate an entity; an edge seed nominates that edge and continues from its destination. This directional choice avoids immediately returning through the root ``you'' entity, which otherwise behaves as a supernode connecting most personal facts.
+
+Traversal uses default depth $D=2$ and frontier cap $F=64$. Hard limits are $M\le64$, $D\le3$, and $F\le256$. At depth $d$, an edge reached from activation $A$ receives
+
+\begin{equation}
+A_e=A\,W_{\mathrm{trust}}(e)\,P_{\mathrm{relation}}(e)\,(0.72)^d,
+\label{eq:graph-activation}
+\end{equation}
+
+then a bounded recency adjustment
+
+\begin{equation}
+S_e=A_e(0.85+0.15R_e).
+\end{equation}
+
+Static relation priors give, for example, 1.0 to \code{preferred\_airport}, 0.98 to \code{boss} and \code{manager}, and 0.72 to \code{related\_to}. Trust weights are 1.0 for trusted user edges, 0.95 for user-confirmed, 0.65 for derived, and 0 for untrusted content. These are versioned heuristics, not learned parameters or calibrated probabilities.
+
+The algorithm records seeds and paths for returned candidates, the actual visited-edge count, configured bounds, and a digest of pruned edge identifiers. Its work is bounded by seed, frontier, depth, and per-entity edge limits rather than by total graph cardinality. This is an algorithmic bound on traversal; storage lookup cost and FTS behavior still depend on database size and hardware.
+
+\subsection{Blending graph and record recall}
+
+Graph-nominated records outside the direct FTS window are loaded only if they remain active. Direct and graph rankings are combined using a weighted form of reciprocal-rank fusion (RRF)~\cite{cormack2009rrf}. For record $i$,
+
+\begin{equation}
+B_i=\frac{\frac{1}{60+r_L(i)}+\frac{2G_i}{60+r_G(i)}}{3/61},
+\label{eq:rrf}
+\end{equation}
+
+where $r_L$ and $r_G$ are one-based lexical and graph ranks and $G_i$ is the graph score clipped to $[0,1]$. Missing graph candidates contribute zero. RRF avoids pretending that the direct and traversal scores share a calibrated scale. The graph is optional and disabled by default; record-only recall remains a permanent fallback.
+
+\subsection{Consolidation, ambiguity, and cold history}
+
+A maintenance worker can backfill missing edges, propose exact same-kind entity merges, verify audit suffixes, archive old inactive edges, and run \code{PRAGMA optimize}. It never uses an LLM to decide identity. Merge proposals require exact canonical or alias overlap and wait for reviewer approval. Merging marks one entity as pointing to a winner without destructively rewriting canonical records, and the decision can be reverted.
+
+Only superseded and tombstoned \emph{derived edges} move to subject/year SQLite partitions. Each partition digest is registered in the primary database and checked before read. Canonical records, episodes, and audit events stay in the primary database. Missing or modified partitions are detectable and can be rebuilt, subject to retained canonical history. Partition digests provide integrity detection, not confidentiality.
+
+The published scale regimes of one SQLite file through roughly one million edges and inactive partitions into the multi-million range are engineering targets, not validated capacity claims. The evidence in this paper covers 10,002 records only (\cref{sec:evaluation}).

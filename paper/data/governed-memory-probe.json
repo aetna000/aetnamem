@@ -1,0 +1,46 @@
+{
+  "artifact": {
+    "aetnamem_version": "0.3.0",
+    "commit": "69ebedea93ea95965867af5483dd9f63425b8e75",
+    "script": "paper/scripts/run_governed_memory_probe.py"
+  },
+  "host": {
+    "cpu": "Apple M2",
+    "memory_bytes": 17179869184,
+    "operating_system": "Darwin",
+    "python": "3.12.2",
+    "python_process_machine": "x86_64",
+    "release": "25.5.0"
+  },
+  "interpretation_limits": [
+    "Single host and one synthetic query.",
+    "In-memory SQLite excludes durable I/O and encryption overhead.",
+    "Latency intervals exclude ingestion and graph construction.",
+    "This is not a retrieval-quality, concurrency, or million-record benchmark."
+  ],
+  "results": {
+    "direct_ms": {
+      "median": 17.139,
+      "p95_order_statistic": 17.417
+    },
+    "direct_target_rank": null,
+    "graph_ms": {
+      "median": 24.799,
+      "p95_order_statistic": 25.394
+    },
+    "graph_target_rank": 2,
+    "graph_visited_edges": 2,
+    "ingest_ms": 5621.29,
+    "logged_candidates": 50
+  },
+  "workload": {
+    "candidate_cap": 200,
+    "canonical_records": 10002,
+    "database": "SQLite :memory:",
+    "iterations": 25,
+    "query": "What does my boss use for flights?",
+    "result_limit": 10,
+    "synthetic_records": 10000,
+    "warmup_iterations": 3
+  }
+}

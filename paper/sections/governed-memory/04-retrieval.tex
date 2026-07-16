@@ -1,0 +1,60 @@
+\section{Deterministic Retrieval Without Embeddings}
+\label{sec:retrieval}
+
+\system{} uses SQLite FTS5 as its primary lexical index~\cite{sqlitefts5}. FTS5 is local, transactional with the canonical store, and supports explicit row removal when a record leaves the active set. The implementation retains a token-overlap fallback when FTS5 is unavailable.
+
+\subsection{Candidate-capped record ranking}
+
+Recall does not score the complete database. For query tokens $q$, the store obtains up to $C$ active FTS matches and fills unused capacity with the most recent active records, excluding duplicates. The default is $C=200$ and the hard per-call ceiling is 2,000. This recent-record backfill means a query with no lexical match still has a bounded, deterministic fallback.
+
+For candidate record $i$, the direct score is
+
+\begin{equation}
+S_i^{\mathrm{record}}=0.75T_i+0.15U_i+0.10R_i,
+\label{eq:record-score}
+\end{equation}
+
+where $T_i\in[0,1]$ is normalized FTS relevance (or query-token overlap), $U_i$ is the source-trust weight, and $R_i\in[0,1]$ is the record's relative recency rank within the candidate set. Current trust weights are 1.0 for \code{trusted\_user}, 0.9 for \code{user\_confirmed}, and 0.4 for other active tiers. Scores are rounded to six decimal places and ties are broken by creation timestamp and record identifier.
+
+Equation~\ref{eq:record-score} is a retrieval utility, not a probability that the fact is true. A record must already be active to reach this stage. A high text score cannot promote quarantined content, and a low text score does not demote or delete a record.
+
+The retrieval event stores a query digest, returned identifiers, the algorithm and cap, and at most 50 scored candidate summaries. Query text is omitted by default. Bounded evidence avoids turning an $O(C)$ retrieval path into an unbounded audit payload.
+
+\subsection{Why embeddings are absent}
+
+Embeddings can improve paraphrase and conceptual recall, and this paper does not claim otherwise. They are omitted from the implemented trusted path for five operational reasons.
+
+\begin{enumerate}
+  \item \textbf{Replayability.} Lexical tokens, static weights, and graph paths can be replayed without a model runtime. An embedding result also depends on model identity, model bytes, tokenizer, numerical implementation, and vector-index state.
+  \item \textbf{Lifecycle simplicity.} Correction and deletion update ordinary rows and FTS entries. There is no stale vector to find, no background re-embedding queue, and no dimensional migration when a model changes.
+  \item \textbf{Explanation.} A direct hit identifies matching terms; a graph result identifies a typed path. Nearest-neighbor distance is useful evidence of similarity but usually not a human-readable reason for a multi-hop relation.
+  \item \textbf{Local footprint and availability.} Recall remains available without downloading an embedding model, running a second inference path, or operating a vector extension or service.
+  \item \textbf{Trust composition.} Trust and quarantine are structural filters before ranking and traversal. Similarity never becomes a shortcut around admission policy.
+\end{enumerate}
+
+These benefits have costs. Lexical seeding misses some synonyms, misspellings, multilingual paraphrases, and conceptual equivalence. The deterministic extractor also misses unsupported sentence forms. Direct record fallback reduces extraction loss but cannot reproduce dense semantic recall. The correct decision depends on workload; \system{} chooses inspectability and small local operation for the current release.
+
+\begin{table*}[t]
+\centering
+\caption{Architectural comparison. ``Dense RAG'' describes the common embedding-index pattern, not every system called RAG.}
+\label{tab:rag-comparison}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.16\textwidth}YY@{}}
+\toprule
+Concern & Conventional dense RAG pipeline & \system{} v0.3.0 \\
+\midrule
+Primary unit & Document chunks or passages & Episodes, governed records, typed graph edges \\
+Candidate selection & Embedding similarity, often approximate nearest neighbors & FTS5 lexical candidates plus bounded graph seeds and spread \\
+Update semantics & Re-index or replace chunks & Active, quarantined, superseded, tombstoned transitions \\
+Trust & Often a filter or metadata feature & Admission state; quarantined objects cannot enter ordinary traversal \\
+Explanation & Source chunk and similarity/distance & Source record plus lexical evidence or typed traversal path \\
+Deletion & Remove source/vector entries & Purge payloads and FTS/graph rows; retain a digest-bound receipt \\
+External authority & Usually outside retrieval scope & Separate exact-plan approval and verified action state machine \\
+Model dependency & Embedding model and index parameters & No retrieval model; static versioned rules and weights \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{A precise RAG boundary}
+
+If a client places returned \system{} records into an LLM prompt, that client performs retrieval augmentation in the broad sense. What distinguishes the architecture is that generation does not own memory state, graph truth, trust transitions, approvals, or effect outcomes. Calling the whole system ``RAG'' hides the mechanisms that carry most of its safety and audit obligations.

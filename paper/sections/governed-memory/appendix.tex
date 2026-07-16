@@ -1,0 +1,121 @@
+\section{Implementation Evidence Map}
+\label{app:implementation}
+
+\begin{table}[h]
+\centering
+\caption{Primary implementation locations for claims in this paper.}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\raggedright\arraybackslash}p{0.38\textwidth}Y@{}}
+\toprule
+Concern & Source & Evidence surface \\
+\midrule
+Memory atomicity and lifecycle & \path{aetnamem/memory.py} & \code{\_atomic}, \code{remember}, \code{recall}, \code{forget}, \code{promote} \\
+Origin and trust policy & \path{aetnamem/core/policy.py} & source classification, initial status, forget gating, supersession selection \\
+Extraction confidence & \path{aetnamem/extract/rules.py} & deterministic patterns and fixed confidence annotations \\
+Record ranking & \path{aetnamem/retrieve/rank.py} & weight constants, tokenization, fallback overlap, deterministic tie break \\
+SQLite, FTS, and audit & \path{aetnamem/store/sqlite.py} & transactions, WAL, candidate cap, schemas, event chain, incremental verification \\
+Graph index & \path{aetnamem/graph.py} & extraction, lifecycle propagation, seeds, spread, merge proposals, partitions \\
+Graph fusion and checkpoints & \path{aetnamem/memory.py} & weighted RRF, path evidence, external checkpoint documents \\
+Approval authority & \path{aetnamem/actions/approval.py} & exact-plan HMAC, nonce, TTL, constant-time comparison \\
+Action transitions & \path{aetnamem/actions/engine.py} & plan construction, verification, execution, uncertainty, compensation, recovery \\
+Filesystem boundary & \path{aetnamem/actions/adapters/filesystem.py} & root and symlink checks, snapshots, atomic write, postcondition and compensation \\
+Service roles & \path{aetnamem/service/app.py} & loopback restriction, agent/reviewer routes, bearer-token role checks \\
+macOS sealing & \path{aetnamem/service/encrypted_db.py}, \path{aetnamem/service/secrets.py}, \path{aetnamem/service/__main__.py} & Keychain secret, OpenSSL command, HMAC, checkpoint/seal hook, cleanup \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The repository documentation further specifies the audit serialization in \code{docs/audit-log-spec.md}, action protocol in \code{docs/guarded-actions.md}, graph behavior in \code{docs/graph-memory-design.md}, and platform backup requirements in \code{docs/data-storage-and-backup.md}.
+
+\section{Reference Algorithms}
+\label{app:algorithms}
+
+\subsection{Governed remember}
+
+\begin{lstlisting}[language=Python]
+def remember(subject, message, origin):
+    with sqlite.begin_immediate():
+        episode = store_episode(message, origin)
+        audit("episode.ingested", digest(message), origin)
+        candidate = deterministic_extract(message, origin)
+        if candidate is None:
+            return episode
+
+        trust = trust_tier(origin)
+        status = active if trust_is_user(trust) else quarantined
+        prior = active_same_slot(candidate.fact_key) if status == active else []
+        record = insert_record(candidate, episode, trust, status, prior)
+        supersede(prior, by=record)  # never runs for quarantined input
+        graph_changes = index_or_quarantine(record)
+        audit(record_transition(status), record, graph_changes)
+        return record
+\end{lstlisting}
+
+\subsection{Recall}
+
+\begin{lstlisting}[language=Python]
+def recall(subject, query, use_graph=False, limit=10):
+    records, fts = active_fts_plus_recent(subject, query, cap=200)
+    graph_candidates = {}
+    if use_graph:
+        seeds = graph_fts(query, cap=16)
+        graph_candidates = spread_active_only(
+            seeds, depth=2, frontier=64
+        )
+        records += active_records_nominated_outside_fts(graph_candidates)
+    direct = rank(records, text=0.75, trust=0.15, recency=0.10)
+    ranked = weighted_rrf(direct, graph_candidates) if use_graph else direct
+    audit_bounded_retrieval(query_digest, ranked[:50], returned=ranked[:limit])
+    return ranked[:limit]
+\end{lstlisting}
+
+\subsection{Guarded commit}
+
+\begin{lstlisting}[language=Python]
+def commit(transaction):
+    require(transaction.state == APPROVED)
+    recompute_and_verify_world_patch(transaction)
+    verify_unexpired_exact_plan_approval(transaction)
+    verify_adapter_manifests(transaction)
+    revalidate_all_preconditions(transaction)
+    persist(COMMITTING)
+
+    applied = []
+    for operation in dependency_order(transaction):
+        if not revalidate(operation):
+            return compensate_and_finish(applied)
+        persist(operation, EXECUTING)
+        try:
+            receipt = execute_without_db_transaction(operation)
+        except BaseException:
+            persist(operation, UNCERTAIN)
+            compensate(applied)
+            return finish(UNCERTAIN)
+        if not verify_postcondition(operation, receipt):
+            persist(operation, UNCERTAIN)
+            compensate(applied)
+            return finish(UNCERTAIN)
+        persist(operation, VERIFIED, receipt_digest)
+        applied.append(operation)
+    return finish(COMMITTED)
+\end{lstlisting}
+
+These listings are explanatory reductions. The source files in \cref{app:implementation} are authoritative and include validation and audit detail omitted here.
+
+\section{Operational Recovery Notes}
+\label{app:recovery}
+
+\subsection{macOS}
+
+Quit the service normally so the current WAL state is checkpointed and sealed. Back up \code{memories.db.enc} and \code{memories.db.enc.hmac} together, plus the assistant workspace. Recovery on another Mac also requires the \code{aetnamem}/\code{database-key} Keychain value. Exporting that value displays a live secret and should occur only into an encrypted recovery process. If graph archive was explicitly enabled, back up its directory separately and encrypt the backup.
+
+\subsection{Linux and Windows}
+
+Stop the service before copying \code{memories.db}, or use a SQLite-aware online backup. Back up the workspace separately. Both database and backup destination are plaintext at the application layer, so use encrypted storage. On Windows, confirm BitLocker status and recovery-key custody. On Linux, confirm the data path is actually inside the intended encrypted volume; installing \code{cryptsetup} alone does not encrypt an existing home directory.
+
+\section{Artifact and Authorship Statement}
+\label{app:artifact}
+
+This document is a technical white paper prepared for arXiv-style distribution. It has not been peer reviewed. The author and requested attribution for the manuscript are \textbf{aetna000.com}. The implementation artifact is \system{} v0.3.0 at commit \code{69ebedea93ea95965867af5483dd9f63425b8e75}. The benchmark JSON records a single local run and should remain paired with its script and interpretation limits.
+
+The paper intentionally distinguishes implemented behavior, deployment assumptions, measured evidence, design projections, and future work. Statements such as ``groundbreaking,'' ``unbreakable,'' ``always encrypted,'' ``exactly once,'' or ``massive scale proven'' are not supported by the current artifact and are deliberately not used.

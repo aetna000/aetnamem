@@ -1,0 +1,45 @@
+\section{Confidence, Trust, and Ambiguity}
+\label{sec:confidence}
+
+Systems often place one ``confidence score'' on an item and then use it for unrelated decisions. \system{} instead keeps five concepts separate (\cref{tab:confidence}). This separation is central to its behavior.
+
+\begin{table*}[t]
+\centering
+\caption{Confidence-related values and their authority. Values shown are the implemented v0.3.0 defaults.}
+\label{tab:confidence}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.17\textwidth}p{0.21\textwidth}Yp{0.18\textwidth}@{}}
+\toprule
+Mechanism & Range or values & Meaning & What it may decide \\
+\midrule
+Extraction confidence & 0.90 slot forms; 0.88 named slot; 0.85 generic remember; 0.80 avoidance; 0.70 forced note; untrusted capped at 0.30 & Heuristic annotation from a deterministic parser & Stored as provenance; does not activate untrusted content \\
+Trust tier & \code{trusted\_user}, \code{user\_confirmed}, \code{untrusted\_content}, derived & Categorical origin and review status & Initial lifecycle state and traversal eligibility \\
+Record retrieval score & $[0,1]$ weighted utility in Eq.~\ref{eq:record-score} & Query relevance, trust prior, and relative recency & Ordering and optional \code{min\_score} filtering only \\
+Graph score & Bounded activation in Eq.~\ref{eq:graph-activation} and fused rank in Eq.~\ref{eq:rrf} & Strength of a typed path from lexical seeds & Candidate nomination and ordering only \\
+Merge confidence & 0.99 canonical/canonical; 0.96 canonical/alias; 0.93 alias/alias & Strength of an exact same-kind identity proposal & Display and audit evidence; never automatic merge \\
+Action outcome & verified, uncertain, recovery required, compensated, partial & Observation of external state and execution history & Whether commit is claimed, fenced, or requires review \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Language ambiguity}
+
+The rule extractor favors abstention. Unsupported phrasing creates an episode but no semantic record unless the caller explicitly requests a forced note. Questions are not interpreted as assertions. A user can inspect or correct memory instead of having an opaque model infer a fact. This loses recall coverage but makes extraction failures reproducible.
+
+\subsection{Source ambiguity}
+
+A user turn containing marked web-page or tool-output content is classified by the embedded origin, because that is the text the extractor would otherwise mistake for the user's own statement. This is a conservative boundary. It depends on the host adapter labeling external content correctly; unlabeled hostile text presented as a direct user message cannot be distinguished by intent alone.
+
+\subsection{Fact conflict}
+
+Recognized slots use explicit supersession. Unstructured facts with no \code{fact\_key} do not silently replace one another. This means some conflicts remain visible as multiple records. The design prefers a reviewable ambiguity over a guessed destructive update.
+
+\subsection{Entity ambiguity}
+
+Entity resolution is proposal-only. Candidates must share an exact normalized canonical name or alias and the same entity kind. The graph records evidence record identifiers and a heuristic confidence, then waits for a reviewer to merge or keep the entities separate. A merge changes a reversible pointer in the derived graph; it does not rewrite source records.
+
+\subsection{Effect ambiguity}
+
+The action engine distinguishes a rejected plan, a known precondition failure, a verified external result, an exception after dispatch, and a process interruption during an external call. The last two are not reduced to a numeric confidence. They become \code{uncertain} or \code{recovery\_required}, because a generic engine cannot infer whether the provider completed an operation. This avoids duplicate effects caused by optimistic retries.
+
+\plainbox{A score answers ``how should this candidate be ordered?'' Trust answers ``may it participate?'' Approval answers ``may this exact change run?'' Verification answers ``did the outside world reach the expected state?'' These are different questions.}

@@ -1,0 +1,53 @@
+\section{Governed Memory Lifecycle}
+\label{sec:lifecycle}
+
+The canonical data model separates raw episodes from normalized records. An episode retains the source message and origin metadata. A record stores a concise fact, its source episode, trust tier, confidence annotation, scope, lifecycle status, optional \code{fact\_key}, and optional predecessor. This follows the database-provenance principle that a derived answer should retain both where it came from and why it exists~\cite{buneman2001provenance}.
+
+\subsection{Admission}
+
+The current extractor is deterministic and intentionally narrow. It recognizes generic forms such as ``my $X$ is $Y$,'' ``use $Y$ as my $X$,'' named possessives such as ``Sarah's airport is SEA,'' explicit ``remember that'' statements, and avoidance statements. It emits at most one candidate from a message. A direct API caller can force an otherwise unparsed user note, but this still enters through the same record and audit path.
+
+Origin is classified before extraction. A normal user message maps to \code{trusted\_user} ($T_u$); reviewed content maps to \code{user\_confirmed} ($T_c$); embedded web-page or tool-output blocks map to \code{untrusted\_content}. The initial state function is simple:
+
+\begin{equation}
+\operatorname{status}_0(t)=
+\begin{cases}
+\text{active}, & t\in\{T_u,T_c\},\\
+\text{quarantined}, & \text{otherwise}.
+\end{cases}
+\end{equation}
+
+The untrusted statement is not silently discarded. It remains inspectable with provenance, but active recall and graph spread exclude it. Promotion is a separate, explicit, audited transition to \code{user\_confirmed}.
+
+\begin{table}[t]
+\centering
+\caption{Memory lifecycle and user-visible meaning.}
+\label{tab:lifecycle}
+\small
+\begin{tabularx}{\columnwidth}{@{}lYY@{}}
+\toprule
+State & Meaning & Normal recall \\
+\midrule
+Active & Accepted current memory & Eligible \\
+Quarantined & Stored for review; source is untrusted & Excluded \\
+Superseded & Historical value replaced by a correction & Excluded \\
+Tombstoned & Selected payload purged; receipt retained & Excluded \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Correction and conflict}
+
+For structured facts, \code{fact\_key} names a slot such as \code{preferred airport}; named facts use a namespace such as \code{sarah::preferred airport}. When a new \emph{active} record uses an occupied single-valued slot, the old record becomes superseded and points to its replacement. No value is edited in place. A quarantined record cannot supersede an active one. This prevents a hostile page saying ``your airport is X'' from replacing the user's existing preference merely because the text matched an extraction pattern.
+
+Some relations are multi-valued, including \code{works\_with}, \code{likes}, and \code{avoids}; they accumulate instead of applying single-slot supersession. Duplicate detection is normalized textual equivalence, not semantic similarity. This is conservative: paraphrased duplicates may coexist, but unrelated facts are less likely to collapse silently.
+
+\subsection{Forgetting}
+
+A forget request is accepted only from a user-origin message. An empty selector is rejected instead of being interpreted as ``delete everything.'' Matching records are selected from active, quarantined, and superseded states; their payloads and source episodes are purged where no retained record still needs the episode. Associated graph objects and FTS rows are removed, including matching archived derived edges. The returned deletion receipt contains identifiers and digests, not the erased content, and is bound to the audit event hash.
+
+Deletion is therefore a governed state transition, not merely removal from a retrieval index. The audit chain proves that a deletion operation occurred without preserving the sensitive selector or deleted value in the audit payload. It cannot prove that no independent backup or external copy exists; backup retention remains an operator responsibility.
+
+\subsection{Read path}
+
+By default, \code{list} and \code{recall} expose only active records. Assistant responses and tool traffic are logged as digests but are not automatically promoted into semantic memory. This blocks a simple self-reinforcement loop in which generated text becomes a trusted fact solely because the same agent produced it.

@@ -1,0 +1,21 @@
+\section{Related Systems Perspective}
+\label{sec:related}
+
+Long-term LLM memory work commonly studies storage management, reflection, and answer quality. Generative Agents combines observations, reflection, and planning~\cite{park2023generative}; MemGPT treats memory tiers as an operating-system-inspired context-management problem~\cite{packer2023memgpt}; MemoryBank and LongMemEval study persistent conversational memory and its evaluation~\cite{zhong2023memorybank,wu2024longmemeval}. \system{} is complementary: its central object is a governed transition with provenance and authority boundaries, not a new language-model memory capacity result.
+
+Dense RAG combines a neural retriever and non-parametric passage store with a generator~\cite{lewis2020rag}. \system{} instead uses lexical and relational indexes over canonical personal state. Its graph resembles a small knowledge graph, but it is intentionally subordinate to source records. Entity resolution is review-gated because an incorrect identity merge can corrupt many later paths.
+
+The audit design draws on provenance and hash-linked log research~\cite{buneman2001provenance,haber1991timestamp,schneier1998securelogs}. The action design draws on complete mediation and compensating transactions~\cite{saltzer1975protection,garciamolina1987sagas}. The distinctive element is not a new primitive but a shared evidence plane linking memory admission, retrieval reasons, approval scope, external observations, and recovery state.
+
+\section{Conclusion and Potential}
+\label{sec:conclusion}
+
+\system{} treats personal memory as governed local state. Original episodes and semantic records remain canonical; FTS and graph structures make them findable; trust and lifecycle state decide participation; audit events explain change; and a separate approval path decides whether information may become an effect. The language model can be local or remote and can change without requiring a new retrieval model or re-embedding the database. The desktop default uses the lightweight \code{qwen3:1.7b} Ollama model when available, but memory extraction, retrieval, trust, and audit do not depend on that model.
+
+The system is therefore more accurately described as a \emph{governed memory and effect-control plane} than as a conventional embedding-based RAG implementation. A client may use recall to augment generation, but generation remains downstream of explicit state and policy.
+
+Its practical potential follows from testable properties rather than a novelty adjective: bounded candidate work can keep hot recall manageable as canonical history grows; a derived graph can answer some joins that lexical search cannot; rebuildability contains index mistakes; quarantine prevents unreviewed content from becoming a trusted bridge; and path/audit evidence gives users a way to inspect why a fact or action appeared. The 10,002-record probe supports these mechanisms at modest scale. Larger claims require larger and more representative evidence.
+
+The highest-priority technical work is correspondingly concrete: broaden deterministic extraction and query normalization without weakening provenance, establish representative retrieval-quality and million-record benchmarks, harden and unify the encrypted storage format, add operating-system sandbox profiles for complete action mediation, and independently review the cryptographic and action-state implementations. Embedding retrieval is not part of this design or roadmap; improvements should first preserve the deterministic, deletable, and path-explainable properties documented here.
+
+\plainbox{For a user, the intended result is simple: the assistant remembers what was actually accepted, shows where a memory came from, keeps suspicious material separate, asks before changing files, and admits when it cannot prove what happened. The technical machinery exists to make those ordinary expectations enforceable and inspectable.}

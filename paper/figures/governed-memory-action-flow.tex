@@ -1,0 +1,35 @@
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  node distance=7mm and 9mm,
+  state/.style={draw=aetnaInk!70, rounded corners=2pt, align=center, minimum width=26mm, minimum height=10mm, fill=white, line width=0.75pt},
+  user/.style={state, draw=aetnaGreen!85, fill=aetnaGreen!8},
+  risk/.style={state, draw=aetnaRed!85, fill=aetnaRed!7},
+  terminal/.style={state, draw=aetnaBlue!85, fill=aetnaBlue!7},
+  flow/.style={-{Latex[length=2.2mm]}, line width=0.75pt, draw=aetnaInk!85},
+]
+  \node[state] (proposal) {Agent proposal\\+ authority reference};
+  \node[state, right=of proposal] (prepared) {Prepare WorldPatch\\digests + preconditions};
+  \node[user, right=of prepared] (approval) {Reviewer approval\\HMAC(exact plan)};
+  \node[state, right=of approval] (verify) {Recompute plan\\verify approval + manifests};
+  \node[state, right=of verify] (revalidate) {Revalidate all\\preconditions};
+  \node[state, right=of revalidate] (execute) {Persist executing\\external call};
+  \node[state, right=of execute] (observe) {Read and verify\\postcondition};
+  \node[terminal, right=of observe] (commit) {Committed\\verified receipt};
+
+  \node[risk, below=15mm of revalidate] (abort) {Abort / compensate\\precondition changed};
+  \node[risk, below=15mm of execute] (uncertain) {Uncertain\\exception after dispatch};
+  \node[risk, below=15mm of observe] (recovery) {Recovery required\\interrupted boundary};
+
+  \draw[flow] (proposal) -- (prepared);
+  \draw[flow] (prepared) -- (approval);
+  \draw[flow] (approval) -- (verify);
+  \draw[flow] (verify) -- (revalidate);
+  \draw[flow] (revalidate) -- (execute);
+  \draw[flow] (execute) -- (observe);
+  \draw[flow] (observe) -- (commit);
+  \draw[flow, aetnaRed!85] (revalidate) -- node[left, font=\scriptsize] {changed} (abort);
+  \draw[flow, aetnaRed!85] (execute) -- node[left, font=\scriptsize] {raised} (uncertain);
+  \draw[flow, aetnaRed!85] (observe) -- node[right, font=\scriptsize] {restart / no proof} (recovery);
+\end{tikzpicture}%
+}

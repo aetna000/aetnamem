@@ -113,14 +113,70 @@ def validate_standalone_verifiers() -> None:
     require(action == f'OK   {metrics["action_transaction_id"]}', f"unexpected action verifier output: {action}")
 
 
+def validate_governed_memory_probe() -> None:
+    probe = json.loads(
+        (DATA / "governed-memory-probe.json").read_text(encoding="utf-8")
+    )
+    artifact = probe["artifact"]
+    workload = probe["workload"]
+    results = probe["results"]
+
+    require(artifact["aetnamem_version"] == "0.3.0", "governed-memory release drifted")
+    require(
+        artifact["script"] == "paper/scripts/run_governed_memory_probe.py",
+        "governed-memory probe path drifted",
+    )
+    require(len(artifact["commit"]) == 40, "governed-memory commit is not a full hash")
+    run("git", "cat-file", "-e", f'{artifact["commit"]}^{{commit}}')
+
+    require(workload["synthetic_records"] == 10_000, "synthetic record count drifted")
+    require(workload["canonical_records"] == 10_002, "canonical record count drifted")
+    require(workload["candidate_cap"] == 200, "candidate cap drifted")
+    require(workload["iterations"] == 25, "probe iteration count drifted")
+    require(workload["result_limit"] == 10, "probe result limit drifted")
+
+    require(results["direct_target_rank"] is None, "direct recall now finds the target")
+    require(results["graph_target_rank"] == 2, "graph target rank drifted")
+    require(results["graph_visited_edges"] == 2, "visited-edge count drifted")
+    require(results["logged_candidates"] == 50, "logged candidate count drifted")
+
+    direct = results["direct_ms"]
+    graph = results["graph_ms"]
+    require(direct["median"] > 0 and graph["median"] > 0, "invalid median timing")
+    require(
+        direct["p95_order_statistic"] >= direct["median"]
+        and graph["p95_order_statistic"] >= graph["median"],
+        "p95 order statistic is below its median",
+    )
+
+    manuscript = (PAPER / "sections" / "governed-memory" / "10-evaluation.tex").read_text(
+        encoding="utf-8"
+    )
+    overhead = graph["median"] - direct["median"]
+    expected_fragments = [
+        f'Median recall & {direct["median"]:.3f} & {graph["median"]:.3f}',
+        (
+            "p95 order statistic & "
+            f'{direct["p95_order_statistic"]:.3f} & '
+            f'{graph["p95_order_statistic"]:.3f}'
+        ),
+        f'Ingestion of all 10,002 records took {results["ingest_ms"]:,.3f}\\,ms',
+        f"Graph recall added {overhead:.3f}\\,ms",
+    ]
+    for fragment in expected_fragments:
+        require(fragment in manuscript, f"manuscript/probe mismatch: {fragment}")
+
+
 def main() -> None:
     validate_benchmark()
     validate_artifact_hashes()
     validate_demo_database()
     validate_standalone_verifiers()
+    validate_governed_memory_probe()
     print("OK   paper benchmark tables")
     print("OK   flagship artifact digests and database metrics")
     print("OK   standalone audit and action verifiers")
+    print("OK   governed-memory probe and manuscript values")
 
 
 if __name__ == "__main__":

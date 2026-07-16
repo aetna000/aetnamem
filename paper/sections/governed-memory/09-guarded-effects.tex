@@ -1,0 +1,62 @@
+\section{Approval-Bound External Effects}
+\label{sec:effects}
+
+Recall can inform an action proposal, but a memory record is not itself permission. \system{} routes model-requested workspace mutations through a guarded action engine whose unit is a canonical \code{WorldPatch}. The implementation follows the reference-monitor principle of a small, inspectable mediation point, subject to the deployment boundary stated below~\cite{saltzer1975protection}.
+
+\subsection{Information-to-authority separation}
+
+An enforced non-read-only operation must carry an \code{authorized\_by} evidence reference. Policy accepts only \code{trusted\_user} or \code{user\_confirmed} authority and, by default, requires the reference to be host-attested. Untrusted records may inform a proposal but cannot authorize it.
+
+The agent-facing dispatch endpoint cannot claim \code{user\_message} provenance, construct authority inline, or create an authority object. The reviewer endpoint creates host authority from the user's task. Thus a model cannot convert a recalled sentence or a web-page instruction into authority merely by labeling it differently.
+
+\subsection{Exact-plan approval}
+
+Preparing a patch calls each adapter's deterministic \code{prepare} method and records operation, argument, preview, precondition, adapter-manifest, dependency, and evidence digests. The plan hash covers these values together with subject, actor, mode, transaction identifier, format version, and policy hash:
+
+\begin{equation}
+P=\sha\bigl(\canon(\mathrm{WorldPatch})\bigr).
+\end{equation}
+
+The reviewer authority issues an HMAC-SHA256 approval over transaction identifier, $P$, approver label, issue and expiry times, and a random nonce. The default validity window is 900 seconds; keys shorter than 32 bytes are rejected. Approval applies to one exact plan, not to an informal instruction or future variant. HMAC verification uses constant-time comparison~\cite{krawczyk1997hmac}.
+
+Before the first effect, commit recomputes persisted plan and approval digests, verifies the audit chain and approval, checks that adapter manifests did not change, and revalidates the complete patch. Each operation is revalidated again immediately before execution. A changed precondition aborts before the first effect or triggers compensation for already verified effects.
+
+\subsection{Root-confined filesystem adapter}
+
+The reference filesystem adapter intentionally exposes only UTF-8 \code{write\_text} and \code{delete\_file}. For an agent-origin operation it enforces:
+
+\begin{itemize}
+  \item a relative path under one configured workspace root;
+  \item rejection of absolute paths, root escapes, every symbolic-link path component, symbolic-link targets, and non-regular files;
+  \item an existing parent directory for guarded writes;
+  \item a before-image containing existence, kind, SHA-256, mode, and content needed for compensation;
+  \item compare-before-write revalidation against that snapshot;
+  \item temporary-file write, \code{fsync}, and atomic \code{os.replace};
+  \item independent postcondition read of existence, digest, and mode;
+  \item compensation only if the file still matches the verified after-state, followed by verification of the restored before-state.
+\end{itemize}
+
+The adapter classifies this behavior as \code{verified\_compensatable}, never as an exact transaction. File watchers, synchronization clients, build hooks, and other observers can cause effects that restoring bytes does not reverse.
+
+\begin{figure*}[t]
+  \centering
+  \input{figures/governed-memory-action-flow}
+  \caption{Guarded mutation path. Approval is bound to the canonical plan; execution occurs outside the SQLite transaction; observations determine whether the engine reports committed, compensated, partial, uncertain, or recovery-required.}
+  \label{fig:action-flow}
+\end{figure*}
+
+\subsection{What ``disk access requires approval'' means}
+
+The exact implemented claim is narrower than the slogan:
+
+\begin{itemize}
+  \item \textbf{Model-requested workspace writes and deletes through the registered broker} require trusted authority, reviewer approval, reviewer-triggered commit, and verification.
+  \item \textbf{Workspace reads} are available to the agent role within the configured root and do not require per-read approval. This is a confidentiality boundary operators must understand.
+  \item \textbf{A dashboard save} is a reviewer-token action representing the human editing their own workspace. It bypasses staging but remains path-confined, size-limited, and audited as \code{user.file\_saved}.
+  \item \textbf{Internal database writes} follow memory policy and transactions, not the external-action approval workflow.
+  \item \textbf{Other software or direct process access} can bypass the adapter. Strong deployment requires withholding shell/direct filesystem tools or using operating-system sandboxing so all agent mutations are routed through the control service.
+\end{itemize}
+
+The service exposes distinct random bearer tokens. Agent routes may inspect state and stage tools; reviewer routes configure providers, create authority, approve, commit, deny, decide graph merges, and directly edit workspace files. Tokens are compared in constant time. The HTTP server accepts loopback addresses only and is single-threaded around one SQLite connection. It has no TLS and is not suitable as a public network service. Any process running as the same user that obtains the reviewer URL fragment or token can exercise reviewer authority.
+
+\plainbox{The assistant may prepare a precise change and show what it would affect. The human approves that exact version. If the file changes before execution, the approval is not stretched to cover the new situation. If the system cannot prove what happened, it says ``uncertain'' instead of pretending success.}

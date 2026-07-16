@@ -1,4 +1,37 @@
-# Aetnamem scientific report
+# Aetnamem technical papers
+
+Author: **aetna000.com**
+
+This directory contains two reproducible technical manuscripts.
+
+## Governed memory white paper
+
+> **Governed Memory Without Embeddings: Deterministic Recall, Rebuildable
+> Graph Indexes, and Approval-Bound Effects in aetnamem**
+
+This arXiv-ready technical white paper documents release `v0.3.0`. It explains
+the governed memory lifecycle, the decision not to use embedding retrieval,
+candidate-capped FTS5 and graph recall, confidence and ambiguity boundaries,
+audit and crash behavior, platform-specific encryption, and approval-bound
+workspace effects. It separates implemented guarantees from deployment
+assumptions and unvalidated scale projections.
+
+Source and evidence:
+
+- `governed-memory.tex` and `sections/governed-memory/`;
+- `governed-memory-references.bib`;
+- `data/governed-memory-probe.json` and
+  `scripts/run_governed_memory_probe.py`;
+- `aetnamem-governed-memory.pdf`.
+
+Build only this paper with:
+
+```bash
+cd paper
+make aetnamem-governed-memory.pdf
+```
+
+## Control-plane report
 
 This directory is a reproducible paper package for:
 
@@ -35,18 +68,22 @@ make verify
 Outputs:
 
 - `aetnamem-control-plane.pdf` - shareable compiled paper;
+- `aetnamem-governed-memory.pdf` - governed memory technical white paper;
 - `build/aetnamem-control-plane.pdf` - intermediate compiled copy;
+- `build/aetnamem-governed-memory.pdf` - intermediate governed memory copy;
 - `figures/*.pdf` - vector publication figures;
 - `figures/*.png` - review-friendly figure previews.
 
 `make verify` checks the pinned tabular data, queries the recorded demo
-database, and executes both standalone verifiers against the committed demo
-artifacts. The paper's benchmark tables are pinned snapshots; refreshing them
+database, executes both standalone verifiers against the committed demo
+artifacts, and confirms that the governed-memory manuscript matches its probe
+JSON. The papers' benchmark tables are pinned snapshots; refreshing them
 requires a deliberate new benchmark run and provenance update.
 
 ## Submission notes
 
-Before an arXiv submission, confirm the author name, affiliation, email,
-license selection, and subject category. The manuscript intentionally includes
-limitations, benchmark-owner disclosure, and a reproducibility statement; do
-not remove those to make the result sound stronger than the evidence.
+Before an arXiv submission, confirm the author attribution (`aetna000.com`),
+affiliation, email, license selection, and subject category. The manuscripts
+intentionally include limitations, evidence provenance, and reproducibility
+statements; do not remove those to make the results sound stronger than the
+evidence.

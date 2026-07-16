@@ -1,0 +1,35 @@
+\section{System Model and Invariants}
+\label{sec:system-model}
+
+\system{} is an embedded Python memory engine with a loopback HTTP desktop service, a model-provider adapter, an optional MCP server, a SQLite store, and a guarded-action engine. The language model is not the memory authority. It may suggest facts or actions through defined interfaces, while deterministic host code applies policy and commits state.
+
+\begin{figure*}[t]
+  \centering
+  \input{figures/governed-memory-architecture}
+  \caption{Implemented trust and data flow. Solid arrows carry governed state; dashed arrows are derived or reconstructable. Canonical episodes and records, action evidence, and the audit chain remain durable. The graph and FTS structures accelerate recall but do not acquire authority.}
+  \label{fig:architecture}
+\end{figure*}
+
+The implementation is organized around the following invariants.
+
+\invariant{1: provenance before recall} Every semantic record points to the episode from which it was derived. Every graph edge points to a record. A returned graph path can therefore be followed back to stored source text.
+
+\invariant{2: trust controls state} A trusted user statement can enter the active set. Extracted web-page and tool-output content enters quarantine. Quarantined content cannot supersede active user memory and does not enter normal recall or graph traversal until explicit promotion.
+
+\invariant{3: history is not overwritten} Corrections create a new record and mark the old record superseded. Forgetting tombstones and purges selected payloads, removes associated search and graph entries, and emits a digest-bound deletion receipt.
+
+\invariant{4: derived structures are disposable} FTS indexes, entities, aliases, edges, merge proposals, and inactive graph partitions are query accelerators. Canonical records and episodes do not depend on their survival. A graph rebuild must not rewrite canonical memory.
+
+\invariant{5: information is not authority} A recalled fact may support an action proposal, but only trusted, host-attested authorization evidence and an approval bound to the exact plan can permit an enforced external mutation.
+
+\invariant{6: ambiguity is represented} A low extraction score causes no automatic privilege increase; uncertain entity identity waits for review; a changed filesystem precondition aborts or compensates; and an exception after dispatch becomes \code{uncertain} rather than triggering a blind retry.
+
+\invariant{7: transitions are accountable} Semantic writes and their audit events share SQLite transactions. Audit events form a per-subject SHA-256 chain. Checkpoints can pin chain heads outside the database.
+
+\subsection{Trust boundary and actors}
+
+The principal roles are the user, the agent/model, the reviewer interface, local host code, and external content or providers. User text is not assumed correct, but it is authoritative for the user's own stated preferences. Web pages and tool results are information sources, never user authority. The reviewer token is separate from the agent token. The service is bound to loopback by default; loopback reduces network exposure but does not defend against another process acting as the same operating-system user.
+
+The threat model includes indirect prompt injection in fetched content, stale approvals, tampered operational rows, path traversal and symbolic-link escapes, time-of-check/time-of-use changes, partial multi-operation failure, process interruption around an external boundary, and offline theft of stored files. It does not include a fully compromised signed-in account, a malicious Python process with direct database or filesystem access, a hostile kernel, or an operator who gives the agent the reviewer secret.
+
+\boundary{Mediation assumption} The action gate controls operations routed through it. It cannot prevent separate tools, shell access, plugins, or application code from writing directly to disk. Complete mediation is therefore a deployment property, not something this Python library can impose on arbitrary neighboring software~\cite{saltzer1975protection}.

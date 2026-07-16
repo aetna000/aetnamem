@@ -1,0 +1,125 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[a4paper,top=17mm,bottom=20mm,left=16mm,right=16mm,columnsep=6mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{newtxtext,newtxmath}
+\usepackage{microtype}
+\usepackage{booktabs,tabularx,array,multirow,makecell}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,backgrounds,calc,fit,positioning,shapes.geometric}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+\usepackage{fancyhdr}
+\usepackage{balance}
+
+\definecolor{aetnaInk}{HTML}{17252A}
+\definecolor{aetnaTeal}{HTML}{2A6F73}
+\definecolor{aetnaBlue}{HTML}{315A7D}
+\definecolor{aetnaRed}{HTML}{A43A46}
+\definecolor{aetnaGold}{HTML}{B47B16}
+\definecolor{aetnaGreen}{HTML}{39735B}
+\definecolor{aetnaGray}{HTML}{5E686C}
+\definecolor{codebg}{HTML}{F4F6F6}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=aetnaBlue,
+  citecolor=aetnaTeal,
+  urlcolor=aetnaBlue,
+  pdftitle={Governed Memory Without Embeddings: Deterministic Recall, Rebuildable Graph Indexes, and Approval-Bound Effects in aetnamem},
+  pdfauthor={aetna000.com},
+  pdfsubject={Technical white paper on aetnamem v0.3.0},
+  pdfkeywords={agent memory, knowledge graph, audit log, provenance, access control, local-first AI}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\textsc{aetnamem} governed memory}
+\fancyhead[R]{\footnotesize Technical white paper}
+\fancyfoot[L]{\footnotesize Author: aetna000.com}
+\fancyfoot[R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\emergencystretch}{2em}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1em}
+\renewcommand{\arraystretch}{1.14}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{aetnaInk!20},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=2pt,
+  xrightmargin=2pt
+}
+
+\newcommand{\system}{\textsc{aetnamem}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\sha}{\operatorname{SHA256}}
+\newcommand{\hmac}{\operatorname{HMAC}_{\mathrm{SHA256}}}
+\newcommand{\canon}{\operatorname{Canon}}
+\newcommand{\invariant}[1]{\smallskip\noindent\textbf{Invariant #1.}\enspace}
+\newcommand{\boundary}[1]{\smallskip\noindent\textbf{Boundary #1.}\enspace}
+\newcommand{\plainbox}[1]{%
+  \begin{center}\fcolorbox{aetnaTeal!55}{aetnaTeal!5}{%
+    \parbox{0.94\columnwidth}{\small\textbf{Plain-language reading.} #1}}\end{center}}
+
+\title{\vspace{-1.3em}\textbf{Governed Memory Without Embeddings:}\\
+\textbf{Deterministic Recall, Rebuildable Graph Indexes, and\\Approval-Bound Effects in \system}}
+\author{aetna000.com\\\small Independent Researcher\\
+\small \href{mailto:aetna000@gmail.com}{aetna000@gmail.com} \quad
+\url{https://github.com/aetna000/aetnamem}}
+\date{July 2026\\\small Technical white paper; implementation release v0.3.0}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Long-lived assistants need more than a larger prompt or a similarity index. They need rules for deciding what may become memory, how corrections and deletion change that memory, why a recalled item was selected, whether untrusted text may influence future behavior, and when remembered information may authorize an external effect. We describe the memory architecture implemented in \system{} v0.3.0. Canonical episodes and records carry provenance, categorical trust, lifecycle state, and append-only transition evidence. Retrieval uses bounded SQLite FTS5 candidates and an optional, derived entity-relation graph; the two rankings are fused deterministically. The graph adds explainable multi-hop joins while remaining disposable and rebuildable from canonical records. No embedding model or vector database is used.
+
+The omission of embeddings is deliberate rather than universal advice. It removes model-version drift, re-embedding migrations, and opaque nearest-neighbor dependencies from the trusted retrieval path, while preserving deterministic replay, exact deletion, and path explanations. It also sacrifices some paraphrase and fuzzy-concept recall. We therefore characterize \system{} not as a conventional dense retrieval-augmented generation pipeline, but as a governed local state and effect-control plane whose recall output may still augment a language-model prompt.
+
+The same per-subject SHA-256 chain records memory, graph, retrieval, approval, and action transitions. Exact-plan HMAC approvals, root-confined filesystem adapters, precondition revalidation, postcondition checks, compensation, and explicit uncertain states limit external mutation. On macOS, the desktop launcher seals the primary SQLite database with OpenSSL AES-256-CBC and HMAC-SHA256 using a random Keychain-held secret; the live database is plaintext while running. Linux and Windows use plaintext application databases and depend on operating-system disk encryption. We state these and other boundaries explicitly. A reproducible 10,002-record laptop probe demonstrates candidate-bounded recall and a successful two-hop result; it is a scale sanity check, not a comprehensive quality or million-record validation.
+\end{abstract}
+
+\input{sections/governed-memory/01-introduction}
+\input{sections/governed-memory/02-system-model}
+\input{sections/governed-memory/03-memory-lifecycle}
+\input{sections/governed-memory/04-retrieval}
+\input{sections/governed-memory/05-graph-index}
+\input{sections/governed-memory/06-confidence-ambiguity}
+\input{sections/governed-memory/07-audit-faults}
+\input{sections/governed-memory/08-encryption}
+\input{sections/governed-memory/09-guarded-effects}
+\input{sections/governed-memory/10-evaluation}
+\input{sections/governed-memory/11-security-limitations}
+\input{sections/governed-memory/12-related-conclusion}
+
+\balance
+{\footnotesize
+\bibliographystyle{plain}
+\bibliography{governed-memory-references}
+}
+
+\clearpage
+\appendix
+\onecolumn
+\input{sections/governed-memory/appendix}
+
+\end{document}

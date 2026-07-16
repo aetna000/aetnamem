@@ -1,0 +1,41 @@
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily\small,
+  node distance=8mm and 12mm,
+  box/.style={draw=aetnaInk!65, rounded corners=2pt, minimum height=11mm, minimum width=27mm, align=center, fill=white, line width=0.7pt},
+  trust/.style={box, draw=aetnaGreen!85, fill=aetnaGreen!8},
+  risk/.style={box, draw=aetnaRed!85, fill=aetnaRed!6},
+  derived/.style={box, dashed, draw=aetnaBlue!85, fill=aetnaBlue!6},
+  audit/.style={box, draw=aetnaGold!90, fill=aetnaGold!8, minimum width=157mm},
+  flow/.style={-{Latex[length=2.3mm]}, line width=0.75pt, draw=aetnaInk!80},
+  dflow/.style={flow, dashed, draw=aetnaBlue!80},
+]
+  \node[trust] (user) {User statement\\trusted origin};
+  \node[risk, below=of user] (external) {Web / tool text\\untrusted origin};
+  \node[box, right=of user, yshift=-9mm] (admission) {Origin classifier\\rule extraction\\lifecycle gate};
+  \node[box, right=of admission, minimum width=35mm] (canonical) {Canonical SQLite\\episodes + records\\active / quarantine / history};
+  \node[derived, above right=4mm and 12mm of canonical] (fts) {FTS5 index\\bounded candidates};
+  \node[derived, below right=4mm and 12mm of canonical] (graph) {Derived graph\\entities + typed edges};
+  \node[box, right=28mm of canonical] (recall) {Deterministic recall\\rank + RRF\\path evidence};
+  \node[box, right=of recall, yshift=9mm] (model) {Local or remote\\language model};
+  \node[box, right=of recall, yshift=-12mm] (guard) {WorldPatch guard\\authority + exact-plan\\reviewer approval};
+  \node[box, right=of guard] (world) {Workspace / provider\\verified effect or\\explicit uncertainty};
+  \node[audit, below=17mm of canonical, xshift=36mm] (ledger) {Per-subject SHA-256 audit chain: admission, transitions, retrieval, graph maintenance, approval, execution, observation, recovery};
+
+  \draw[flow] (user) -- (admission);
+  \draw[flow] (external) -- (admission);
+  \draw[flow] (admission) -- node[above, font=\scriptsize] {commit / quarantine} (canonical);
+  \draw[dflow] (canonical) -- (fts);
+  \draw[dflow] (canonical) -- (graph);
+  \draw[dflow] (fts) -- (recall);
+  \draw[dflow] (graph) -- (recall);
+  \draw[flow] (recall) -- node[above, sloped, font=\scriptsize] {active evidence} (model);
+  \draw[flow] (model) -- node[right, font=\scriptsize] {proposal} (guard);
+  \draw[flow] (guard) -- (world);
+  \draw[flow, aetnaGreen!80] (user.east) to[bend left=18] node[above, font=\scriptsize] {reviewer authority} (guard.north);
+
+  \foreach \n in {admission,canonical,recall,guard,world}
+    \draw[flow, aetnaGold!85] (\n.south) -- ++(0,-4mm) -| (ledger.north);
+  \draw[dflow] (graph.south) -- ++(0,-3mm) -| (ledger.north);
+\end{tikzpicture}%
+}

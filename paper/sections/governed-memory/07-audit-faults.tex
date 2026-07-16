@@ -1,0 +1,44 @@
+\section{Auditability and Fault Behavior}
+\label{sec:audit}
+
+Memory mutation, retrieval, graph maintenance, approvals, and action outcomes append events to a per-subject audit log. An event contains its identifier, subject, type, timestamp, actor, optional session/turn/record references, structured payload, and predecessor hash. With canonical JSON serialization, the chain is
+
+\begin{equation}
+\begin{aligned}
+H_n&=\sha\!\left(\canon(E_n\setminus\{H_n\})\right),\\
+E_n.\code{prev\_hash}&=H_{n-1}.
+\end{aligned}
+\label{eq:audit-chain}
+\end{equation}
+
+This construction follows the general lineage of hash-linked timestamp and secure-log structures~\cite{haber1991timestamp,schneier1998securelogs}. It makes an in-place edit, insertion, or interior deletion detectable by verification from the chain start.
+
+\subsection{Atomic semantic transitions}
+
+The SQLite connection uses explicit transactions. Public memory operations open \code{BEGIN IMMEDIATE}; nested store calls join the outer transaction. Creating an episode, inserting or superseding a record, updating its graph objects, and appending the corresponding audit events therefore commit or roll back together. Immediate transactions also serialize reading the current subject head and appending the next event, preventing two writers on that connection from deriving competing successors.
+
+File-backed stores request SQLite write-ahead logging (WAL). WAL appends commits to a separate log and later checkpoints them into the main database~\cite{sqlitewal}. WAL supports crash recovery and reader/writer concurrency, but the \code{-wal} file is part of live persistent state. A backup made while the service runs must use a SQLite-aware method or include the required files; copying only the main database can omit committed data.
+
+\subsection{Anchoring and verification}
+
+A hash chain stored in the same database cannot by itself detect complete replacement or a recomputed chain after tail truncation. \system{} checkpoints therefore export, for each subject, the event count, sequence, and current hash, plus a digest over the checkpoint document. The operator must place that checkpoint in an independent location such as append-only object storage, a transparency service, or a timestamping service. Verification checks both the chain and containment of pinned events.
+
+At scale, a local cache records the last verified head. Incremental verification first confirms that cached event and its hash still exist, then verifies only the suffix. This improves routine cost but is explicitly not a trust anchor: an attacker able to replace the database can replace the cache. External checkpoints remain necessary.
+
+\subsection{Three different meanings of fault tolerance}
+
+The phrase ``fault tolerant'' is too broad unless the fault is named.
+
+\begin{enumerate}
+  \item \textbf{Derived-index recovery.} FTS and graph state can be cleared and rebuilt from canonical records. Archived inactive-edge partitions are digest checked. This contains extractor and index corruption without making the graph authoritative.
+  \item \textbf{Crash consistency.} SQLite transactions and WAL protect local committed state. The macOS seal path checkpoints before producing a new encrypted snapshot. External actions use persisted transition states so interruption is visible.
+  \item \textbf{Tamper evidence.} Hash links expose modification relative to a trusted chain start; external checkpoints expose tail loss relative to a prior anchor.
+\end{enumerate}
+
+These mechanisms do not provide distributed replication, continued availability after disk loss, Byzantine consensus, or automatic repair of a maliciously recomputed unanchored database. Backups remain required.
+
+\subsection{External-boundary recovery}
+
+No database transaction remains open across a provider or filesystem call. Before dispatch, the action and attempt state are persisted as executing. If the call raises, the operation is marked uncertain; if a process restarts with a committing or compensating transaction, in-flight operations become uncertain and the transaction becomes \code{recovery\_required}. Provider-specific idempotency lookup or authoritative state inspection may later resolve it. Generic code does not retry blindly.
+
+For a multi-operation plan, verified earlier effects can be compensated in reverse. Compensation runs only if the observed state still matches the engine's prior verified result; otherwise it refuses to overwrite a later change. The final state can consequently be \code{compensated}, \code{partial}, or \code{uncertain}, rather than an inaccurate all-or-nothing claim. This resembles saga-style recovery while retaining explicit verification evidence~\cite{garciamolina1987sagas}.

@@ -1,0 +1,40 @@
+\section{Security Analysis and Limitations}
+\label{sec:limitations}
+
+The architecture reduces several failure modes by making them explicit state transitions. It does not create a universal security boundary around an arbitrary agent.
+
+\subsection{Memory poisoning}
+
+Marked web and tool content cannot enter active memory, supersede a trusted slot, seed normal graph traversal, or authorize an effect without promotion. This addresses a durable form of indirect prompt injection~\cite{greshake2023indirect}. The boundary depends on correct origin labeling by the host. A compromised adapter that presents remote text as a direct user message defeats the classification premise. A user can also explicitly promote false content; the audit log records that choice but cannot determine truth.
+
+\subsection{Retrieval quality}
+
+No embedding index means no learned semantic neighborhood, but it also means synonym and paraphrase misses. The extractor and relation vocabulary are English-oriented and deliberately incomplete. Graph edges are only as accurate as their cited records and deterministic parse. Path explanations expose this lineage but do not guarantee that a relation is factually correct.
+
+Record, graph, and merge scores are heuristic and uncalibrated. They should not be displayed as probabilities of truth. Current weights were chosen as deterministic operational defaults, not fitted or validated against a broad relevance corpus.
+
+\subsection{Audit integrity}
+
+The audit chain is unkeyed SHA-256. It detects modification relative to a trusted head, but an attacker with complete database control can rewrite events and recompute an unanchored chain. External checkpoint custody is therefore part of the security model. Timestamps are local wall-clock values and are not trusted time unless a checkpoint is externally timestamped. Audit digests also do not prove that every external effect passed through the system.
+
+\subsection{Encryption and local compromise}
+
+Only the macOS launcher implements application-level idle sealing. Windows and Linux database files are plaintext unless protected by the operating system. macOS runtime plaintext, shared key material, unpinned PBKDF2 parameters, non-atomic ciphertext/sidecar replacement, plaintext archives, and user-managed recovery are documented weaknesses. Provider API keys use macOS Keychain when configured there; on other platforms the desktop service holds entered keys in process memory for the session. Environment-provided secrets remain visible according to operating-system process and shell rules.
+
+The current sealed format should be regarded as a compatibility format, not the final cryptographic design. A future version should define a versioned envelope, derive independent keys, use an authenticated-encryption library or standard container, make snapshot publication atomic, and add equivalent application-level behavior on Windows and Linux. Such work requires migration and recovery tooling, not only changing a cipher name.
+
+\subsection{Action mediation}
+
+The guarded adapter narrows model-requested writes, but the agent role can read workspace files. Reviewer-token saves intentionally bypass staging. The loopback server has no TLS, and bearer-token security depends on local secrecy. A process with direct filesystem, database, debugger, or reviewer-token access can bypass or impersonate the gate. Operating-system sandboxing and least-privilege deployment are necessary for complete mediation.
+
+An HMAC approval proves possession of one shared reviewer secret, not a person's legal identity. The approver label is asserted by the reviewer-side process. For multi-user or regulated deployments, asymmetric signing, hardware-backed keys, durable identity, revocation, and policy administration would be required.
+
+\subsection{Fault and availability limits}
+
+Rebuildable indexes improve recoverability; they do not replace backup. Partition digests detect a changed archive but cannot restore it. SQLite WAL and transactions provide local crash semantics, not replicated availability. The action engine records uncertainty but cannot generically resolve a provider that offers neither idempotency lookup nor authoritative postcondition reads.
+
+\subsection{Privacy}
+
+Canonical episodes contain raw user messages. Records contain normalized personal facts. Although query text is omitted from retrieval events by default, identifiers, timestamps, scores, and query digests can still be sensitive metadata. Subject identifiers are not anonymized by the storage layer. Operators must apply filesystem permissions, disk encryption, retention policy, and backup controls appropriate to the data.
+
+\boundary{No formal proof} The invariants in this paper are implementation contracts supported by tests and source inspection. They have not been machine-verified, independently audited, or proven against all executions.

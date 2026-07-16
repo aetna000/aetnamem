@@ -1,0 +1,64 @@
+\section{Storage and Encryption by Platform}
+\label{sec:encryption}
+
+Encryption claims must identify both platform and process state. \system{} v0.3.0 does not use SQLCipher and does not provide uniform live database encryption. Its implemented behavior is summarized in \cref{tab:platform-encryption}.
+
+\subsection{macOS sealed-database construction}
+
+On first use, the launcher obtains a secret from the \code{aetnamem}/\code{database-key} login-Keychain item or generates 32 random bytes represented as 64 hexadecimal characters. macOS Keychain is intended for small secrets and encryption keys, with access mediated by the \code{securityd} service and Keychain access controls~\cite{applekeychain}.
+
+At startup, if a sealed file exists, the manager computes
+
+\begin{equation}
+M=\hmac(K,C)
+\end{equation}
+
+over the encrypted bytes $C$ and compares it in constant time with the sidecar value before decryption. It then invokes OpenSSL \code{enc -aes-256-cbc -pbkdf2 -salt} and writes the plaintext SQLite database into a new temporary directory. OpenSSL documents that \code{-pbkdf2} uses a 10,000-iteration default unless \code{-iter} is supplied, and SHA-256 is the default passphrase digest in current releases~\cite{opensslenc}. The application does not currently pin these parameters in a versioned envelope.
+
+During operation, SQLite reads and writes the temporary plaintext file. A mutation hook first requests a truncating WAL checkpoint, then creates a new encrypted temporary file, computes its HMAC, replaces the sealed file, and writes the HMAC sidecar. Sealing is mutation-triggered and rate-limited to at most once per default 15-second interval; it is not an independent periodic timer. Pending dirty state is force-sealed on a clean service shutdown before the database is closed and the temporary directory is removed.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/governed-memory-macos-seal}
+  \caption{macOS sealed mode. The bold boundary is encrypted at idle; the runtime SQLite and WAL state are plaintext to the signed-in process while the service is open.}
+  \label{fig:macos-seal}
+\end{figure}
+
+The construction provides useful confidentiality against an attacker who obtains only idle sealed files and not the Keychain secret, and HMAC provides ciphertext integrity and authenticity under that secret~\cite{krawczyk1997hmac}. It has significant limits:
+
+\begin{itemize}
+  \item CBC encryption plus a separate HMAC is not a single atomic authenticated-encryption envelope. The sealed file and HMAC sidecar are replaced separately, so a crash can leave a mismatched pair that requires backup recovery.
+  \item The same high-entropy secret is used as the OpenSSL passphrase and HMAC key. A hardened format should derive independent encryption and authentication keys with explicit domain separation.
+  \item The live database is plaintext while the service runs. An unclean process or machine failure can leave temporary plaintext until operating-system cleanup and can lose changes after the last successful seal.
+  \item Malware or another process running as the signed-in user may read the live file or request the Keychain item, depending on operating-system controls. This is not protection against an already compromised account.
+  \item Key recovery and backup confidentiality remain user responsibilities. The sealed file is unusable after loss of its Keychain secret.
+\end{itemize}
+
+This is \emph{application-level idle sealing}, not transparent database encryption or continuous at-rest protection.
+
+\subsection{Windows and Linux}
+
+The Windows and Linux launchers store ordinary SQLite files. No application key is generated and no \system{} cryptographic wrapper is applied. On Windows, BitLocker can protect an entire volume against offline theft when enabled; Microsoft documents AES-based volume encryption and TPM/key-protector options~\cite{microsoftbitlocker}. On Linux, common deployments use dm-crypt with a LUKS on-disk format~\cite{cryptsetup}. These controls operate below SQLite and can protect database, WAL, temporary, archive, and workspace files together, but normally expose plaintext to processes after the user unlocks and mounts the system.
+
+\subsection{Archives, workspaces, and backups}
+
+The assistant workspace is separate from the memory database. Files there are governed by the action adapter but are not encrypted by \system{}. Graph history partitions are also plaintext SQLite on all platforms unless the containing filesystem supplies encryption. Automatic graph archival defaults off in macOS sealed mode; explicit enablement requires separately protecting the archive directory.
+
+Backups must include both memory and workspace if complete recovery is desired. A stopped-service copy is simplest. On live WAL databases, copying only \code{memories.db} is unsafe because committed frames may remain in \code{memories.db-wal}~\cite{sqlitewal}. macOS recovery requires the sealed file, its HMAC sidecar, and the Keychain recovery secret.
+
+\begin{table}[t]
+\centering
+\caption{Default storage and residual protection boundaries. Operating-system encryption is effective only when enabled and correctly managed.}
+\label{tab:platform-encryption}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}>{\raggedright\arraybackslash}p{0.34\columnwidth}Y@{}}
+\toprule
+Platform and file & Application protection and residual boundary \\
+\midrule
+macOS launcher\newline\code{\$HOME/Library/}\newline\code{Application Support/}\newline\code{aetnamem/}\newline\code{memories.db.enc} & AES-256-CBC sealed snapshot with PBKDF2, random salt, HMAC-SHA256, and a login-Keychain secret. Runtime SQLite is plaintext; explicitly enabled graph archives are plaintext; FileVault remains recommended. \\
+Linux launcher\newline\code{\$XDG\_DATA\_HOME/}\newline\code{aetnamem/}\newline\code{memories.db}\newline or \code{\$HOME/.local/share/}\newline\code{aetnamem/}\newline\code{memories.db} & Ordinary SQLite with no application wrapper. An encrypted home, LUKS/dm-crypt, or equivalent is required for at-rest confidentiality. \\
+Windows launcher\newline\code{\%LOCALAPPDATA\%/}\newline\code{aetnamem/}\newline\code{memories.db} & Ordinary SQLite with no application wrapper. BitLocker or equivalent is required for at-rest confidentiality. \\
+Direct service\newline\code{\$HOME/.aetnamem/}\newline\code{memories.db} & Plaintext by default; macOS \code{--encrypted-db} opts into sealed mode. The configured path determines the actual boundary. \\
+\bottomrule
+\end{tabularx}
+\end{table}
