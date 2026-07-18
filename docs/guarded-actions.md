@@ -152,8 +152,9 @@ result = engine.commit(patch.transaction_id)
   dependency graph of multiple operations.
 - `memory_log_action` accepts caller-defined payloads and can contain raw data;
   its caller must enforce the digest-only convention.
-- A full MCP interception gate, additional execution providers, Telegram
-  reviewer, Firestore, and X adapter remain in [TODO.md](../TODO.md).
+- A full MCP interception gate, additional execution providers, external
+  reviewer channels, database services, and social-network adapters remain in
+  [TODO.md](../TODO.md).
 
 ## External journal import
 
