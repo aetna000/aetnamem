@@ -2,7 +2,26 @@
 
 Author: **aetna000.com**
 
-This directory contains two reproducible technical manuscripts.
+This directory contains two reproducible technical manuscripts and one
+publication-ready article collection.
+
+## X article collection
+
+> **Aetnamem Explained: Twenty Articles on Governed Memory for AI**
+
+`aetnamem-x-articles.tex` contains 20 standalone, high-level articles derived
+from the governed-memory paper. They explain lifecycle, trust, quarantine,
+deterministic recall, rebuildable graphs, recall forensics, audit checkpoints,
+approval-bound effects, encryption boundaries, scale evidence, and the product
+direction. The language is intended for X Articles while retaining the source
+paper's limitations and measured scope.
+
+Build the collection with:
+
+```bash
+cd paper
+make aetnamem-x-articles.pdf
+```
 
 ## Governed memory white paper
 
@@ -69,6 +88,7 @@ Outputs:
 
 - `aetnamem-control-plane.pdf` - shareable compiled paper;
 - `aetnamem-governed-memory.pdf` - governed memory technical white paper;
+- `aetnamem-x-articles.pdf` - 20-article high-level publication collection;
 - `build/aetnamem-control-plane.pdf` - intermediate compiled copy;
 - `build/aetnamem-governed-memory.pdf` - intermediate governed memory copy;
 - `figures/*.pdf` - vector publication figures;

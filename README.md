@@ -503,6 +503,13 @@ benchmark scenario.
   verification rules, and the threat-model table.
 - **[Guarded actions](https://github.com/aetna000/aetnamem/blob/main/docs/guarded-actions.md)** — action modes,
   authority boundaries, state transitions, guarantees, and non-guarantees.
+- **[Channels and governed outbound proposal](https://github.com/aetna000/aetnamem/blob/main/docs/channels-outbound-spec.md)** — provider-neutral
+  intake, optional business review, and evidence-bound external adapters;
+  proposed, not implemented.
+- **[Inference engineering memory proposal](https://github.com/aetna000/aetnamem/blob/main/docs/inference-engineering-spec.md)** — provider-neutral local and
+  Hugging Face inference, governed run evidence, strict comparison, engineering
+  decisions, deployment receipts, and incident reconstruction; proposed, not
+  implemented.
 - **[Roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md)** — completed foundation work and remaining product,
   provider, security, and interface tasks.
 - **[Architecture plan](https://github.com/aetna000/aetnamem/blob/main/plan.md)** — architecture plan and roadmap.

@@ -1,0 +1,748 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,top=22mm,bottom=24mm,left=25mm,right=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{newtxtext,newtxmath}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\definecolor{aetnaInk}{HTML}{17252A}
+\definecolor{aetnaTeal}{HTML}{2A6F73}
+\definecolor{aetnaBlue}{HTML}{315A7D}
+\definecolor{aetnaGray}{HTML}{5E686C}
+\definecolor{aetnaPaper}{HTML}{F4F6F6}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=aetnaBlue,
+  urlcolor=aetnaBlue,
+  pdftitle={Aetnamem Explained: Twenty Articles on Governed Memory for AI},
+  pdfauthor={aetna000.com},
+  pdfsubject={A high-level article series based on the aetnamem governed-memory white paper},
+  pdfkeywords={aetnamem, governed memory, AI agents, recall forensics, auditability, local-first AI}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\textsc{aetnamem} explained}
+\fancyhead[R]{\footnotesize X Article Series}
+\fancyfoot[L]{\footnotesize Author: aetna000.com}
+\fancyfoot[R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7em}
+\setlength{\emergencystretch}{3em}
+\setlist{leftmargin=*,itemsep=0.25em,topsep=0.25em}
+
+\newcommand{\system}{\textsc{aetnamem}}
+\newcommand{\articlelabel}[1]{%
+  \noindent\colorbox{aetnaTeal!10}{%
+    \parbox{0.96\textwidth}{\color{aetnaInk}\small\textbf{Article #1 of 20}}}%
+  \par\medskip}
+\newcommand{\coreidea}[1]{%
+  \begin{quote}\color{aetnaTeal}\large\itshape #1\end{quote}}
+\newcommand{\boundary}[1]{%
+  \par\smallskip\noindent\textbf{Important boundary.} #1}
+
+\title{\vspace{-1.4em}\textbf{Aetnamem Explained}\par
+\large Twenty Articles on Governed Memory for AI}
+\author{aetna000.com\\
+\small Based on \emph{Governed Memory Without Embeddings}}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This collection contains twenty standalone, high-level articles prepared for
+publication on X. It translates the architecture and measured claims of the
+\system{} governed-memory white paper into accessible language without
+removing the technical boundaries. The series explains why durable AI memory
+is more than search, how provenance and trust shape recall, why the graph is a
+rebuildable index, what recall forensics means, how approval limits external
+effects, and where the current encryption and scale evidence stops.
+\end{abstract}
+
+\noindent\textbf{Source paper:}
+\emph{Governed Memory Without Embeddings: Recall Forensics, Deterministic
+Retrieval, and Approval-Bound Effects in aetnamem}. Author: aetna000.com.
+
+\noindent\textbf{Editorial note:} Each article is designed to stand alone.
+Technical measurements are used only where they clarify the idea. Statements
+about implementation refer to the version and content-addressed evaluation
+snapshot documented by the source paper, not to every future release.
+
+\tableofcontents
+\clearpage
+
+\section{Memory Is Not a Search Box}
+\articlelabel{1}
+\coreidea{A useful AI memory system must govern what becomes memory, not only
+find text that looks relevant.}
+
+When people hear ``AI memory,'' they often imagine a search engine attached to
+a chatbot. Store old conversations, find similar passages, place them in the
+next prompt, and let the model answer. That can improve continuity, but it
+does not answer the harder questions created by long-lived memory.
+
+Who supplied a remembered statement? Was it the user, a web page, a tool, or
+the model itself? Is it still current? Did a later correction replace it? Was
+it reviewed? Can it be deleted? If it contributes to a proposed action, does
+it carry any authority to change the outside world?
+
+\system{} treats these as state-management questions. It stores source
+episodes, normalized records, lifecycle status, trust origin, provenance, and
+audit evidence. Retrieval operates inside those rules. A result cannot enter
+ordinary recall merely because it has a strong text match; it must first be an
+active memory under the lifecycle policy.
+
+This changes the role of the language model. The model may help a user speak
+to the system, summarize evidence, or propose an action. It does not own the
+truth of the database, decide which untrusted content becomes accepted, or
+turn recalled information into permission.
+
+The practical goal is modest but important: when an assistant says ``I
+remember,'' the system should be able to show what was accepted, where it came
+from, what changed since then, and why it was eligible to appear.
+
+\boundary{\system{} does not prove that a remembered statement is true. It
+preserves who supplied it, how it was treated, and how it participated in the
+system.}
+
+\clearpage
+\section{A Filing Cabinet, Catalogue, Map, and Receipt Book}
+\articlelabel{2}
+\coreidea{The easiest way to understand \system{} is as four familiar tools
+working together.}
+
+The first tool is a \textbf{filing cabinet}. It holds canonical episodes and
+records: the original source material and the concise facts derived from it.
+These are the durable objects from which other structures can be rebuilt.
+
+The second is a \textbf{card catalogue}. SQLite full-text search helps locate
+active records without scanning and scoring every item in memory. It is a
+local index with explicit limits, not a second source of truth.
+
+The third is a \textbf{map}. A derived graph connects entities and typed
+relations. If memory says ``my boss is Sarah'' and ``Sarah prefers SEA,'' the
+map can follow the relation between those statements. Every edge points back
+to a record, and every record points back to its source episode.
+
+The fourth is a \textbf{receipt book}. Important transitions append evidence
+to a hash-linked audit chain: admission, promotion, correction, deletion,
+retrieval, graph maintenance, approval, and external-action outcomes.
+
+This separation is useful because the catalogue and map may be wrong or
+outdated without corrupting the filing cabinet. They can be cleared and
+rebuilt from canonical records. The receipt book then helps an operator check
+which transitions occurred and whether the recorded chain still verifies.
+
+Many systems combine these responsibilities into one opaque model-driven
+pipeline. \system{} separates them so that failures have smaller meanings: an
+index problem is not automatically a memory-integrity problem, and a relevant
+memory is not automatically an authorized action.
+
+\boundary{Rebuildability improves recovery from index damage. It does not
+replace backups or recover canonical records that were lost from disk.}
+
+\clearpage
+\section{Why the Source of a Memory Matters}
+\articlelabel{3}
+\coreidea{The same sentence should be treated differently when it comes from
+a user, a web page, a tool, or the assistant itself.}
+
+Imagine a user has stored a preferred airport. Later, a web page contains the
+sentence ``your preferred airport is LAX.'' A text extractor can read both
+sentences, but it should not treat them as equally authoritative.
+
+\system{} classifies origin before a candidate memory becomes active. Direct
+user statements and explicitly reviewed content may enter active memory.
+Marked web-page or tool-output content begins quarantined. It remains visible
+for review, but ordinary recall and graph traversal exclude it.
+
+This is a practical defense against durable memory poisoning. A hostile page
+cannot silently replace a trusted preference merely because it contains
+language that looks like a personal fact. Promotion is a separate action with
+its own provenance and audit event.
+
+Assistant responses are also not automatically promoted into semantic
+memory. Otherwise, a model could repeat its own output until generated text
+appeared to have become an established fact. The system can log the exchange
+without granting the model self-authorship over durable truth.
+
+Origin is not the same as correctness. A trusted user can be mistaken, and a
+web page can be accurate. The trust tier instead answers a narrower policy
+question: how may this source participate before review?
+
+\boundary{Origin classification depends on the host correctly labeling
+external content. If a compromised integration presents remote text as a
+direct user statement, the storage layer cannot recover the missing context.}
+
+\clearpage
+\section{Quarantine Is Memory With a Door}
+\articlelabel{4}
+\coreidea{Suspicious information does not have to be either trusted or
+discarded; it can be retained for inspection without entering normal recall.}
+
+Binary choices are often too crude for AI memory. Throwing away every
+untrusted observation loses potentially useful information. Accepting every
+observation creates a path for web content, tool output, or generated text to
+shape future answers as if a user had approved it.
+
+\system{} uses quarantine as an intermediate lifecycle state. A quarantined
+record keeps its source and can be reviewed, but it is excluded from ordinary
+recall. Its graph edges cannot become bridges between trusted facts. It also
+cannot supersede an active record.
+
+Promotion is explicit. A reviewer can inspect the proposed memory, confirm
+it, and move it into the user-confirmed trust tier. The transition is recorded
+rather than hidden inside a model's confidence score.
+
+This design makes disagreement visible. The system can say, in effect, ``this
+information was observed, but it has not been accepted.'' That is more useful
+than pretending all stored text has the same standing.
+
+Quarantine is especially important for agents that browse, call tools, or
+receive messages from external channels. Those systems encounter content that
+may be relevant but was not authored as an instruction to the memory layer.
+
+\boundary{A reviewer can still approve false information. Quarantine governs
+admission and records responsibility; it does not provide an oracle for fact
+checking.}
+
+\clearpage
+\section{Corrections Should Not Erase History}
+\articlelabel{5}
+\coreidea{A durable memory should show what changed, not silently rewrite the
+past.}
+
+Suppose a user says ``my preferred airport is Sydney,'' then later changes it
+to Melbourne. Editing the old database row in place would produce the current
+answer, but it would remove the evidence that a correction occurred.
+
+\system{} uses explicit supersession for recognized single-valued facts. The
+new active record becomes current, while the prior record moves to a
+superseded state and points to its replacement. Normal recall returns the new
+value, but history remains reconstructable.
+
+This matters when people ask why an assistant behaved differently last month.
+The answer may depend on the memory state at that time, not the state visible
+today. A transition history allows an auditor to replay which record was
+eligible at a particular turn.
+
+The policy also protects trusted state from unreviewed replacement. A
+quarantined record cannot supersede an active record, even when both appear to
+occupy the same fact slot.
+
+Not every relation is single-valued. ``Works with,'' ``likes,'' and ``avoids''
+may accumulate. Unstructured conflicts may remain as separate records for
+review rather than being merged by semantic guesswork.
+
+\boundary{Supersession depends on the system recognizing a structured fact
+key. Unsupported phrasing can remain as multiple records, because visible
+ambiguity is safer than an unexplained destructive update.}
+
+\clearpage
+\section{Forgetting Is More Than Removing a Search Result}
+\articlelabel{6}
+\coreidea{Deletion should remove governed payloads and indexes while leaving
+evidence that a deletion operation occurred.}
+
+Removing an item from search is not necessarily forgetting it. The original
+text may still exist in a record table, a graph edge, a full-text index, a
+source episode, or an archive.
+
+In \system{}, forgetting is a lifecycle transition across these structures.
+Matching records are tombstoned, selected payloads are purged, and related
+full-text and graph entries are removed. Source episodes are purged when no
+retained record still depends on them.
+
+The system keeps a deletion receipt containing identifiers and digests rather
+than the erased words. This creates a useful balance: an operator can verify
+that a deletion was processed without preserving the sensitive value merely
+to make future auditing easier.
+
+That choice creates a real replay boundary. If a memory contributed to an old
+answer and was later deleted, the system may reconstruct the historical
+decision from commitments and lifecycle events while correctly refusing to
+reproduce the deleted plaintext.
+
+Deletion is deliberately accepted only from user-origin requests, and an
+empty selector is rejected instead of being interpreted as ``delete
+everything.'' These are small rules with large consequences for safety.
+
+\boundary{A local deletion receipt cannot prove that independent backups,
+exports, model-provider logs, or external systems deleted their copies. Those
+systems need separate retention policies and deletion receipts.}
+
+\clearpage
+\section{Why Aetnamem Does Not Use Embeddings}
+\articlelabel{7}
+\coreidea{Avoiding embeddings is an engineering trade: less semantic reach in
+exchange for a smaller, more reproducible trusted retrieval path.}
+
+Embeddings are effective at finding paraphrases and conceptually similar
+text. \system{} does not claim otherwise. It deliberately omits an embedding
+model and vector database from its current memory-retrieval path.
+
+The reason is operational. Replaying a lexical decision requires text
+normalization, static weights, database state, and code. Replaying an
+embedding decision also requires the exact model and tokenizer, preprocessing,
+numerical environment, vector-index state, dependencies, and often hardware
+details.
+
+Deletion and correction are also simpler when the indexes are ordinary SQLite
+rows. There is no stale vector to discover, re-embedding queue to operate, or
+dimensional migration when a model changes. A local installation does not
+need to download and run a second model just to remember.
+
+Explanation is another factor. A lexical result can identify matching terms.
+A graph result can show a typed path. A nearest-neighbor score says that two
+items are close in a learned space, which is useful but usually less direct as
+a human explanation.
+
+The cost is real: lexical retrieval can miss synonyms, misspellings,
+multilingual paraphrases, and conceptual equivalence. The current parser is
+also intentionally narrow. \system{} chooses deterministic, deletable, and
+inspectable behavior for its present use case rather than claiming universal
+retrieval superiority.
+
+\boundary{Embedding retrieval can be reproducible when all required artifacts
+are preserved. The narrower claim is that \system{} replay does not require
+that additional learned-model artifact.}
+
+\clearpage
+\section{Bounded Recall on a Laptop}
+\articlelabel{8}
+\coreidea{Memory growth should not force every query to score every stored
+record.}
+
+A naive memory implementation compares each query with every record. That
+becomes slower and produces larger evidence logs as the database grows.
+
+\system{} first asks SQLite FTS5 for a bounded set of active lexical matches.
+It fills unused capacity with recent active records, then ranks only that
+candidate set. The documented default candidate cap is 200, with a hard
+per-call ceiling of 2,000.
+
+The ranking combines text relevance, source-trust weight, and recency using a
+versioned deterministic formula. These values are retrieval utilities, not
+probabilities that a fact is true. Lifecycle eligibility occurs before
+ranking, so a highly relevant quarantined record remains excluded.
+
+Bounded work also matters for audit evidence. The retrieval event stores a
+query digest, returned identifiers, algorithm parameters, and a bounded
+candidate ledger rather than copying an unbounded list into the audit trail.
+
+In the paper's 10,002-record laptop probe, direct recall kept its 200-record
+candidate cap. This demonstrates the mechanism at that size, not a guaranteed
+maximum for every machine or workload.
+
+\boundary{Candidate caps improve predictable work but can exclude relevant
+records. Retrieval quality, FTS selectivity, database size, cache pressure,
+and hardware still need representative measurement.}
+
+\clearpage
+\section{The Graph Is a Map, Not the Truth}
+\articlelabel{9}
+\coreidea{A knowledge graph is safer when it can be discarded and rebuilt
+from canonical records.}
+
+Graphs are useful because they make relationships explicit. They are also
+dangerous when an extraction error becomes accepted as permanent truth.
+
+\system{} treats its entity-relation graph as a derived index. Every edge
+points to a canonical record, and every record points to its source episode.
+If an extractor improves or the graph becomes damaged, the system can rebuild
+the map from the retained filing cabinet.
+
+Lifecycle rules propagate into the graph. An edge derived from quarantined
+content is quarantined. A correction supersedes the corresponding
+single-valued edge. Forgetting removes or tombstones related graph objects.
+Only active entities, aliases, and edges participate in normal traversal.
+
+Entity merges are proposal-only. Exact same-kind candidates can be shown to a
+reviewer, but the system does not let a language model decide that two people
+or projects are identical. Approved merges use reversible pointers rather
+than rewriting source records.
+
+This architecture limits the damage caused by a bad map. It does not pretend
+the map is harmless; a wrong active record can still produce a wrong edge.
+The difference is that the lineage remains visible and the derived structure
+is not load-bearing for canonical history.
+
+\boundary{A rebuild works only from retained canonical evidence. It cannot
+restore source content that was deliberately deleted or lost without a
+backup.}
+
+\clearpage
+\section{Multi-Hop Recall That Can Explain Itself}
+\articlelabel{10}
+\coreidea{Some memory questions require joining facts, not merely finding a
+similar sentence.}
+
+Consider two accepted memories: ``my boss is Sarah'' and ``Sarah's preferred
+airport is SEA.'' A question about the user's boss and flights may share words
+with the first statement but not with the answer statement.
+
+The derived graph connects these records through entities and typed
+relations. Retrieval starts with a small number of lexical seeds, then spreads
+through a bounded frontier for a limited depth. The default design uses no
+learned graph weights; trust, relation priors, recency, and hop decay are
+versioned deterministic inputs.
+
+The useful output is not only ``SEA.'' It is the path that explains why the
+record was nominated: the query reached the boss relation, that relation
+identified Sarah, and Sarah's accepted airport relation led to SEA. Every
+edge cites its source record.
+
+Graph candidates and direct lexical candidates are combined with a
+rank-fusion method rather than pretending their scores have the same meaning.
+The graph remains optional, and direct record recall remains available when
+an item cannot be represented as an edge.
+
+In the paper's specific 10,002-record probe, direct top-10 recall missed the
+older airport record, while graph recall returned it at rank 2 after visiting
+two edges. This validates the constructed mechanism, not general question
+answering quality.
+
+\boundary{Path explanation proves how a result was reached, not that every
+relation on the path is factually correct.}
+
+\clearpage
+\section{Recall Forensics: Explaining a Past Answer}
+\articlelabel{11}
+\coreidea{A memory system should be able to reconstruct why a specific result
+appeared at a specific time.}
+
+Traditional retrieval evaluation asks whether the system found something
+relevant. Recall forensics asks a deployment question: if a surprising memory
+appeared last Tuesday, what durable evidence explains its ranking, source,
+lifecycle state, and integrity?
+
+The \system{} paper defines five checks. Attribution recomputes ranking inputs
+and ordering. Provenance follows the result back to admission, episode, and
+origin. Lifecycle replay checks whether the item was active at that turn.
+Decision replay reconstructs the logged selection. Integrity testing mutates
+selected evidence fields to see whether verification notices.
+
+In the content-addressed evaluation snapshot, an independent standard-library
+auditor recomputed 14 of 14 ranking decisions and reconstructed all 68 returned
+result pairs. It detected all 75 selected single-row mutations. Eleven stable
+turns were re-executed exactly.
+
+Three earlier turns were deliberately excluded from exact engine
+re-execution because a later correction or deletion changed their canonical
+inputs. That exclusion is part of the result: preserving deleted plaintext
+only to make an audit demo look complete would violate the deletion contract.
+
+Recall forensics is not the same as proving an answer true. It proves what the
+measured evidence can reconstruct about why the system returned it.
+
+\boundary{The evaluated workload is synthetic and bounded. Its mutation
+coverage does not prove detection of every possible coherent database
+rewrite.}
+
+\clearpage
+\section{A Hash Chain Is Useful, but It Needs an Anchor}
+\articlelabel{12}
+\coreidea{Tamper evidence stored beside the data cannot, by itself, prove that
+the entire database was not replaced.}
+
+\system{} appends important transitions to a per-subject SHA-256 hash chain.
+Each event commits to the previous event hash. An edit, insertion, or interior
+deletion breaks verification from the chain start.
+
+This is valuable, but it has a limit. An attacker with complete database
+control could truncate the tail or rewrite the entire chain and calculate new
+hashes. If the verifier trusts only the modified file, there is no independent
+reference for the old head.
+
+The answer is an external checkpoint. A checkpoint records the event count,
+sequence, and current hash, then moves that commitment to an independent
+location such as append-only object storage or a timestamping service.
+
+The paper's mutation experiment demonstrates the distinction directly. Tail
+truncation was detected in zero of five trials using the chain alone and in
+five of five when checked against an anchored head.
+
+An incremental verification cache can make routine checks faster by verifying
+only the new suffix. That cache is an optimization, not a trust anchor, because
+an attacker who replaces the database may also replace a local cache.
+
+\boundary{A hash chain provides tamper evidence relative to a trusted point.
+It does not provide replication, availability after disk loss, trusted wall
+clock time, or automatic recovery.}
+
+\clearpage
+\section{Confidence Is Not Trust}
+\articlelabel{13}
+\coreidea{One number should not decide whether information is relevant,
+trusted, true, or authorized.}
+
+AI systems often use the word ``confidence'' as if it described one property.
+In practice, several different questions are being mixed together.
+
+\system{} separates extraction confidence, source trust, record retrieval
+score, graph activation, entity-merge confidence, and external-action outcome.
+Each value has a limited job.
+
+Extraction confidence records how strongly a deterministic parser recognized
+a supported sentence form. Trust records where the statement came from and
+whether it was reviewed. Retrieval scores order already eligible candidates.
+Graph scores measure the strength of a typed path. Merge confidence describes
+an identity proposal. Action outcomes report what was observed after an
+external operation.
+
+A high retrieval score cannot activate quarantined content. A high merge score
+cannot merge two entities automatically. A confident memory cannot authorize
+a file change. An external timeout is not converted into ``60 percent
+successful''; it becomes uncertain because the outside state is unknown.
+
+This separation makes the system less convenient to summarize with one
+dashboard number, but much easier to reason about. Every value answers a
+specific question and has a defined authority boundary.
+
+\boundary{The current ranking and merge values are deterministic heuristics,
+not calibrated probabilities of truth or correctness.}
+
+\clearpage
+\section{Ambiguity Should Stay Visible}
+\articlelabel{14}
+\coreidea{When the system cannot justify a conclusion, abstention or review is
+better than a hidden guess.}
+
+Language is ambiguous. Identities are ambiguous. External systems can fail in
+ambiguous ways. A memory architecture becomes fragile when it compresses all
+of these situations into a confident-looking answer.
+
+The current \system{} extractor is intentionally narrow. Unsupported phrasing
+creates a source episode but may create no semantic record. Questions are not
+treated as assertions. A caller can request a forced note, but that choice is
+explicit and recorded.
+
+Unstructured conflicts may remain as multiple records rather than being
+silently merged. Entity-resolution candidates wait for a reviewer. Exact name
+or alias overlap can support a proposal, but it does not prove two entities
+are the same.
+
+External ambiguity receives its own states. If an operation fails after
+dispatch, generic code may not know whether the provider completed it. The
+system records uncertainty or recovery required instead of retrying blindly
+and risking a duplicate effect.
+
+This approach gives users more visible states to understand. That is a design
+cost, but it reflects reality. A single green check mark is not useful when
+the system cannot prove what happened.
+
+\boundary{Abstention reduces silent corruption but can reduce convenience and
+recall coverage. The product must make review workflows understandable rather
+than leaving uncertainty as an unexplained error.}
+
+\clearpage
+\section{Information Is Not Authority}
+\articlelabel{15}
+\coreidea{Remembering a fact should not grant permission to act on it.}
+
+An assistant may remember that a report belongs in a certain folder. That
+memory can help prepare a proposal. It should not, by itself, authorize the
+assistant to overwrite a file.
+
+\system{} separates memory from external authority. Recalled records can
+inform an action plan, but enforced write operations require a trusted,
+host-attested authority reference. Untrusted records may contribute context
+without becoming permission.
+
+This distinction matters for prompt injection. A web page might tell an agent
+to edit a configuration file. Even if the content is stored for review, it
+cannot manufacture the user authority required by the guarded action engine.
+
+The agent-facing interface can stage tools and inspect state, but it cannot
+label its own proposal as a user instruction or create approval material. The
+reviewer-side interface creates authority from the user's actual task.
+
+This is one of the main reasons \system{} is more than a retrieval component.
+It connects memory evidence to an effect-control plane while keeping the two
+roles distinct.
+
+\boundary{The guarantee applies only when model-requested effects are routed
+through the registered broker. Direct shell, filesystem, database, or provider
+access can bypass the gate and must be restricted by deployment policy.}
+
+\clearpage
+\section{Approve the Exact Plan, Not the General Intention}
+\articlelabel{16}
+\coreidea{Approval should bind to the precise operation that was reviewed.}
+
+``Update my report'' is an intention, not a complete execution plan. The file
+may change after review. An adapter may be upgraded. A path may resolve
+differently. The proposed content may no longer match what the user saw.
+
+\system{} prepares a canonical plan containing the operation, arguments,
+preview, preconditions, adapter manifest, dependencies, evidence references,
+and policy version. It calculates a digest over that complete plan.
+
+Reviewer approval uses HMAC-SHA256 to bind the transaction identifier, plan
+digest, approver label, issue time, expiry time, and a random nonce. The
+approval applies to one exact plan for a limited period, not to future
+variations of the same idea.
+
+Before execution, the engine recomputes the plan and approval commitments,
+checks the audit chain, confirms the adapter did not change, and revalidates
+preconditions. Each operation is checked again immediately before its effect.
+
+For the reference filesystem adapter, a changed file digest causes the plan to
+stop instead of stretching the old approval to cover new state. After a write,
+the adapter independently reads the result and verifies its expected digest.
+
+\boundary{An HMAC proves possession of a shared secret, not a person's legal
+identity. Multi-user or regulated deployment would require stronger identity,
+revocation, key custody, and policy administration.}
+
+\clearpage
+\section{``Uncertain'' Is a Responsible Result}
+\articlelabel{17}
+\coreidea{When an external call may have succeeded, pretending failure and
+retrying can be more dangerous than admitting uncertainty.}
+
+Database operations can often commit or roll back atomically. External calls
+cannot. A provider may receive a request, perform the effect, and disconnect
+before returning a response. The caller sees an error but does not know the
+outside state.
+
+\system{} persists execution state before dispatch and does not hold a SQLite
+transaction open across the external call. If the call raises after dispatch,
+the action becomes uncertain. If the process restarts during a committing or
+compensating operation, the transaction becomes recovery required.
+
+Provider-specific idempotency lookup or authoritative state inspection may
+later resolve the outcome. Generic code does not retry blindly, because a
+second request could duplicate the first effect.
+
+For multi-step plans, previously verified effects may be compensated in
+reverse order. Compensation runs only when current state still matches the
+engine's verified after-state. If another actor changed the resource, the
+engine refuses to overwrite that later work.
+
+The final result may be committed, compensated, partial, uncertain, or
+recovery required. These states are less tidy than success and failure, but
+they preserve what the system actually knows.
+
+\boundary{A generic control plane cannot resolve ambiguity when a provider
+offers neither idempotency records nor an authoritative way to inspect the
+resulting state.}
+
+\clearpage
+\section{What Aetnamem Encryption Protects Today}
+\articlelabel{18}
+\coreidea{Encryption claims are meaningful only when they name the platform,
+files, process state, and remaining plaintext.}
+
+The current \system{} release does not use SQLCipher and does not provide one
+uniform live-database encryption design across macOS, Windows, and Linux.
+
+On macOS, the desktop launcher can seal an idle database using OpenSSL
+AES-256-CBC with PBKDF2 and an HMAC-SHA256 sidecar. The secret is held in the
+login Keychain. Before opening the database, the HMAC is checked; during use,
+SQLite operates on a plaintext database in a temporary directory.
+
+The launcher checkpoints and reseals after mutations, subject to a short rate
+limit, and force-seals during a clean shutdown. This provides useful
+confidentiality when an attacker obtains only the idle sealed files without
+the Keychain secret.
+
+It is not transparent database encryption. The live database and WAL are
+plaintext while the service runs. The ciphertext and HMAC sidecar are not
+published atomically. The same secret currently serves two cryptographic
+roles, and archive or workspace files need separate protection.
+
+Windows and Linux currently store ordinary SQLite files. Their at-rest
+confidentiality depends on operating-system controls such as BitLocker or
+LUKS when those controls are enabled and managed correctly.
+
+\boundary{Encryption protects data against specific storage threats. It does
+not protect a database from every process running as the unlocked user, prove
+memory correctness, or replace tested backup and key-recovery procedures.}
+
+\clearpage
+\section{Scale Claims Should Follow Evidence}
+\articlelabel{19}
+\coreidea{An architecture can be designed for growth without pretending that
+unmeasured capacity has already been proven.}
+
+\system{} uses three mechanisms to avoid obvious unbounded work in hot recall:
+candidate-capped direct ranking, bounded graph traversal, and optional cold
+partitions for inactive derived edges. Incremental audit verification avoids
+rehashing an already validated prefix on every routine check.
+
+These choices make larger memory stores plausible. They do not establish a
+supported maximum. SQLite file size, full-text selectivity, cache pressure,
+audit growth, backup duration, archive churn, concurrent writes, and hardware
+all affect real deployments.
+
+The paper therefore reports what it measured. In one Apple M2 probe with
+10,002 records, direct recall had a median of 17.139 milliseconds and graph
+recall 24.799 milliseconds. Graph recall found the constructed two-hop target
+at rank 2; direct top-10 recall did not. The candidate cap remained 200.
+
+That experiment supports the intended bounded-recall and multi-hop mechanism
+for one synthetic scenario. It is not a million-record benchmark, a
+multilingual relevance evaluation, a sustained concurrency test, or evidence
+of state-of-the-art answer quality.
+
+Engineering credibility improves when design projections and validated
+results remain separate. The next useful evidence is not a larger adjective;
+it is a broader workload, reproducible measurements, and published failure
+conditions.
+
+\boundary{Performance numbers vary by host and run. The more reproducible
+claims are the configured bounds, returned rank, graph path, and visited-edge
+count.}
+
+\clearpage
+\section{The End Goal: Governed Memory Infrastructure}
+\articlelabel{20}
+\coreidea{The long-term value is a memory layer that remains useful as models,
+interfaces, and applications change.}
+
+\system{} is designed so that memory does not belong to one language model.
+The model can be local or remote and can change over time. Canonical records,
+trust transitions, graph lineage, audit evidence, and approvals remain outside
+the model.
+
+This makes the system potentially useful in several roles: personal assistant
+memory, memory for agents using MCP or an SDK, governed intake from external
+channels, and decision memory around engineering workflows. The application
+may use recalled records to augment a prompt, but retrieval augmentation is
+only one integration point.
+
+The more precise description is a \textbf{governed memory and effect-control
+plane}. It keeps accepted information durable, separates suspicious material,
+shows why a result surfaced, distinguishes information from authority, and
+records uncertainty when an external outcome cannot be proven.
+
+The architecture does not depend on claims that every component is new. Full
+text search, graphs, provenance, hash chains, approvals, and compensating
+actions are established techniques. The systems contribution is their
+composition around inspectable memory transitions and approval-bound effects.
+
+The remaining work is concrete: stronger cross-platform encryption, broader
+retrieval-quality evaluation, larger scale tests, operating-system sandboxing,
+better adapters, and independent security review. Those improvements matter
+more than presenting the system as finished.
+
+The intended user experience is simple: remember what was accepted, show
+where it came from, keep unreviewed content separate, ask before changing the
+world, and admit when the evidence is incomplete.
+
+\boundary{\system{} is an evolving open-source system. Its potential should
+be judged against implemented behavior, reproducible evidence, and explicit
+limitations rather than unsupported claims of universal novelty.}
+
+\end{document}
