@@ -45,10 +45,10 @@ workers, or share an engine connection across arbitrary threads.
 
 ## PostgreSQL deployment
 
-Install the optional backend and keep the DSN in the host secret manager:
+Install AetnaMem and keep the DSN in the host secret manager:
 
 ```bash
-pip install 'aetnamem[postgres]'
+pip install aetnamem
 export DECISION_DATABASE_URL='postgresql://...'
 ```
 
@@ -87,8 +87,8 @@ issue a short-lived `PrincipalAttestation` after login and configure
 namespace, principal, assurance, issue/expiry times, and a nonce. Clients must
 not select those fields before the host signs them.
 
-`Ed25519Signer` is the local/reference asymmetric implementation from
-`aetnamem[signing]`. `AwsKmsSigner` and `AwsKmsVerifier` accept a standard
+`Ed25519Signer` is the included local/reference asymmetric implementation.
+`AwsKmsSigner` and `AwsKmsVerifier` accept a standard
 boto3-compatible KMS client and use KMS `DIGEST` mode. The KMS key must be an
 asymmetric signing key supporting the selected algorithm. IAM, key policies,
 rotation, disablement, deletion, public-key distribution, and KMS API auditing

@@ -7,7 +7,7 @@ drive over ``127.0.0.1`` HTTP. Two bearer tokens separate the roles: the
 holds the approval key, so the model — which only ever reaches the agent token
 via the host loop — can stage effects but never authorize its own.
 
-Stdlib only (``http.server``): the zero-dependency promise holds.
+Implemented with ``http.server`` and no additional web-framework dependency.
 """
 
 from aetnamem.service.app import ControlService, build_service, serve

@@ -101,7 +101,7 @@ either the vote commits and is counted or closure commits and the vote fails.
 One `DecisionEngine`/SQLite connection must not be shared across arbitrary
 request threads.
 
-PostgreSQL is available through `pip install aetnamem[postgres]` and
+PostgreSQL is included by `pip install aetnamem` and is selected with
 `DecisionEngine.postgres(dsn)`. Each engine owns one connection; horizontally
 deployed hosts should obtain one engine/store per request from their normal
 pool. PostgreSQL row locks serialize ballot mutation with closure, advisory

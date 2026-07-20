@@ -1,8 +1,8 @@
-# X article — AetnaMem 0.4.0a1
+# X article — AetnaMem 0.4.0
 
 ## Post copy
 
-We just released AetnaMem 0.4.0a1: an open, auditable path from evidence to an
+We just released AetnaMem 0.4.0: an open, auditable path from evidence to an
 approved change.
 
 Most organizations do not struggle because they have zero evidence. The hard
@@ -44,18 +44,18 @@ and supplies the UI; the library supplies the decision contract, persistence,
 concurrency, audit trail, signatures, and export verification. It works with
 Claude, Grok/xAI, OpenAI, Ollama, conventional software, or no model at all.
 
-Try the alpha:
+Install it:
 
 ```bash
-pip install --pre 'aetnamem[production]==0.4.0a1'
+pip install aetnamem
 aetnamem-etd-playground --db ./etd.db --output ./etd-output
 aetnamem-etd-verify ./etd-output/decision-bundle.json
 ```
 
-Why alpha? Because software can prove internal consistency, but it cannot
-manufacture external clinical legitimacy. We have completed the engineering
-and published the real pilot/reviewer protocol. A hospital or policy group
-must still run the workflow with real participants, and an independent
+The package is now the stable latest install, while the collaborative decision
+SDK is still labeled experimental. Software can prove internal consistency,
+but it cannot manufacture external clinical legitimacy. A hospital or policy
+group must still run the workflow with real participants, and an independent
 methodologist must review the result.
 
 That boundary matters. “Auditable EtD infrastructure” is a claim we can test.
@@ -66,7 +66,7 @@ processes, vote-versus-close races, complete evidence-to-authorization flows,
 signed receipt verification, purge verification, and clean package installs.
 
 Repository: https://github.com/aetna000/aetnamem  
-PyPI: https://pypi.org/project/aetnamem/0.4.0a1/
+PyPI: https://pypi.org/project/aetnamem/0.4.0/
 
 If you work on clinical guidelines, policy governance, or controlled business
 change, I would especially value feedback on the host API and pilot protocol.
@@ -76,7 +76,7 @@ change, I would especially value feedback on the host API and pilot protocol.
 
 ## Short launch post
 
-AetnaMem 0.4.0a1 is out: a provider-neutral, auditable chain from evidence →
+AetnaMem 0.4.0 is out: a provider-neutral, auditable chain from evidence →
 EtD judgment → recommendation → approval → scoped authorization → guarded
 change.
 
@@ -84,7 +84,7 @@ PostgreSQL multi-user support, signed Ed25519/KMS receipts, COI/retention purge,
 offline verification, and a complete playground.
 
 ```bash
-pip install --pre 'aetnamem[production]==0.4.0a1'
+pip install aetnamem
 ```
 
 https://github.com/aetna000/aetnamem

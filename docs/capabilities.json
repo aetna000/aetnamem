@@ -1,7 +1,7 @@
 {
   "decision_http_server": "not_included",
   "decision_identity": "host_or_signed_attestation",
-  "decision_postgres": "implemented_optional_extra",
+  "decision_postgres": "implemented",
   "decision_python_sdk": "experimental",
   "decision_receipt_signing": "implemented_ed25519_and_kms_adapter",
   "decision_retention_purge": "implemented",

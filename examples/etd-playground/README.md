@@ -19,7 +19,7 @@ aetnamem-etd-playground \
 For a real Linux/PostgreSQL process contract:
 
 ```bash
-pip install 'aetnamem[production]'
+pip install aetnamem
 DECISION_DATABASE_URL='postgresql://...' \
   aetnamem-etd-playground \
     --postgres-dsn-env DECISION_DATABASE_URL \

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.4.0a1" src="https://img.shields.io/badge/version-0.4.0a1-315A7D?style=flat-square">
+  <img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -26,7 +26,7 @@
   <a href="./TODO.md">Roadmap</a>
 </p>
 
-A local-first, zero-dependency Python engine for provenance-aware agent memory
+A local-first Python engine for provenance-aware agent memory
 and optional guarded actions. The reference store is one SQLite file. Its
 security claims are deterministic and testable, but deliberately narrower
 than “the database is trusted” or “every external action is reversible.”
@@ -310,9 +310,9 @@ case = engine.create_case(
 The host supplies authentication, users, UI, HTTP/TLS, notifications, and
 organization-level authorization. The SDK enforces case membership, recusal,
 idempotency, concurrency, exact revision binding, and audit transitions.
-`aetnamem[postgres]` adds the multi-process backend;
-`aetnamem[signing]` adds Ed25519 identity/receipt verification; the provider-
-neutral KMS adapter accepts a host-supplied AWS KMS client. Decision and COI
+The standard installation includes both the SQLite and PostgreSQL backends plus
+Ed25519 identity/receipt verification; the provider-neutral KMS adapter accepts
+a host-supplied AWS KMS client. Decision and COI
 payloads have independently configurable logical retention and signed purge
 receipts. These features do not claim GRADE, clinical, or regulatory
 compliance. Run `aetnamem-etd-playground` against SQLite or PostgreSQL and
@@ -327,8 +327,8 @@ runbook](./docs/etd-pilot-methodology-review.md).
 ## Use from agents (MCP)
 
 `aetnamem mcp` currently serves **memory verbs only** as MCP tools over stdio:
-newline-delimited JSON-RPC implemented with the standard library only, so the
-zero-dependency promise holds. Defaults: database at
+newline-delimited JSON-RPC implemented with the standard library only and does
+not require an additional MCP framework. Defaults: database at
 `~/.aetnamem/memories.db` (override
 with `--db` or `$AETNAMEM_DB`) and subject `default` (`--subject`), so
 single-user personal agents need no per-call subject wiring. It is not yet an
@@ -517,7 +517,7 @@ benchmark scenario.
 
 ## Documentation
 
-- **[0.4.0a1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.0a1.md)** — evidence-to-approved-change capabilities,
+- **[0.4.0 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.0.md)** — evidence-to-approved-change capabilities,
   installation, validation, and claims boundary.
 - **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
   onboarding checks, provider setup, approval UI, safe workspace, Keychain

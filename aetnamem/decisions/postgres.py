@@ -33,7 +33,7 @@ class PostgresDecisionStore(SQLiteDecisionStore):
             import psycopg
             from psycopg.rows import dict_row
         except ImportError as exc:  # pragma: no cover - dependency guard
-            raise RuntimeError("PostgreSQL support requires 'pip install aetnamem[postgres]'") from exc
+            raise RuntimeError("PostgreSQL support requires a complete 'pip install aetnamem'") from exc
         if connection is not None and dsn is not None:
             raise ValueError("supply either dsn or connection, not both")
         if connection is None and not dsn:

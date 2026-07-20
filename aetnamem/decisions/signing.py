@@ -61,7 +61,7 @@ class Ed25519Signer:
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         except ImportError as exc:  # pragma: no cover - dependency-path guard
-            raise RuntimeError("Ed25519 support requires 'pip install aetnamem[signing]'") from exc
+            raise RuntimeError("Ed25519 support requires a complete 'pip install aetnamem'") from exc
         return cls(Ed25519PrivateKey.generate(), key_id=key_id)
 
     @classmethod
@@ -71,7 +71,7 @@ class Ed25519Signer:
         try:
             from cryptography.hazmat.primitives.serialization import load_pem_private_key
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("PEM signing requires 'pip install aetnamem[signing]'") from exc
+            raise RuntimeError("PEM signing requires a complete 'pip install aetnamem'") from exc
         key = load_pem_private_key(pem, password=password)
         return cls(key, key_id=key_id)
 
@@ -103,7 +103,7 @@ class Ed25519Verifier:
         try:
             from cryptography.hazmat.primitives.serialization import load_pem_public_key
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("PEM verification requires 'pip install aetnamem[signing]'") from exc
+            raise RuntimeError("PEM verification requires a complete 'pip install aetnamem'") from exc
         return cls({key_id: load_pem_public_key(pem) for key_id, pem in public_keys.items()})
 
     def verify_digest(self, digest: str, signature: SignatureEnvelope) -> bool:

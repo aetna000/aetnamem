@@ -62,7 +62,7 @@ def test_integration_json_files_parse() -> None:
     json.loads((ROOT / "examples" / "etd-playground" / "pilot-config.example.json").read_text())
     assert capabilities["decision_python_sdk"] == "experimental"
     assert capabilities["decision_http_server"] == "not_included"
-    assert capabilities["decision_postgres"] == "implemented_optional_extra"
+    assert capabilities["decision_postgres"] == "implemented"
     assert capabilities["decision_retention_purge"] == "implemented"
     assert capabilities["mcp_filter_gate"] == "implemented"
     assert capabilities["mcp_action_staging_bridge"] == "not_implemented"
