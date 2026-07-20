@@ -483,7 +483,7 @@ Trials: {comparison['paired_trials']} paired fresh-session tasks ({meta['cases']
 | Uncached input tokens, total | {baseline['input_tokens_total']:,} | {treatment['input_tokens_total']:,} | {comparison['uncached_input_tokens_change']:+,} |
 | Cache-read tokens, total | {baseline['cache_read_tokens_total']:,} | {treatment['cache_read_tokens_total']:,} | — |
 | Correct answers | {baseline['correct']}/{baseline['trials']} | {treatment['correct']}/{treatment['trials']} | — |
-| Provider-reported cost | ${baseline['provider_cost_usd_total']:.6f} | ${treatment['provider_cost_usd_total']:.6f} | **-{comparison['provider_cost_reduction_percent']:.3f}%** |
+| Provider-reported cost | ${baseline['provider_cost_usd_total']:.6f} | ${treatment['provider_cost_usd_total']:.6f} | **{-comparison['provider_cost_reduction_percent']:+.3f}%** |
 | Median wall latency | {baseline['latency_seconds_median']:.3f}s | {treatment['latency_seconds_median']:.3f}s | — |
 
 The paired mean prompt-token saving was {comparison['paired_prompt_tokens_saved_mean']:,.1f} tokens per turn; the deterministic
@@ -517,6 +517,11 @@ tool schemas, caching, language, prompt length, and retrieval selectivity. The A
 overhead plus bounded persona/recall context. Prompt caching was not credited (`cacheRead` is reported separately), and no
 claim is made about long conversations, procedural skill selection, or clinical outcome quality. Independent replication,
 additional models, larger task sets, and repeated runs on controlled hardware are required before inferential generalization.
+
+DeepSeek served a larger fraction of the native arm from its inexpensive prompt cache ({baseline['cache_hit_fraction']:.1%}
+versus {treatment['cache_hit_fraction']:.1%}). Consequently, fewer prompt tokens did not reduce the bill in this run: the
+AetnaMem arm cost {-comparison['provider_cost_reduction_percent']:+.3f}% more. Selective memory and prompt caching optimize
+different quantities and should be evaluated together.
 """
 
 

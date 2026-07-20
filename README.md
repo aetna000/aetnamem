@@ -400,13 +400,19 @@ subject and must not be shared between authenticated users.
 
 By default, each prompt receives no more than three matching memories within a
 1,200-character recall block plus a 600-character persona block, and unrelated
-queries receive no recall block. For illustration, replacing an 8,000-token
-always-loaded memory with a roughly 450-token bounded pack saves about 7,550
-input tokens per model call for that memory component. This is arithmetic, not
-a universal benchmark: total savings depend on the original context, task,
-model tokenizer, provider caching, and whether duplicated native memory was
-actually removed. The plugin README includes a reproducible before/after
-measurement table and a two-minute recall demo.
+queries receive no recall block.
+
+In a checked-in OpenClaw 2026.7.1-2 + DeepSeek V4 Flash benchmark (thinking
+off), 20 paired fresh-session tasks used **596,296 prompt tokens** with a
+19,489-character native `MEMORY.md` versus **520,837** with the same 94 facts
+behind AetnaMem: **75,459 fewer prompt tokens (12.655%)**, with 20/20 correct
+answers in both arms. “Prompt tokens” includes uncached input plus cache-read
+tokens. DeepSeek cached more of the native arm, so the measured provider bill
+was actually **0.674% higher** with AetnaMem ($0.056652 vs $0.056273). That
+result is why token count, cache behavior, cost, and task success are reported
+separately. It is a synthetic integration benchmark, not a universal savings
+claim or a clinical pilot. The [raw trials, protocol, limitations, and reproduction command](./bench/openclaw_memory/)
+are checked in; the plugin README also includes the two-minute recall demo.
 
 ## Integrating with other agent frameworks
 

@@ -21,3 +21,7 @@ are written as JSON plus a generated Markdown methods/results report under
 `results/`. Do not treat one run as a universal product claim: replicate it,
 retain independent run files, report failures, and expand models/tasks before
 using the data for a paper-level inference.
+
+The definitive DeepSeek run is checked in under [`results/`](results/). Its
+technical protocol, statistical interpretation, and threats to validity are in
+[`docs/openclaw-memory-evaluation.md`](../../docs/openclaw-memory-evaluation.md).

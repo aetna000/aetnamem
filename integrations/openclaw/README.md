@@ -89,6 +89,35 @@ Prompt caching remains complementary: caching makes an identical repeated
 prefix cheaper, while AetnaMem determines which durable information needs to be
 in the prompt at all.
 
+## Measured OpenClaw + DeepSeek result
+
+On 2026-07-20 UTC we ran a checked-in paired integration benchmark with
+OpenClaw 2026.7.1-2 and DeepSeek V4 Flash (thinking off). The synthetic,
+hospital-operations workload contained 94 durable facts in a 19,489-character
+native `MEMORY.md`; the AetnaMem arm stored the identical facts out of prompt
+and used a 163-character bootstrap file. Each of 10 pre-registered questions
+ran twice per arm in a fresh session, with pair order alternated.
+
+| Metric | Native `MEMORY.md` | AetnaMem | Result |
+|---|---:|---:|---:|
+| prompt tokens (uncached input + cache read) | 596,296 | 520,837 | **75,459 fewer (12.655%)** |
+| median prompt tokens / task | 29,808 | 26,028 | **3,801 paired median fewer** |
+| correct answers | 20/20 | 20/20 | equal |
+| provider-reported cost | $0.056273 | $0.056652 | AetnaMem **0.674% higher** |
+| median end-to-end latency | 12.421 s | 12.215 s | descriptive only |
+
+Every treatment trial retrieved its pre-registered target record, and the
+248-event AetnaMem audit chain verified after the run. DeepSeek served 41.0%
+of native prompt tokens versus 28.1% of AetnaMem prompt tokens from its very
+cheap cache. That is why context fell while the bill did not: selective memory
+and prompt caching optimize different quantities.
+
+This is measured evidence, not a universal savings promise or a clinical
+pilot. It covers one model, one OpenClaw release, 20 paired tasks, and a
+synthetic mature memory. See the [machine-readable trials and full method](https://github.com/aetna000/aetnamem/tree/main/bench/openclaw_memory/results),
+the [pre-registered cases](https://github.com/aetna000/aetnamem/blob/main/bench/openclaw_memory/cases.json),
+and the [benchmark protocol](https://github.com/aetna000/aetnamem/tree/main/bench/openclaw_memory).
+
 ## Two-minute memory demo
 
 After the three install commands, tell the OpenClaw assistant:
@@ -131,11 +160,13 @@ Use the same tasks, model, tools, and fresh-session policy for both runs:
 5. Repeat the same 10 tasks in fresh sessions and compare medians as well as
    task success. Do not compare token counts alone.
 
-Report results separately:
+Report results separately. Count prompt tokens as uncached input plus
+cache-read tokens; otherwise a cache hit is mistaken for removed context:
 
 | Metric | Before | With AetnaMem | Change |
 |---|---:|---:|---:|
-| median input tokens per task | | | |
+| median prompt tokens per task | | | |
+| median uncached input tokens | | | |
 | median cache-read tokens | | | |
 | successful tasks / 10 | | | |
 | stale-memory errors | | | |
