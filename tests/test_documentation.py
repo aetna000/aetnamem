@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
-import tomllib
 
 from aetnamem import Memory
 from aetnamem.mcp import MCPServer
@@ -70,7 +69,10 @@ def test_integration_json_files_parse() -> None:
 
 
 def test_readme_version_matches_package_metadata() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    metadata = (ROOT / "pyproject.toml").read_text()
+    match = re.search(r'^version = "([^"]+)"$', metadata, flags=re.MULTILINE)
+    assert match is not None
+    version = match.group(1)
     readme = (ROOT / "README.md").read_text()
-    assert f"Version {project['version']}" in readme
-    assert f"version-{project['version']}" in readme
+    assert f"Version {version}" in readme
+    assert f"version-{version}" in readme
