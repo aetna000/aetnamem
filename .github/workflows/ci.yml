@@ -76,7 +76,7 @@ jobs:
           path: dist
       - name: Install and exercise wheel
         run: |
-          python -m pip install --no-deps dist/*.whl
+          python -m pip install dist/*.whl
           python -m pip check
           cd "$RUNNER_TEMP"
           python "$GITHUB_WORKSPACE/tools/smoke_installed_package.py"
