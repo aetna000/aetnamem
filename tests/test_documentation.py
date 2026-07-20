@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
+import tomllib
 
 from aetnamem import Memory
 from aetnamem.mcp import MCPServer
@@ -13,9 +14,10 @@ MARKDOWN_FILES = (
     ROOT / "README.md",
     ROOT / "TODO.md",
     ROOT / "plan.md",
-    *sorted((ROOT / "docs").glob("*.md")),
+    *sorted((ROOT / "docs").rglob("*.md")),
     ROOT / "bench" / "README.md",
     ROOT / "integrations" / "openclaw" / "README.md",
+    ROOT / "examples" / "etd-playground" / "README.md",
 )
 
 
@@ -56,3 +58,19 @@ def test_integration_json_files_parse() -> None:
         "tsconfig.json",
     ):
         json.loads((integration / name).read_text())
+
+    capabilities = json.loads((ROOT / "docs" / "capabilities.json").read_text())
+    json.loads((ROOT / "examples" / "etd-playground" / "pilot-config.example.json").read_text())
+    assert capabilities["decision_python_sdk"] == "experimental"
+    assert capabilities["decision_http_server"] == "not_included"
+    assert capabilities["decision_postgres"] == "implemented_optional_extra"
+    assert capabilities["decision_retention_purge"] == "implemented"
+    assert capabilities["mcp_filter_gate"] == "implemented"
+    assert capabilities["mcp_action_staging_bridge"] == "not_implemented"
+
+
+def test_readme_version_matches_package_metadata() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    readme = (ROOT / "README.md").read_text()
+    assert f"Version {project['version']}" in readme
+    assert f"version-{project['version']}" in readme

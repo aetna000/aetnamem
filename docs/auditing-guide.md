@@ -234,14 +234,17 @@ effects beyond adapter evidence.
 
 ## Known limits (roadmap)
 
-- Checkpoints and receipts are **hashed, not signed** — relative to a trusted
-  anchored head they support consistency checks, not authorship. Key-based
-  signatures are planned.
+- Memory checkpoints and Guarded Action receipts are **hashed, not
+  asymmetrically signed** — relative to a trusted anchored head they support
+  consistency checks, not authorship. Collaborative decisions separately
+  support optional Ed25519/KMS-backed receipt signatures.
 - Record/episode content is plaintext at rest; **crypto-shredding**
   (per-record keys, erasure = key destruction) is the planned hardening.
 - Logical purge does not sanitize SQLite free pages, WAL, backups, exports,
   snapshots, or replicas.
 - Timestamps trust the local clock at write time; anchor checkpoints to an
   RFC 3161 service if you need trusted time.
-- No retention policies yet (storage limitation must be enforced by the
-  caller), and no automatic special-category (GDPR Art. 9) flagging.
+- The Memory record layer has no scheduled retention policy (its caller must
+  enforce storage limitation). Collaborative decisions have case-scoped
+  payload/COI retention and purge receipts. Neither layer automatically
+  classifies special-category data (for example GDPR Art. 9).

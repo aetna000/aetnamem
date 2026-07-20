@@ -376,6 +376,12 @@ original values remain available in the cited artifact.
 
 ### 6.9 `EngineeringDecision`
 
+Implementation should use the generic artifact/revision, ballot, adoption,
+approval, and authorization contracts in
+[decision-workflow-spec.md](decision-workflow-spec.md) rather than introducing
+a second decision state machine. The JSON below remains the inference-profile
+content carried by a decision artifact revision.
+
 ```json
 {
   "schema_version": "aetnamem.inference.decision.v1",

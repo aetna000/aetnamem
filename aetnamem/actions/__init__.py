@@ -1,5 +1,6 @@
 from aetnamem.actions.adapters import ActionAdapter, ActionContext, FilesystemAdapter
 from aetnamem.actions.approval import Approval, ApprovalAuthority
+from aetnamem.actions.authority import AuthorityResolver, ResolvedAuthority
 from aetnamem.actions.engine import ActionEngine, ActionStateError, AdapterDriftError
 from aetnamem.actions.models import (
     ActionMode,
@@ -29,12 +30,14 @@ __all__ = [
     "AdapterReceipt",
     "Approval",
     "ApprovalAuthority",
+    "AuthorityResolver",
     "EffectClass",
     "EvidenceRef",
     "FilesystemAdapter",
     "GuardPolicy",
     "OperationProposal",
     "PreparedOperation",
+    "ResolvedAuthority",
     "TransactionJournalImporter",
     "TransactionState",
     "VerificationResult",

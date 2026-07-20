@@ -152,9 +152,10 @@ result = engine.commit(patch.transaction_id)
   dependency graph of multiple operations.
 - `memory_log_action` accepts caller-defined payloads and can contain raw data;
   its caller must enforce the digest-only convention.
-- A full MCP interception gate, additional execution providers, external
-  reviewer channels, database services, and social-network adapters remain in
-  [TODO.md](../TODO.md).
+- The fail-closed filter-only MCP gate is implemented. Automatic conversion of
+  arbitrary blocked upstream writes into staged `WorldPatch` transactions,
+  additional execution providers, external reviewer channels, database
+  services, and social-network adapters remain in [TODO.md](../TODO.md).
 
 ## External journal import
 
@@ -191,3 +192,19 @@ and standalone memory verifier remain compatible.
 approval scope/signature, and receipt without importing the `aetnamem` package.
 It verifies recorded structure and cryptographic bindings; it cannot prove a
 remote system performed an effect beyond the evidence supplied by its adapter.
+
+## Collaborative decision authorization
+
+`aetnamem.decisions.DecisionAuthorityResolver` is an opt-in bridge from an
+institutionally approved implementation plan to Guarded Actions. A panel vote
+or recommendation adoption is evidence, not execution authority. The bridge
+emits the adoption as `informed_by` and only a scoped, active institutional
+grant as `authorized_by`.
+
+Configure `decision_authorization` as a trusted tier only in the trusted host
+that owns the resolver. The resolver dereferences and checks the grant at both
+stage and commit, including digest, namespace, plan revision, expiry,
+revocation, subject, adapter, operation, and optional resource. The ordinary
+exact-plan HMAC approval remains required. The standalone action verifier
+checks the recorded action binding; online grant status is checked by the
+resolver and is not inferred from an untrusted copied `EvidenceRef`.

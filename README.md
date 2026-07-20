@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-315A7D?style=flat-square">
+  <img alt="Version 0.4.0a1" src="https://img.shields.io/badge/version-0.4.0a1-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -277,10 +277,52 @@ agent-facing process. The `--approver-label` value is attribution; the shared ke
 authenticates key possession, not that label. Likewise, CLI
 `--authority-id/--authority-digest` flags are only host-attested when a trusted
 host controls the staging command. The filesystem CLI is a reference vertical
-slice; the MCP gate, Telegram reviewer, additional execution providers,
+slice; the filter-only MCP gate is implemented, while automatic staging of
+arbitrary upstream MCP writes, Telegram review, additional execution providers,
 Firestore, and X adapters are tracked explicitly in the [roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md).
 Protocol and security details are in
 [guarded-actions guide](https://github.com/aetna000/aetnamem/blob/main/docs/guarded-actions.md).
+
+## Collaborative decisions and EtD
+
+The optional `aetnamem.decisions` Python SDK adds namespace-scoped,
+multi-principal decision cases, immutable evidence links, conflict/recusal
+handling, ballots, deterministic outcomes, recommendation adoption,
+institutional approvals, and scoped change authorization. `aetnamem.etd`
+provides versioned clinical and generic Evidence-to-Decision templates plus
+deterministic reporting.
+
+```python
+from aetnamem.decisions import ActorContext, DecisionEngine
+from aetnamem.etd import clinical_etd_template
+
+engine = DecisionEngine("organization.db")
+chair = ActorContext("hospital-7", "principal-42")  # host-authenticated values
+case = engine.create_case(
+    chair,
+    title="Medication reconciliation",
+    template=clinical_etd_template(),
+    content={"question": "Should we introduce pharmacist reconciliation?"},
+    idempotency_key="request-001",
+)
+```
+
+The host supplies authentication, users, UI, HTTP/TLS, notifications, and
+organization-level authorization. The SDK enforces case membership, recusal,
+idempotency, concurrency, exact revision binding, and audit transitions.
+`aetnamem[postgres]` adds the multi-process backend;
+`aetnamem[signing]` adds Ed25519 identity/receipt verification; the provider-
+neutral KMS adapter accepts a host-supplied AWS KMS client. Decision and COI
+payloads have independently configurable logical retention and signed purge
+receipts. These features do not claim GRADE, clinical, or regulatory
+compliance. Run `aetnamem-etd-playground` against SQLite or PostgreSQL and
+verify its export with `aetnamem-etd-verify`.
+
+See the [decision workflow specification](./docs/decision-workflow-spec.md),
+[EtD profile](./docs/etd-profile.md), and
+[host integration guide](./docs/decision-host-integration.md). Organizations
+preparing real users should also use the [pilot and methodology-review
+runbook](./docs/etd-pilot-methodology-review.md).
 
 ## Use from agents (MCP)
 
@@ -464,8 +506,10 @@ index provides bounded multi-hop recall with path evidence and direct-record
 fallback. Guarded Actions additionally
 ships an action ledger, exact-plan shared-key approvals, filesystem reference
 adapter, recovery fencing, external journal import, and independent action
-verifier. The MCP action gate, authenticated host identity, encrypted payloads,
-LLM-backed graph extraction, HTTP deployments, and additional
+verifier. A fail-closed, filter-only MCP gate is implemented; automatic
+conversion of arbitrary upstream writes into staged actions, authenticated
+host identity, encrypted payloads, LLM-backed graph extraction, public HTTP
+deployments, and additional
 storage backends remain roadmap work — see the [roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md).
 The policy gates in [aetnamem/core/policy.py](https://github.com/aetna000/aetnamem/blob/main/aetnamem/core/policy.py) are
 the product; nothing in the engine may reference the vocabulary of a
@@ -473,6 +517,8 @@ benchmark scenario.
 
 ## Documentation
 
+- **[0.4.0a1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.0a1.md)** — evidence-to-approved-change capabilities,
+  installation, validation, and claims boundary.
 - **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
   onboarding checks, provider setup, approval UI, safe workspace, Keychain
   secrets, and encrypted at-rest database sealing.
@@ -503,6 +549,16 @@ benchmark scenario.
   verification rules, and the threat-model table.
 - **[Guarded actions](https://github.com/aetna000/aetnamem/blob/main/docs/guarded-actions.md)** — action modes,
   authority boundaries, state transitions, guarantees, and non-guarantees.
+- **[Collaborative decision workflow](https://github.com/aetna000/aetnamem/blob/main/docs/decision-workflow-spec.md)** — generic
+  cases, revisions, evidence lineage, ballots, adoption, authorization,
+  concurrency, receipts, and trust boundaries.
+- **[Evidence-to-Decision profile](https://github.com/aetna000/aetnamem/blob/main/docs/etd-profile.md)** — versioned EtD criteria,
+  artifact chain, report surface, and methodology boundary.
+- **[Decision host integration](https://github.com/aetna000/aetnamem/blob/main/docs/decision-host-integration.md)** — authenticated-host contract,
+  namespace derivation, SQLite/PostgreSQL deployment, signed identity,
+  retention, and approved-change bridge.
+- **[EtD pilot and methodology review](https://github.com/aetna000/aetnamem/blob/main/docs/etd-pilot-methodology-review.md)** — production entry criteria,
+  multi-user test protocol, acceptance evidence, and independent-review package.
 - **[Channels and governed outbound proposal](https://github.com/aetna000/aetnamem/blob/main/docs/channels-outbound-spec.md)** — provider-neutral
   intake, optional business review, and evidence-bound external adapters;
   proposed, not implemented.

@@ -36,6 +36,8 @@ def main() -> None:
     }
     assert scripts == {
         "aetnamem": "aetnamem.cli:main",
+        "aetnamem-etd-playground": "aetnamem.etd.playground:main",
+        "aetnamem-etd-verify": "aetnamem.decisions.verify:main",
         "aetnamem-service": "aetnamem.service.__main__:main",
     }, scripts
 
@@ -45,12 +47,31 @@ def main() -> None:
     service_executable = Path(sys.executable).with_name("aetnamem-service")
     assert service_executable.is_file(), "aetnamem-service command was not installed"
     run(str(service_executable), "--help")
+    etd_playground = Path(sys.executable).with_name("aetnamem-etd-playground")
+    etd_verify = Path(sys.executable).with_name("aetnamem-etd-verify")
+    assert etd_playground.is_file() and etd_verify.is_file()
 
     with tempfile.TemporaryDirectory(prefix="aetnamem-wheel-smoke-") as temp:
         root = Path(temp)
         database = root / "memory.db"
         workspace = root / "workspace"
         workspace.mkdir()
+
+        decision_output = root / "decision-output"
+        run(
+            str(etd_playground),
+            "--db",
+            str(database),
+            "--output",
+            str(decision_output),
+            "--namespace",
+            "wheel-smoke-hospital",
+        )
+        decision_verification = json.loads(
+            run(str(etd_verify), str(decision_output / "decision-bundle.json")).stdout
+        )
+        assert decision_verification["valid"] is True, decision_verification
+        assert "Criterion assessments" in (decision_output / "etd-report.md").read_text()
 
         json_run(
             str(executable),

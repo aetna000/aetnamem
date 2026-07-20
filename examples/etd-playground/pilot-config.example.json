@@ -1,0 +1,39 @@
+{
+  "format": "aetnamem-etd-pilot-config-v1",
+  "namespace_id_source": "authenticated_organization_claim",
+  "principal_id_source": "authenticated_subject_claim",
+  "database": {
+    "backend": "postgresql",
+    "dsn_environment_variable": "DECISION_DATABASE_URL",
+    "tls_required": true
+  },
+  "identity": {
+    "require_attestations": true,
+    "signer": "aws_kms_or_ed25519",
+    "key_id": "host-managed-key-id",
+    "attestation_ttl_seconds": 900
+  },
+  "retention": {
+    "payload_days": 365,
+    "coi_days": 90,
+    "external_store_policy_ids": [
+      "wal-policy-id",
+      "backup-policy-id",
+      "export-policy-id"
+    ]
+  },
+  "external_audit_checkpoint_sink": "host-managed-immutable-location",
+  "pilot": {
+    "real_data_enabled": false,
+    "required_roles": [
+      "chair",
+      "methodologist",
+      "voter",
+      "approver",
+      "privacy_security_owner",
+      "independent_reviewer"
+    ],
+    "stop_authority": "named-host-role",
+    "methodology_review_required": true
+  }
+}

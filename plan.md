@@ -33,6 +33,8 @@ rules documented in [docs/audit-log-spec.md](docs/audit-log-spec.md).
 - OpenClaw plugin wrapper: automatic recall/capture on OpenClaw hooks
 - Independent verifiers: [tools/verify_audit.py](tools/verify_audit.py) and
   [tools/verify_actions.py](tools/verify_actions.py)
+- Collaborative decision SDK: `from aetnamem.decisions import DecisionEngine`
+- EtD profile/playground: `aetnamem.etd` and `aetnamem-etd-playground`
 - Benchmark adapter and target files under [bench](bench)
 
 ## Core Layers
@@ -128,9 +130,19 @@ score stays honest.
    The first production-shaped vertical slice is implemented: atomic memory
    and audit writes, causal WorldPatch proposals, signed exact-plan approvals,
    a durable action ledger, explicit uncertainty, verified filesystem
-   compensation, receipts, and the `aetnamem actions` CLI. Remaining adapters,
-   the MCP interception gate, asymmetric identity, and encrypted payloads are
+   compensation, receipts, and the `aetnamem actions` CLI. The filter-only MCP
+   gate is implemented; automatic write-to-WorldPatch mediation, remaining
+   adapters, asymmetric identity, and encrypted payloads are
    tracked in [TODO.md](TODO.md).
+
+8. **Harden collaborative decisions and EtD.**
+   The experimental Python SDK now provides versioned decision artifacts,
+   exact lineage, membership/recusal, concurrent ballots, adoption,
+   institutional approval, scoped authorization, export verification, an EtD
+   profile, PostgreSQL multi-process persistence, asymmetric/KMS identity and
+   receipts, retention/purge receipts, a playground, and a pilot/review kit.
+   Actual organizational deployment and independent methodology findings are
+   external validation gates rather than repository implementation work.
 
 ## Non-Goals For The Current Version
 

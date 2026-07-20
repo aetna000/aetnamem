@@ -1,13 +1,19 @@
 # Integration guide: CLI and MCP
 
-aetnamem has four integration surfaces. Pick by what your host can do:
+aetnamem has five integration surfaces. Pick by what your host can do:
 
 | surface | use when | ships since |
 |---|---|---|
 | Python library (`from aetnamem import Memory`) | your agent runs Python | v0 |
 | Guarded Actions (`from aetnamem.actions import ActionEngine`) | your Python host can enforce a protected execution boundary | v0 |
+| Collaborative decisions (`from aetnamem.decisions import DecisionEngine`) | your authenticated host needs voting, EtD, and approved-change traceability | experimental |
 | CLI (`aetnamem <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
 | memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
+
+Collaborative decisions are an opt-in Python SDK and add nothing to the
+default memory MCP catalog. Authentication, the HTTP server, and the user
+interface belong to the host. See
+[decision-host-integration.md](decision-host-integration.md).
 
 The memory Python, CLI, and MCP surfaces drive the same `Memory` engine.
 Guarded Actions is adjacent and shares its store/audit chain, but the current
