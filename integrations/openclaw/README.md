@@ -62,11 +62,96 @@ duplicated in `MEMORY.md`, daily notes, or another auto-memory plugin. Keep
 OpenClaw skills as procedures; AetnaMem stores the user/project facts and
 outcomes that make those procedures task-specific.
 
+## Why this can reduce token use
+
+Without selective memory, durable facts often remain in an always-loaded file
+or are repeatedly reconstructed from conversation history. The model receives
+that material again on later calls whether the current task needs it or not.
+
+With this plugin, AetnaMem stores durable facts outside the prompt and adds only:
+
+- a persona block capped at **600 characters**;
+- at most **3 relevant memories** capped at **1,200 characters total**;
+- nothing when recall has no lexical match.
+
+The maximum default memory addition is therefore 1,800 characters—roughly 450
+tokens using a simple four-characters-per-token estimate. Actual tokenization
+depends on the model and language.
+
+Illustrative calculation, not a measured product claim: if an agent previously
+replayed 8,000 tokens of durable memory across 20 model calls, that component
+would consume about 160,000 input tokens. Replacing it with a 450-token bounded
+pack would consume at most about 9,000 input tokens: roughly 151,000 fewer tokens
+for the **memory component**. System prompts, selected skills, tools, current
+conversation, outputs, cache writes/reads, and model reasoning are separate.
+
+Prompt caching remains complementary: caching makes an identical repeated
+prefix cheaper, while AetnaMem determines which durable information needs to be
+in the prompt at all.
+
+## Two-minute memory demo
+
+After the three install commands, tell the OpenClaw assistant:
+
+```text
+Remember that production PostgreSQL requires sslmode=verify-full.
+```
+
+Start a new session, then ask:
+
+```text
+What SSL mode does production PostgreSQL require?
+```
+
+The plugin captures the user-stated fact after the first turn and injects the
+matching bounded memory before the second answer. Then test lifecycle behavior:
+
+```text
+Use sslmode=require instead going forward.
+Forget the PostgreSQL SSL preference.
+```
+
+The correction supersedes the recognized fact slot; forgetting returns a
+deletion receipt. Independently verify the audit chain with:
+
+```bash
+aetnamem verify ~/.aetnamem/memories.db
+```
+
+## Measure your real savings
+
+Use the same tasks, model, tools, and fresh-session policy for both runs:
+
+1. Before installation, record `/context detail` and provider-reported input,
+   cache-read, and output tokens for 10 representative tasks.
+2. Install AetnaMem, exercise the demo above, and confirm recall works.
+3. Back up `MEMORY.md`; remove only durable facts now verified in AetnaMem.
+   Keep bootstrap instructions and active working state.
+4. Disable any overlapping third-party auto-memory injection.
+5. Repeat the same 10 tasks in fresh sessions and compare medians as well as
+   task success. Do not compare token counts alone.
+
+Report results separately:
+
+| Metric | Before | With AetnaMem | Change |
+|---|---:|---:|---:|
+| median input tokens per task | | | |
+| median cache-read tokens | | | |
+| successful tasks / 10 | | | |
+| stale-memory errors | | | |
+| median latency | | | |
+
+Savings are not automatic if the old memory remains loaded. Adding AetnaMem on
+top of unchanged native memory can increase tokens slightly. The plugin does
+not shorten `SKILL.md` files or choose skills; OpenClaw still owns procedural
+skills, while AetnaMem supplies bounded facts, decisions, constraints, and past
+outcomes relevant to their execution.
+
 If `aetnamem` is not on OpenClaw's PATH, set `command` to the absolute venv
 path, or use `"command": "/path/to/python"` with
 `"commandArgs": ["-m", "aetnamem.cli", "mcp", "--db", "...", "--subject", "you"]`.
 
-## Verify it end-to-end
+## Verify development builds end-to-end
 
 ```bash
 npm run smoke        # drives the real engine through every call the plugin makes

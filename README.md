@@ -398,6 +398,16 @@ conversation hooks. It does not rewrite `MEMORY.md`; verify recall before
 removing duplicated native memory. One plugin instance currently has one fixed
 subject and must not be shared between authenticated users.
 
+By default, each prompt receives no more than three matching memories within a
+1,200-character recall block plus a 600-character persona block, and unrelated
+queries receive no recall block. For illustration, replacing an 8,000-token
+always-loaded memory with a roughly 450-token bounded pack saves about 7,550
+input tokens per model call for that memory component. This is arithmetic, not
+a universal benchmark: total savings depend on the original context, task,
+model tokenizer, provider caching, and whether duplicated native memory was
+actually removed. The plugin README includes a reproducible before/after
+measurement table and a two-minute recall demo.
+
 ## Integrating with other agent frameworks
 
 The rule is: **MCP first, native adapter only when it adds lifecycle hooks.**

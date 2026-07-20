@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true

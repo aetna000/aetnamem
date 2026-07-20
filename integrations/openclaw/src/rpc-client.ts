@@ -101,7 +101,7 @@ export class AetnamemClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.1" },
+      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.2" },
     });
     this.notify("notifications/initialized", {});
   }
