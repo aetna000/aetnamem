@@ -73,3 +73,22 @@ verification, and recovery. `aetnamem` is the canonical CLI executable.
 - [ ] Decide whether the SDK remains AGPL, becomes dual-licensed, or exposes a
       permissively licensed protocol/verifier package.
 - [ ] Build the flagship aetnamem research → review → X action demonstration.
+
+## Collaborative decisions and EtD
+
+- [x] Add a generic, optional decision engine without changing `Memory` defaults.
+- [x] Add namespace-scoped cases, pinned templates, immutable artifact revisions, and exact links.
+- [x] Add host-derived actor context, case capabilities, COI rulings, and recusal.
+- [x] Add idempotent concurrent voting, frozen eligibility, deterministic outcomes, and event cursors.
+- [x] Separate panel adoption, institutional approval, change authorization, and exact-plan approval.
+- [x] Revalidate decision authorization scope and revocation at action stage and commit.
+- [x] Add clinical/generic EtD profiles, Markdown reporting, bundle verification, and a playground.
+- [x] Add PostgreSQL repository support and multi-process contract tests.
+- [x] Add asymmetric/KMS principal attestations and signed decision receipts.
+- [x] Add retention/purge receipts for decision payloads and sensitive COI details.
+- [x] Publish a real multi-user pilot runbook, acceptance protocol, and external methodology-review package.
+
+The EtD engineering scope has no remaining implementation item. A real
+organization's pilot execution and an independent reviewer's signed findings
+are external validation evidence; they cannot truthfully be produced by the
+repository itself and are release/adoption gates, not missing SDK features.

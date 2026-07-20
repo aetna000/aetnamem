@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/javadtaghia/miniconda3/bin/pytest tests/test_documentation.py -q)",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python -c ' *)",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python paper/scripts/run_recall_forensics_eval.py --filler 200)",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d['results'], indent=1, sort_keys=True\\)\\)\")",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python paper/scripts/run_recall_forensics_eval.py --filler 1000 --output paper/data/recall-forensics.json)",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python -c \"import json; d=json.load\\(open\\('paper/data/recall-forensics.json'\\)\\); print\\(json.dumps\\(d['results'], sort_keys=True\\)[:400]\\); print\\('pairs:', d['results']['returned_pairs']\\)\")",
+      "Bash(make aetnamem-governed-memory.pdf)",
+      "Bash(/Users/javadtaghia/miniconda3/bin/python paper/scripts/validate_evidence.py)"
+    ]
+  }
+}

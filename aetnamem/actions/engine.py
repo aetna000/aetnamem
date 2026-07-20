@@ -9,6 +9,7 @@ import uuid
 
 from aetnamem.actions.adapters import ActionAdapter, ActionContext
 from aetnamem.actions.approval import Approval, ApprovalAuthority
+from aetnamem.actions.authority import AuthorityResolver
 from aetnamem.actions.models import (
     ActionMode,
     ActionReceipt,
@@ -52,12 +53,14 @@ class ActionEngine:
         mode: ActionMode | str = ActionMode.ENFORCE,
         approval_authority: ApprovalAuthority | None = None,
         policy: GuardPolicy | None = None,
+        authority_resolver: AuthorityResolver | None = None,
     ) -> None:
         self.memory = memory
         self.store = ActionStore(memory.store)
         self.mode = ActionMode(mode)
         self.approval_authority = approval_authority
         self.policy = policy or GuardPolicy()
+        self.authority_resolver = authority_resolver
         self.adapters = {adapter.name: adapter for adapter in adapters}
 
     def propose(
@@ -102,6 +105,12 @@ class ActionEngine:
             if prepared.adapter != proposal.adapter or prepared.operation != proposal.operation:
                 raise ValueError("adapter returned a mismatched prepared operation")
             self.policy.validate_operation(prepared, proposal.evidence, selected_mode)
+            self._resolve_authorities(
+                proposal.evidence,
+                subject_id=subject_id,
+                prepared=prepared,
+                phase="stage",
+            )
             manifest_digest = digest_json(adapter.manifest())
             prepared_payload = prepared.to_dict()
             arguments_digest = digest_json(prepared.arguments)
@@ -340,6 +349,7 @@ class ActionEngine:
                 + "; ".join(integrity["failures"])
             )
         self._verify_recorded_approval(transaction)
+        self._verify_resolved_authorities(transaction)
         self._verify_manifests(transaction)
 
         # Revalidate the complete approved patch before the first effect.
@@ -620,6 +630,51 @@ class ActionEngine:
             plan_hash=transaction["plan_hash"],
         ):
             raise ValueError("recorded approval is invalid or expired")
+
+    def _resolve_authorities(
+        self,
+        evidence: Iterable[EvidenceRef],
+        *,
+        subject_id: str,
+        prepared: PreparedOperation,
+        phase: str,
+    ) -> None:
+        if self.authority_resolver is None:
+            return
+        for ref in evidence:
+            if ref.relation != "authorized_by" or not self.authority_resolver.supports(ref):
+                continue
+            resolved = self.authority_resolver.validate(
+                ref,
+                subject_id=subject_id,
+                prepared_operation=prepared,
+                phase=phase,
+            )
+            if not resolved.valid or resolved.digest != ref.digest or resolved.ref_id != ref.ref_id:
+                raise ActionStateError("resolved action authority does not match its evidence reference")
+
+    def _verify_resolved_authorities(self, transaction: dict[str, Any]) -> None:
+        if self.authority_resolver is None:
+            return
+        for operation in transaction["operations"]:
+            _, prepared = self._prepared(operation)
+            refs = tuple(
+                EvidenceRef(
+                    kind=item["evidence_kind"],
+                    ref_id=item["ref_id"],
+                    digest=item["digest"],
+                    relation=item["relation"],
+                    trust_tier=item["trust_tier"],
+                    attested=bool(item["attested"]),
+                )
+                for item in operation["evidence"]
+            )
+            self._resolve_authorities(
+                refs,
+                subject_id=transaction["subject_id"],
+                prepared=prepared,
+                phase="commit",
+            )
 
     def _verify_manifests(self, transaction: dict[str, Any]) -> None:
         for operation in transaction["operations"]:

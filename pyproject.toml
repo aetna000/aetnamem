@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aetnamem"
-version = "0.3.0"
+version = "0.4.0a1"
 description = "Auditable memory engine for agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,11 +31,18 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",
+  "cryptography>=42.0.0,<49.0.0",
+  "psycopg[binary]>=3.2.0",
 ]
+postgres = ["psycopg[binary]>=3.2.0"]
+signing = ["cryptography>=42.0.0,<49.0.0"]
+production = ["cryptography>=42.0.0,<49.0.0", "psycopg[binary]>=3.2.0"]
 
 [project.scripts]
 aetnamem = "aetnamem.cli:main"
 aetnamem-service = "aetnamem.service.__main__:main"
+aetnamem-etd-playground = "aetnamem.etd.playground:main"
+aetnamem-etd-verify = "aetnamem.decisions.verify:main"
 
 [project.urls]
 Homepage = "https://github.com/aetna000/aetnamem"

@@ -25,7 +25,7 @@ Table `audit_log`, one row per event:
 | `sequence` | global monotonically increasing integer (SQLite AUTOINCREMENT) |
 | `event_id` | `aud_<uuid4hex>` |
 | `subject_id` | tenant/user scope; chains are per subject |
-| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `graph.*`, `entity.*`, `edge.*`, `alias.*`, `agent.*`, `action.*` |
+| `event_type` | e.g. `episode.ingested`, `memory.record_created`, `memory.record_quarantined`, `memory.record_promoted`, `memory.duplicate_ignored`, `memory.recall`, `memory.forget`, `memory.forget_rejected`, `graph.*`, `entity.*`, `edge.*`, `alias.*`, `agent.*`, `action.*`, `decision.*` |
 | `created_at` | ISO-8601 UTC timestamp |
 | `actor` | `user`, `system`, `agent`, … |
 | `session_id`, `turn_id`, `record_id` | optional context, may be null |
@@ -78,6 +78,20 @@ This separation lets engine-generated history remain append-only while the
 live content columns in `records`, `episodes`, and `action_payloads` can be
 logically purged. It does not sanitize SQLite free pages, WAL files, backups,
 snapshots, exports, or replicas.
+
+Collaborative decision events use the same v1 preimage without changing the
+wire format. `decision.*` payloads contain case/artifact/ballot/authorization
+IDs, states, policy/template versions, digests, roster snapshots, and counted
+vote IDs. Raw case questions, evidence content, rationales, vote choices, and
+conflict-of-interest details remain in the decision data plane. Decision audit
+`subject_id` values are derived case streams; like every audit subject they are
+storage partitions, not authenticated tenancy.
+
+Decision retention can logically replace those live payloads while preserving
+their prior digests in `aetnamem-decision-purge-receipt-v1`. Optional
+asymmetric signatures bind outcome, adoption, approval, authorization, and
+purge receipt digests. Neither mechanism changes the audit v1 hash preimage;
+external checkpoints remain necessary to detect wholesale database replacement.
 
 ### Retrieval evidence (`aetnamem-retrieval-evidence-v2`)
 

@@ -47,7 +47,7 @@ automatically on hooks.
 
 ```mermaid
 sequenceDiagram
-    participant U as You (WhatsApp/Telegram/…)
+    participant U as You (through an agent host)
     participant O as OpenClaw agent
     participant M as aetnamem mcp (stdio)
     participant DB as SQLite + audit chain
