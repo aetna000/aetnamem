@@ -28,3 +28,4 @@ idea.md
 # Node (OpenClaw plugin)
 node_modules/
 integrations/openclaw/dist/
+integrations/openclaw/*.tgz

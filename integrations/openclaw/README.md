@@ -27,10 +27,20 @@ without injection.
 ## Install
 
 ```bash
-pip install aetnamem                       # the engine
-cd integrations/openclaw
-npm install && npm run build               # → dist/index.mjs
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+openclaw aetnamem setup --single-user --subject you
 ```
+
+`--single-user` describes the supported deployment boundary and is retained in
+the public quickstart; current releases accept one fixed `subject` per plugin
+instance. Do not use that subject for multiple authenticated users. The setup
+command enables the required conversation-hook permission, applies bounded
+recall defaults, and restarts the gateway. It deliberately does not rewrite
+OpenClaw's `MEMORY.md`; verify recall before removing duplicated native memory.
+
+For repository development, run `npm ci && npm run build`. Register the local
+directory with `openclaw plugins install "$PWD"`.
 
 Register the plugin with OpenClaw (plugin dir or config, per your OpenClaw
 version), then configure:
@@ -40,10 +50,17 @@ version), then configure:
   "command": "aetnamem",
   "dbPath": "~/.aetnamem/memories.db",
   "subject": "you",
-  "recall": { "maxRecords": 5, "maxChars": 2000, "minScore": 0.3 },
+  "recall": { "maxRecords": 3, "maxChars": 1200, "minScore": 0.3 },
+  "persona": { "maxChars": 600 },
   "capture": { "captureAssistant": true }
 }
 ```
+
+Expect the plugin to bound new memory context, not to erase existing prompt
+costs. Token use falls only after you verify AetnaMem recall and reduce facts
+duplicated in `MEMORY.md`, daily notes, or another auto-memory plugin. Keep
+OpenClaw skills as procedures; AetnaMem stores the user/project facts and
+outcomes that make those procedures task-specific.
 
 If `aetnamem` is not on OpenClaw's PATH, set `command` to the absolute venv
 path, or use `"command": "/path/to/python"` with

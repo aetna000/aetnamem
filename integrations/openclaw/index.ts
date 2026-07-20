@@ -24,6 +24,7 @@ import type {
   BeforePromptBuildEvent,
   AgentEndEvent,
 } from "./src/types.js";
+import { runSetup } from "./src/setup.js";
 
 const TAG = "[memory-aetnamem]";
 const INJECT_RE =
@@ -59,14 +60,14 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
     subject,
     recall: {
       enabled: cfg.recall?.enabled !== false,
-      maxRecords: Number(cfg.recall?.maxRecords ?? 5),
-      maxChars: Number(cfg.recall?.maxChars ?? 2000),
+      maxRecords: Number(cfg.recall?.maxRecords ?? 3),
+      maxChars: Number(cfg.recall?.maxChars ?? 1200),
       minScore: Number(cfg.recall?.minScore ?? 0.3),
       timeoutMs: Number(cfg.recall?.timeoutMs ?? 4000),
     },
     persona: {
       enabled: cfg.persona?.enabled !== false,
-      maxChars: Number(cfg.persona?.maxChars ?? 1200),
+      maxChars: Number(cfg.persona?.maxChars ?? 600),
       ttlSeconds: Number(cfg.persona?.ttlSeconds ?? 300),
     },
     capture: {
@@ -97,7 +98,7 @@ function messageText(content: unknown): string {
   return "";
 }
 
-export default function register(api: OpenClawPluginApi): void {
+function register(api: OpenClawPluginApi): void {
   const cfg = parseConfig(api.pluginConfig);
   const client = new AetnamemClient({
     command: cfg.command,
@@ -109,6 +110,31 @@ export default function register(api: OpenClawPluginApi): void {
   // Clean user prompts cached per session so agent_end captures the turn
   // without the injected memory block.
   const pendingPrompts = new Map<string, { text: string; ts: number }>();
+
+  api.registerCli?.(
+    ({ program }) => {
+      const root = program
+        .command("aetnamem")
+        .description("Configure and inspect AetnaMem for OpenClaw");
+      root
+        .command("setup")
+        .description("Apply safe single-user defaults and enable automatic memory hooks")
+        .option("--single-user", "Acknowledge this plugin instance has one memory subject")
+        .option("--subject <id>", "Stable single-user memory subject", "you")
+        .option("--command <path>", "AetnaMem executable", cfg.command)
+        .option("--db-path <path>", "AetnaMem SQLite database", cfg.dbPath)
+        .option("--no-restart", "Do not restart the OpenClaw gateway")
+        .action(async (options) => {
+          await runSetup({
+            subject: String(options.subject),
+            command: String(options.command),
+            dbPath: String(options.dbPath),
+            restart: options.restart !== false,
+          });
+        });
+    },
+    { commands: ["aetnamem"] },
+  );
 
   // L3 persona cache: rebuilt on TTL expiry and invalidated when capture
   // writes new memory, so the snapshot never lags a correction.
@@ -327,3 +353,10 @@ export default function register(api: OpenClawPluginApi): void {
       `recall=${cfg.recall.enabled}, capture=${cfg.capture.enabled})`,
   );
 }
+
+export default {
+  id: "memory-aetnamem",
+  name: "Memory (aetnamem)",
+  description: "Automatic, auditable memory for OpenClaw backed by AetnaMem",
+  register,
+};

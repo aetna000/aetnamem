@@ -7,6 +7,19 @@ host (Claude Code, Claude Desktop, …) — details in the
 and auto-capture hooks, use the plugin in
 [../integrations/openclaw](../integrations/openclaw).
 
+For a single-user OpenClaw instance, the native plugin is the shortest path:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+openclaw aetnamem setup --single-user --subject you
+```
+
+This enables bounded auto-recall and post-turn capture. It does not promise an
+immediate token reduction or alter `MEMORY.md`: first verify recall, then remove
+duplicated durable facts from always-loaded native context. Do not use one
+fixed subject for multiple authenticated users.
+
 ## 1. Setup flow
 
 ```mermaid

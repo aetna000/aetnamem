@@ -44,9 +44,20 @@ export interface OpenClawToolSpec {
   execute(toolCallId: string, params: Record<string, unknown>): Promise<ToolResultBlock>;
 }
 
+export interface CliCommand {
+  command(name: string): CliCommand;
+  description(text: string): CliCommand;
+  option(flags: string, description: string, defaultValue?: unknown): CliCommand;
+  action(handler: (options: Record<string, unknown>) => Promise<void> | void): CliCommand;
+}
+
 export interface OpenClawPluginApi {
   pluginConfig?: Record<string, unknown>;
   logger: OpenClawLogger;
+  registerCli?: (
+    registrar: (context: { program: CliCommand }) => void,
+    options?: { commands: string[] },
+  ) => void;
   registerTool(spec: OpenClawToolSpec, options?: { name: string }): void;
   on(
     event: "before_prompt_build",

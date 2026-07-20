@@ -2,6 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
+  "version": "0.2.1",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -38,8 +39,8 @@
         "description": "Auto-recall injection before each prompt",
         "properties": {
           "enabled": { "type": "boolean", "default": true },
-          "maxRecords": { "type": "number", "default": 5, "description": "Max memories injected per turn" },
-          "maxChars": { "type": "number", "default": 2000, "description": "Total character budget for the injected block" },
+          "maxRecords": { "type": "number", "default": 3, "description": "Max memories injected per turn" },
+          "maxChars": { "type": "number", "default": 1200, "description": "Total character budget for the injected block" },
           "minScore": { "type": "number", "default": 0.3, "description": "Minimum relevance score; 0.3 requires a lexical match (priors alone never inject)" },
           "timeoutMs": { "type": "number", "default": 4000, "description": "Recall timeout; on timeout the turn proceeds without injection" }
         }
@@ -49,7 +50,7 @@
         "description": "L3 persona snapshot injected alongside recall",
         "properties": {
           "enabled": { "type": "boolean", "default": true },
-          "maxChars": { "type": "number", "default": 1200, "description": "Character budget for the <user_persona> block" },
+          "maxChars": { "type": "number", "default": 600, "description": "Character budget for the <user_persona> block" },
           "ttlSeconds": { "type": "number", "default": 300, "description": "Persona cache lifetime; also invalidated whenever new memory is captured" }
         }
       },

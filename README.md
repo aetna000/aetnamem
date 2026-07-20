@@ -385,6 +385,19 @@ returns receipts, and you can independently audit the same SQLite file with
 Full tool catalog, host configs, and troubleshooting:
 [integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md).
 
+Install the native integration in three commands:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+openclaw aetnamem setup --single-user --subject you
+```
+
+The setup applies conservative context budgets and enables the required
+conversation hooks. It does not rewrite `MEMORY.md`; verify recall before
+removing duplicated native memory. One plugin instance currently has one fixed
+subject and must not be shared between authenticated users.
+
 ## Integrating with other agent frameworks
 
 The rule is: **MCP first, native adapter only when it adds lifecycle hooks.**

@@ -3,12 +3,42 @@
   "version": "0.2.1",
   "description": "OpenClaw plugin: auditable agent memory backed by the aetnamem engine",
   "type": "module",
-  "main": "./dist/index.mjs",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetna000/aetnamem.git",
+    "directory": "integrations/openclaw"
+  },
+  "homepage": "https://github.com/aetna000/aetnamem/tree/main/integrations/openclaw",
+  "bugs": {
+    "url": "https://github.com/aetna000/aetnamem/issues"
+  },
   "license": "AGPL-3.0-only",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "smoke": "node test/smoke.mjs"
+    "test": "node test/setup.mjs",
+    "smoke": "node test/smoke.mjs",
+    "prepack": "npm run build && npm run typecheck && npm test && npm run smoke"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
