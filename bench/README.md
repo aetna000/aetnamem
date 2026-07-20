@@ -25,3 +25,11 @@ python bench/graph_recall.py --records 10000 --iterations 25
 This is a repeatable local probe, not a replacement for MemoryStackBench or a
 claim about production hardware. Use it to catch accidental O(N) retrieval or
 audit-payload growth while changing graph retrieval.
+
+## OpenClaw + DeepSeek integration benchmark
+
+[`openclaw_memory/`](openclaw_memory/) contains a paired, fresh-session A/B
+benchmark of native `MEMORY.md` replay versus AetnaMem's bounded recall. It
+runs real OpenClaw turns through DeepSeek V4 Flash and preserves
+machine-readable token, cost, latency, accuracy, provenance, and retrieval
+evidence for technical reporting.

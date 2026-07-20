@@ -59,6 +59,11 @@ export interface OpenClawPluginApi {
     options?: { commands: string[] },
   ) => void;
   registerTool(spec: OpenClawToolSpec, options?: { name: string }): void;
+  registerService?: (service: {
+    id: string;
+    start: () => void | Promise<void>;
+    stop?: () => void | Promise<void>;
+  }) => void;
   on(
     event: "before_prompt_build",
     handler: (

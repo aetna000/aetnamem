@@ -15,6 +15,7 @@ export interface AetnamemClientOptions {
   log?: (message: string) => void;
   logError?: (message: string) => void;
   defaultTimeoutMs?: number;
+  idleTimeoutMs?: number;
 }
 
 interface Pending {
@@ -29,6 +30,7 @@ export class AetnamemClient {
   private pending = new Map<number, Pending>();
   private nextId = 1;
   private initialized: Promise<void> | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: AetnamemClientOptions) {}
 
@@ -38,32 +40,49 @@ export class AetnamemClient {
     args: Record<string, unknown>,
     timeoutMs?: number,
   ): Promise<unknown> {
-    await this.ensureInitialized();
-    const result = (await this.request(
-      "tools/call",
-      { name, arguments: args },
-      timeoutMs,
-    )) as {
-      isError?: boolean;
-      content?: Array<{ type: string; text?: string }>;
-    };
-    const text = result?.content?.[0]?.text ?? "";
-    if (result?.isError) {
-      throw new Error(`aetnamem tool ${name} failed: ${text}`);
-    }
     try {
-      return JSON.parse(text);
-    } catch {
-      return text;
+      this.cancelIdleClose();
+      await this.ensureInitialized();
+      const result = (await this.request(
+        "tools/call",
+        { name, arguments: args },
+        timeoutMs,
+      )) as {
+        isError?: boolean;
+        content?: Array<{ type: string; text?: string }>;
+      };
+      const text = result?.content?.[0]?.text ?? "";
+      if (result?.isError) {
+        throw new Error(`aetnamem tool ${name} failed: ${text}`);
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    } finally {
+      this.scheduleIdleClose();
     }
   }
 
   close(): void {
+    this.cancelIdleClose();
     if (this.child) {
       this.child.stdin.end();
       this.child.kill();
     }
     this.teardown(new Error("client closed"));
+  }
+
+  private cancelIdleClose(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private scheduleIdleClose(): void {
+    this.cancelIdleClose();
+    const timeout = this.options.idleTimeoutMs ?? 250;
+    this.idleTimer = setTimeout(() => this.close(), timeout);
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -101,7 +120,7 @@ export class AetnamemClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.2" },
+      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.3" },
     });
     this.notify("notifications/initialized", {});
   }

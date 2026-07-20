@@ -1,6 +1,6 @@
 {
   "name": "openclaw-memory-aetnamem",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "OpenClaw plugin: auditable agent memory backed by the aetnamem engine",
   "type": "module",
   "main": "./dist/index.js",

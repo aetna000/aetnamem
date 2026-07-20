@@ -106,6 +106,13 @@ function register(api: OpenClawPluginApi): void {
     log: (message) => api.logger.debug?.(`${TAG} ${message}`),
     logError: (message) => api.logger.warn(`${TAG} ${message}`),
   });
+  // Let long-lived hosts close the stdio child during lifecycle shutdown.
+  // The client's bounded idle shutdown also covers one-shot local runners.
+  api.registerService?.({
+    id: "memory-aetnamem-mcp",
+    start: () => undefined,
+    stop: () => client.close(),
+  });
 
   // Clean user prompts cached per session so agent_end captures the turn
   // without the injected memory block.

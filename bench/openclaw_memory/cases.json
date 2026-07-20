@@ -1,0 +1,62 @@
+[
+  {
+    "id": "cedar-rollback",
+    "fact": "The CEDAR medication-reconciliation rollout must be rolled back after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+    "question": "What exact condition triggers rollback of the CEDAR medication-reconciliation rollout?",
+    "expected": ["two consecutive 15-minute windows", "2.5 percent"]
+  },
+  {
+    "id": "orbit-downtime",
+    "fact": "The ORBIT downtime escalation route is the Teams channel orbit-command plus pager group CLIN-27.",
+    "question": "Which channel and pager group must be used for an ORBIT downtime escalation?",
+    "expected": ["orbit-command", "CLIN-27"]
+  },
+  {
+    "id": "harbor-retention",
+    "fact": "The HARBOR audit policy retains raw event payloads for 30 days and signed decision receipts for 7 years.",
+    "question": "How long does HARBOR retain raw event payloads and signed decision receipts?",
+    "expected": ["30 days", "7 years"]
+  },
+  {
+    "id": "lantern-training",
+    "fact": "The LANTERN go-live training gate requires simulation-lab completion and a score of at least 80 percent on the competency assessment.",
+    "question": "What two requirements make up the LANTERN go-live training gate?",
+    "expected": ["simulation", "80 percent"]
+  },
+  {
+    "id": "wattle-freeze",
+    "fact": "The WATTLE production change freeze runs from Friday 16:00 until Monday 06:00 in the Australia/Sydney timezone.",
+    "question": "What is the WATTLE production change-freeze window and timezone?",
+    "expected": ["Friday 16:00", "Monday 06:00", "Australia/Sydney"]
+  },
+  {
+    "id": "meridian-owner",
+    "fact": "The MERIDIAN clinical-risk acceptance owner is the Director of Clinical Safety, and the named backup role is the Chief Medical Information Officer.",
+    "question": "Which roles own and back up clinical-risk acceptance for MERIDIAN?",
+    "expected": ["Director of Clinical Safety", "Chief Medical Information Officer"]
+  },
+  {
+    "id": "quartz-database",
+    "fact": "The QUARTZ production PostgreSQL connection requires sslmode=verify-full and certificates issued by the hospital-platform root CA.",
+    "question": "Which PostgreSQL SSL mode and certificate authority are required for QUARTZ production?",
+    "expected": ["sslmode=verify-full", "hospital-platform root CA"]
+  },
+  {
+    "id": "ember-severity",
+    "fact": "The EMBER safety incident is Severity 1 when a wrong-patient recommendation reaches a clinician, even if the clinician rejects it before treatment.",
+    "question": "When does EMBER classify a wrong-patient recommendation as Severity 1?",
+    "expected": ["reaches a clinician", "rejects it before treatment"]
+  },
+  {
+    "id": "summit-approval",
+    "fact": "The SUMMIT model update needs approvals from Clinical Governance, Privacy, and the Service Owner before production deployment.",
+    "question": "Which three approvals are mandatory before a SUMMIT model update reaches production?",
+    "expected": ["Clinical Governance", "Privacy", "Service Owner"]
+  },
+  {
+    "id": "tide-monitoring",
+    "fact": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+    "question": "What is the TIDE post-deployment review schedule and primary safety measure?",
+    "expected": ["24 hours", "7 days", "30 days", "medication-omission rate"]
+  }
+]
