@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="#what-can-you-do-with-this-repository">Use cases</a> &middot;
   <a href="#install--use">Quick start</a> &middot;
   <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
   <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
@@ -31,7 +32,82 @@ and optional guarded actions. The reference store is one SQLite file. Its
 security claims are deterministic and testable, but deliberately narrower
 than “the database is trusted” or “every external action is reversible.”
 
-## What can I use today?
+## What can you do with this repository?
+
+Think of AetnaMem as a governed continuity layer for AI systems. It helps an
+agent remember useful context, helps people understand where that context came
+from, and can carry evidence forward into reviewed decisions and approved
+changes. You can adopt one part without adopting the rest.
+
+### AI and agent use cases
+
+| What you want | What AetnaMem provides | Read more |
+|---|---|---|
+| Give an assistant durable memory | Remember, recall, correct, supersede, inspect, and forget user facts across sessions | [Integration guide](./docs/integration-guide.md) |
+| Reduce repeated prompt context | A cache-aware context pack separates a stable persona from selective turn recall, applies hard budgets, and avoids repeating the same record in both blocks | [0.4.1 release and measured result](./docs/releases/v0.4.1.md) |
+| Add memory to different agent frameworks | One Python, CLI, and MCP contract works independently of the model provider; build thin host adapters only when automatic lifecycle hooks are useful | [Agent/MCP integration](#use-from-agents-mcp) |
+| Add automatic memory to OpenClaw | The npm plugin injects bounded recall before a prompt and captures trusted user facts after a turn | [OpenClaw setup](./docs/openclaw-setup.md) |
+| Add memory tools to Hermes | Hermes can discover AetnaMem over MCP; a context-engine wrapper can consume the same cache-aware context pack | [Hermes guide](./docs/hermes-agent.md) |
+| Use Claude, Grok, DeepSeek, OpenAI, Ollama, or another model | Memory policy and storage remain outside the model; swap the inference provider without replacing the memory engine | [Grok/xAI guide](./docs/grok-xai.md) and [integration guide](./docs/integration-guide.md) |
+| Run a private local assistant | A desktop-style dashboard combines local chat, searchable memory, approvals, files, and live audit verification | [Desktop guide](./docs/macos-desktop.md) |
+| Stop webpages or tool output from silently becoming trusted memory | Classified untrusted content is quarantined and needs an explicit promotion step | [Audit and trust model](./docs/auditing-guide.md) |
+| Recall relationships, not only matching text | An optional governed graph adds bounded multi-hop retrieval with visible path evidence and direct-record fallback | [Graph memory design](./docs/graph-memory-design.md) |
+| Investigate what an agent knew and did | Retrievals, memory transitions, agent actions, approvals, and receipts can share a hash-chained timeline with independent verification | [Audit-log specification](./docs/audit-log-spec.md) |
+| Honor correction and deletion requests | New values supersede recognized old facts; forgetting purges live content and produces a deletion receipt | [Auditing guide](./docs/auditing-guide.md) |
+| Compare memory systems reproducibly | The repository includes unit gates, MemoryStackBench integration, and raw OpenClaw/DeepSeek token, cost, accuracy, and latency trials | [Benchmark evidence](./docs/openclaw-memory-evaluation.md) |
+
+### Agent governance and operational use cases
+
+| What you want | What AetnaMem provides | Read more |
+|---|---|---|
+| Require human approval before an agent changes something | Stage the exact operation, bind approval to its hash, recheck the target, execute, verify, and issue a receipt | [Guarded actions](./docs/guarded-actions.md) |
+| Prevent “approved one thing, executed another” failures | Plan mutation, expired approval, changed world state, or adapter drift stops execution | [Flagship demo](./examples/flagship-demo/) |
+| Handle crashes around external effects honestly | Interrupted calls are fenced as uncertain or recovery-required instead of being blindly retried | [Guarded actions](./docs/guarded-actions.md) |
+| Join another agent runtime to the audit timeline | Import compatible operational journals as digest-only, explicitly unverified evidence without copying sensitive payloads | [Integration guide](./docs/integration-guide.md) |
+| Build a governed tool gateway | Use the fail-closed MCP filter gate as a foundation for separating reads from direct writes | [Guarantees and roadmap](./TODO.md) |
+
+### Evidence-to-Decision and organizational use cases
+
+| What you want | What AetnaMem provides | Read more |
+|---|---|---|
+| Run a structured evidence-to-decision process | Versioned clinical and generic EtD templates turn evidence and contextual judgments into a recommendation | [EtD profile](./docs/etd-profile.md) |
+| Let a panel collaborate and vote | Namespace-scoped cases, roles, conflicts of interest, recusal, frozen voter eligibility, hidden-until-close ballots, and deterministic outcomes | [Decision workflow](./docs/decision-workflow-spec.md) |
+| Keep recommendation, approval, and authorization distinct | Panel adoption, institutional approval, resource sign-off, and change authorization are separate auditable transitions | [Decision workflow](./docs/decision-workflow-spec.md) |
+| Connect an approved decision to implementation | A scoped authorization can be revalidated when an exact guarded action is staged and again before execution | [Decision host integration](./docs/decision-host-integration.md) |
+| Host the workflow for many users | Embed the SDK behind your own authenticated application using SQLite for local/single-server work or PostgreSQL for multi-process deployment | [Host integration and deployment](./docs/decision-host-integration.md) |
+| Produce verifiable governance evidence | Ed25519 or host-supplied KMS attestations sign identities and decision receipts; an offline verifier checks exported bundles | [Decision host integration](./docs/decision-host-integration.md) |
+| Apply retention to sensitive decisions and conflicts | Decision and conflict-of-interest payloads can be logically purged under separate policies with signed purge receipts | [Decision workflow](./docs/decision-workflow-spec.md) |
+| Prepare a hospital, policy team, or business unit pilot | A complete playground, acceptance protocol, evidence checklist, and independent methodology-review package are included | [Pilot and review runbook](./docs/etd-pilot-methodology-review.md) |
+
+### Why this is more than another memory cache
+
+Most agent-memory integrations are discussed primarily as chat history,
+retrieval, or prompt caching. AetnaMem includes those practical concerns, but
+its distinctive value is the chain around them: source provenance, trust and
+quarantine, correction, deletion receipts, bounded context, independent audit
+verification, human approval, and an optional evidence-to-approved-change
+workflow. The same record can help an agent answer a question without being
+mistaken for authority to take an action.
+
+That combination is useful when “the model remembered something” is not a
+sufficient operational explanation. It gives engineering teams a small local
+starting point, while giving managers, reviewers, and regulated organizations
+a path to inspect what informed a result and what was actually authorized.
+The measured OpenClaw/DeepSeek experiment also shows the practical side:
+cache-aware AetnaMem used **13.32% fewer prompt tokens and had 2.97% lower
+provider-reported cost** than native `MEMORY.md`, with 20/20 answers in both
+arms. This is one controlled benchmark, not a universal saving; the
+[raw trials and limitations](./docs/openclaw-memory-evaluation.md) are
+published for review.
+
+The memory engine is usable today. The collaborative decision and EtD SDKs are
+experimental and need a real organizational pilot and external methodology
+review before clinical or regulatory claims. Multi-user products must also
+supply authentication, authorization, UI, networking, and deployment controls.
+See [guarantee boundaries](#guarantee-boundaries) for the exact division of
+responsibility.
+
+## Try the local assistant today
 
 A local assistant desktop app: governed chat backed by a lightweight local
 Ollama model, visible/searchable memory, approval-gated file writes in a safe
@@ -568,6 +644,9 @@ benchmark scenario.
 
 ## Documentation
 
+- **[0.4.1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.1.md)** — provider-neutral
+  cache-aware context packs, OpenClaw npm release, Hermes integration, measured
+  token/cost results, and claims boundaries.
 - **[0.4.0 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.0.md)** — evidence-to-approved-change capabilities,
   installation, validation, and claims boundary.
 - **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
@@ -584,6 +663,9 @@ benchmark scenario.
 - **[OpenClaw setup](https://github.com/aetna000/aetnamem/blob/main/docs/openclaw-setup.md)** — visual (Mermaid)
   walkthrough of wiring aetnamem into OpenClaw or any MCP host: setup flow,
   runtime sequence, the quarantine gate, and the external audit loop.
+- **[Hermes Agent guide](https://github.com/aetna000/aetnamem/blob/main/docs/hermes-agent.md)** — MCP setup,
+  tool-based memory, automatic context-pack integration, caching expectations,
+  and multi-user boundaries.
 - **[Grok/xAI guide](https://github.com/aetna000/aetnamem/blob/main/docs/grok-xai.md)** — Grok/xAI function-calling
   quickstart, local playground, and Remote MCP deployment notes.
 - **[Graph memory design](https://github.com/aetna000/aetnamem/blob/main/docs/graph-memory-design.md)** — implemented
