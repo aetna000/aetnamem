@@ -95,12 +95,27 @@ try {
   assert.ok(block.block.startsWith("<relevant_memories>"));
   assert.ok(block.block.includes("teal"));
 
+  const compactBlock = await callTool("memory_recall_block", {
+    query: "What is my favorite color?",
+    session_id: "s2-compact",
+    reference_mode: "compact",
+  });
+  assert.ok(compactBlock.block.includes(`[m:${captured.records[0].id.slice(4, 12)}]`));
+  assert.ok(!compactBlock.block.includes(captured.records[0].id));
+
   // L3 persona snapshot: derived live, provenance ids on every line
   const persona = await callTool("memory_persona", { max_chars: 1200 });
   assert.equal(persona.count, 1);
   assert.ok(persona.block.startsWith("<user_persona>"));
   assert.ok(persona.block.includes("teal"));
   assert.ok(persona.block.includes(captured.records[0].id));
+
+  const compactPersona = await callTool("memory_persona", {
+    max_chars: 1200,
+    reference_mode: "compact",
+  });
+  assert.ok(compactPersona.block.includes(`[m:${captured.records[0].id.slice(4, 12)}]`));
+  assert.ok(!compactPersona.block.includes(captured.records[0].id));
 
   // unrelated query must inject nothing (no leak via priors)
   const empty = await callTool("memory_recall_block", {

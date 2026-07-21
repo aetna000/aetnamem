@@ -80,6 +80,22 @@ def test_tool_roundtrip_with_default_subject() -> None:
     assert verified["valid"] is True
 
 
+def test_compact_recall_block_over_mcp() -> None:
+    server = _server()
+    stored = _call(
+        server, 1, "memory_remember", {"message": "My favorite color is teal."}
+    )
+    record_id = stored["records"][0]["id"]
+    recalled = _call(
+        server,
+        2,
+        "memory_recall_block",
+        {"query": "favorite color", "reference_mode": "compact"},
+    )
+    assert f"[m:{record_id.removeprefix('rec_')[:8]}]" in recalled["block"]
+    assert record_id not in recalled["block"]
+
+
 def test_quarantine_flow_over_mcp() -> None:
     server = _server()
     stored = _call(

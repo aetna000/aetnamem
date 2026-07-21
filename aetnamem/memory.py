@@ -634,6 +634,7 @@ class Memory:
         max_chars: int = 2000,
         min_score: float = 0.3,
         use_graph: bool | None = None,
+        reference_mode: str = "full",
     ) -> dict[str, Any]:
         """Deterministic, bounded <relevant_memories> block for prompt injection.
 
@@ -643,6 +644,8 @@ class Memory:
         min_score of 0.3 requires a lexical match — trust/recency priors
         alone never inject.
         """
+        if reference_mode not in {"full", "compact", "none"}:
+            raise ValueError("reference_mode must be full, compact, or none")
         records = self.recall(
             subject_id,
             query,
@@ -655,7 +658,8 @@ class Memory:
         included: list[str] = []
         used = 0
         for record in records:
-            line = f"- [{record['id']}] {record['content']}"
+            reference = _prompt_reference(str(record["id"]), reference_mode)
+            line = f"- {reference}{record['content']}"
             if used + len(line) + 1 > max_chars:
                 break
             lines.append(line)
@@ -673,6 +677,7 @@ class Memory:
             session_id=session_id,
             payload={
                 "record_ids": included,
+                "reference_mode": reference_mode,
                 "block_sha256": _sha256(block),
                 "query_sha256": _sha256(query),
             },
@@ -686,6 +691,7 @@ class Memory:
         *,
         session_id: str | None = None,
         max_chars: int = 1500,
+        reference_mode: str = "full",
     ) -> dict[str, Any]:
         """L3: deterministic persona snapshot derived from active records.
 
@@ -695,6 +701,8 @@ class Memory:
         L1, so it can never go stale, and every line carries the source
         record id. Building one writes a memory.persona_built audit event.
         """
+        if reference_mode not in {"full", "compact", "none"}:
+            raise ValueError("reference_mode must be full, compact, or none")
         active = self.list(subject_id)
         keyed = sorted(
             (r for r in active if r.get("fact_key")),
@@ -710,7 +718,8 @@ class Memory:
         included: list[str] = []
         used = 0
         for record in [*keyed, *unkeyed]:
-            line = f"- [{record['id']}] {record['content']}"
+            reference = _prompt_reference(str(record["id"]), reference_mode)
+            line = f"- {reference}{record['content']}"
             if used + len(line) + 1 > max_chars:
                 break
             lines.append(line)
@@ -728,6 +737,7 @@ class Memory:
             session_id=session_id,
             payload={
                 "record_ids": included,
+                "reference_mode": reference_mode,
                 "persona_sha256": _sha256(block),
             },
         )
@@ -1492,6 +1502,15 @@ def _selector_contains(selector: dict[str, Any] | str | None) -> str | None:
 
 def _sha256(value: str) -> str:
     return sha256_hex(value)
+
+
+def _prompt_reference(record_id: str, mode: str) -> str:
+    if mode == "none":
+        return ""
+    if mode == "compact":
+        suffix = record_id.removeprefix("rec_")[:8]
+        return f"[m:{suffix}] "
+    return f"[{record_id}] "
 
 
 def _explicit_note(value: str) -> str:

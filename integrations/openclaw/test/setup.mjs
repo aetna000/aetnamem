@@ -17,6 +17,9 @@ assert.equal(config.subject, "alice");
 assert.equal(config.recall.maxRecords, 3);
 assert.equal(config.recall.maxChars, 1200);
 assert.equal(config.persona.maxChars, 600);
+assert.equal(config.cacheAware.enabled, true);
+assert.equal(config.cacheAware.compactReferences, true);
+assert.equal(config.tools.enabled, true);
 
 const calls = [];
 await runSetup(options, {

@@ -45,6 +45,8 @@ interface PluginConfig {
   };
   persona: { enabled: boolean; maxChars: number; ttlSeconds: number };
   capture: { enabled: boolean; captureAssistant: boolean };
+  cacheAware: { enabled: boolean; compactReferences: boolean };
+  tools: { enabled: boolean };
 }
 
 function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
@@ -74,6 +76,11 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
       enabled: cfg.capture?.enabled !== false,
       captureAssistant: cfg.capture?.captureAssistant !== false,
     },
+    cacheAware: {
+      enabled: cfg.cacheAware?.enabled === true,
+      compactReferences: cfg.cacheAware?.compactReferences !== false,
+    },
+    tools: { enabled: cfg.tools?.enabled !== false },
   };
 }
 
@@ -162,7 +169,13 @@ function register(api: OpenClawPluginApi): void {
     }
     const result = (await client.callTool(
       "memory_persona",
-      { session_id: sessionKey, max_chars: cfg.persona.maxChars },
+      {
+        session_id: sessionKey,
+        max_chars: cfg.persona.maxChars,
+        reference_mode: cfg.cacheAware.enabled && cfg.cacheAware.compactReferences
+          ? "compact"
+          : "full",
+      },
       cfg.recall.timeoutMs,
     )) as { block?: string };
     personaCache = { block: result?.block ?? "", ts: now };
@@ -178,10 +191,10 @@ function register(api: OpenClawPluginApi): void {
     sweep();
     if (!cfg.recall.enabled && !cfg.persona.enabled) return;
 
-    const parts: string[] = [];
+    let persona = "";
+    let recall = "";
     try {
-      const persona = await personaBlock(sessionKey);
-      if (persona) parts.push(persona);
+      persona = await personaBlock(sessionKey);
     } catch (error) {
       api.logger.warn(
         `${TAG} persona skipped: ${error instanceof Error ? error.message : String(error)}`,
@@ -197,6 +210,9 @@ function register(api: OpenClawPluginApi): void {
             max_records: cfg.recall.maxRecords,
             max_chars: cfg.recall.maxChars,
             min_score: cfg.recall.minScore,
+            reference_mode: cfg.cacheAware.enabled && cfg.cacheAware.compactReferences
+              ? "compact"
+              : "full",
           },
           cfg.recall.timeoutMs,
         )) as { block?: string; count?: number };
@@ -204,7 +220,7 @@ function register(api: OpenClawPluginApi): void {
           api.logger.info(
             `${TAG} injected ${result.count} memories (${result.block.length} chars)`,
           );
-          parts.push(result.block);
+          recall = result.block;
         }
       }
     } catch (error) {
@@ -213,6 +229,14 @@ function register(api: OpenClawPluginApi): void {
         `${TAG} auto-recall skipped: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    if (cfg.cacheAware.enabled) {
+      const result: { appendSystemContext?: string; appendContext?: string } = {};
+      if (persona) result.appendSystemContext = persona;
+      if (recall) result.appendContext = recall;
+      if (Object.keys(result).length) return result;
+      return;
+    }
+    const parts = [persona, recall].filter(Boolean);
     if (parts.length) return { prependContext: parts.join("\n\n") + "\n\n" };
   });
 
@@ -282,78 +306,81 @@ function register(api: OpenClawPluginApi): void {
   });
 
   // ---- agent-callable tools ----------------------------------------------
-  api.registerTool(
-    {
-      name: "aetnamem_search",
-      label: "Memory Search (aetnamem)",
-      description:
-        "Search the user's long-term auditable memory. Use when you need " +
-        "preferences, facts, or context from previous conversations that " +
-        "were not auto-injected.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "What to recall about the user" },
-          limit: { type: "number", description: "Max results (default 5)" },
-        },
-        required: ["query"],
-      },
-      async execute(toolCallId, params) {
-        const sessionId = `openclaw-tool:${toolCallId}`;
-        const records = (await client.callTool("memory_recall", {
-          query: String(params.query ?? ""),
-          session_id: sessionId,
-          limit: Math.min(Math.max(Number(params.limit) || 5, 1), 20),
-        })) as Array<{ id: string; content: string }>;
-        const text = records.length
-          ? records.map((record) => `- [${record.id}] ${record.content}`).join("\n")
-          : "No matching memories.";
-        return {
-          content: [{ type: "text", text }],
-          details: { count: records.length, sessionId },
-        };
-      },
-    },
-    { name: "aetnamem_search" },
-  );
-
-  api.registerTool(
-    {
-      name: "aetnamem_forget",
-      label: "Memory Forget (aetnamem)",
-      description:
-        "Delete the user's memories matching their request — only call when " +
-        "the user explicitly asks to forget something. Deletion purges " +
-        "content and returns a verifiable receipt; report the purged count " +
-        "back to the user.",
-      parameters: {
-        type: "object",
-        properties: {
-          utterance: {
-            type: "string",
-            description: 'The user\'s words, e.g. "Forget my backup email."',
+  if (cfg.tools.enabled) {
+    api.registerTool(
+      {
+        name: "aetnamem_search",
+        label: "Memory Search (aetnamem)",
+        description:
+          "Search the user's long-term auditable memory. Use when you need " +
+          "preferences, facts, or context from previous conversations that " +
+          "were not auto-injected.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What to recall about the user" },
+            limit: { type: "number", description: "Max results (default 5)" },
           },
+          required: ["query"],
         },
-        required: ["utterance"],
+        async execute(toolCallId, params) {
+          const sessionId = `openclaw-tool:${toolCallId}`;
+          const records = (await client.callTool("memory_recall", {
+            query: String(params.query ?? ""),
+            session_id: sessionId,
+            limit: Math.min(Math.max(Number(params.limit) || 5, 1), 20),
+          })) as Array<{ id: string; content: string }>;
+          const text = records.length
+            ? records.map((record) => `- [${record.id}] ${record.content}`).join("\n")
+            : "No matching memories.";
+          return {
+            content: [{ type: "text", text }],
+            details: { count: records.length, sessionId },
+          };
+        },
       },
-      async execute(toolCallId, params) {
-        const sessionId = `openclaw-tool:${toolCallId}`;
-        const result = (await client.callTool("memory_forget", {
-          utterance: String(params.utterance ?? ""),
-          session_id: sessionId,
-          turn_id: toolCallId,
-        })) as { deleted: boolean; record_ids: string[]; receipt?: unknown };
-        const text = result.deleted
-          ? `Deleted ${result.record_ids.length} memorie(s). Receipt: ${JSON.stringify(result.receipt)}`
-          : "No matching memories found to delete.";
-        return {
-          content: [{ type: "text", text }],
-          details: { deleted: result.deleted, sessionId },
-        };
+      { name: "aetnamem_search" },
+    );
+
+    api.registerTool(
+      {
+        name: "aetnamem_forget",
+        label: "Memory Forget (aetnamem)",
+        description:
+          "Delete the user's memories matching their request — only call when " +
+          "the user explicitly asks to forget something. Deletion purges " +
+          "content and returns a verifiable receipt; report the purged count " +
+          "back to the user.",
+        parameters: {
+          type: "object",
+          properties: {
+            utterance: {
+              type: "string",
+              description: 'The user\'s words, e.g. "Forget my backup email."',
+            },
+          },
+          required: ["utterance"],
+        },
+        async execute(toolCallId, params) {
+          const sessionId = `openclaw-tool:${toolCallId}`;
+          const result = (await client.callTool("memory_forget", {
+            utterance: String(params.utterance ?? ""),
+            session_id: sessionId,
+            turn_id: toolCallId,
+          })) as { deleted: boolean; record_ids: string[]; receipt?: unknown };
+          if (result.deleted) personaCache = null;
+          const text = result.deleted
+            ? `Deleted ${result.record_ids.length} memorie(s). Receipt: ${JSON.stringify(result.receipt)}`
+            : "No matching memories found to delete.";
+          return {
+            content: [{ type: "text", text }],
+            details: { deleted: result.deleted, sessionId },
+          };
+        },
       },
-    },
-    { name: "aetnamem_forget" },
-  );
+      { name: "aetnamem_forget" },
+    );
+  }
 
   api.logger.info(
     `${TAG} registered (db=${cfg.dbPath}, subject=${cfg.subject}, ` +

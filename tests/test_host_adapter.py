@@ -84,6 +84,47 @@ def test_recall_block_respects_char_budget() -> None:
     assert len(result["block"]) <= 140 + len("<relevant_memories>\n\n</relevant_memories>")
 
 
+def test_compact_prompt_references_preserve_full_audit_ids() -> None:
+    memory = Memory(":memory:")
+    [record] = memory.remember("u1", "My favorite color is teal.")["records"]
+
+    result = memory.build_recall_block(
+        "u1", "favorite color", reference_mode="compact"
+    )
+    assert f"[m:{record['id'].removeprefix('rec_')[:8]}]" in result["block"]
+    assert record["id"] not in result["block"]
+
+    injected = [
+        event
+        for event in memory.audit("u1")["audit_log"]
+        if event["event_type"] == "memory.context_injected"
+    ][-1]
+    assert injected["payload"]["record_ids"] == [record["id"]]
+    assert injected["payload"]["reference_mode"] == "compact"
+    assert injected["payload"]["block_sha256"] == sha256_hex(result["block"])
+
+
+def test_persona_reference_mode_none_omits_ids_but_audits_them() -> None:
+    memory = Memory(":memory:")
+    [record] = memory.remember("u1", "My favorite color is teal.")["records"]
+    persona = memory.build_persona("u1", reference_mode="none")
+    assert "teal" in persona["block"]
+    assert record["id"] not in persona["block"]
+    event = [
+        item
+        for item in memory.audit("u1")["audit_log"]
+        if item["event_type"] == "memory.persona_built"
+    ][-1]
+    assert event["payload"]["record_ids"] == [record["id"]]
+    assert event["payload"]["reference_mode"] == "none"
+
+
+def test_prompt_reference_mode_is_validated() -> None:
+    memory = Memory(":memory:")
+    with pytest.raises(ValueError, match="reference_mode"):
+        memory.build_recall_block("u1", "anything", reference_mode="invalid")
+
+
 def test_consolidate_collapses_duplicates_and_repairs_keys() -> None:
     memory = Memory(":memory:")
     # Forge a pathological state directly at the store layer: two identical

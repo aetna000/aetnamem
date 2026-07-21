@@ -194,6 +194,7 @@ class MCPServer:
             max_chars=int(arguments.get("max_chars", 2000)),
             min_score=float(arguments.get("min_score", 0.3)),
             use_graph=arguments.get("use_graph"),
+            reference_mode=str(arguments.get("reference_mode", "full")),
         )
 
     def _tool_persona(self, arguments: dict[str, Any]) -> Any:
@@ -201,6 +202,7 @@ class MCPServer:
             self._subject(arguments),
             session_id=arguments.get("session_id"),
             max_chars=int(arguments.get("max_chars", 1500)),
+            reference_mode=str(arguments.get("reference_mode", "full")),
         )
 
     def _tool_capture(self, arguments: dict[str, Any]) -> Any:
@@ -324,6 +326,12 @@ class MCPServer:
                     "max_chars": {"type": "integer", "default": 2000},
                     "min_score": {"type": "number", "default": 0.3},
                     "use_graph": {"type": "boolean"},
+                    "reference_mode": {
+                        "type": "string",
+                        "enum": ["full", "compact", "none"],
+                        "default": "full",
+                        "description": "Model-visible provenance reference format; audit events always retain full IDs.",
+                    },
                     **_SESSION_PROPERTIES,
                 },
                 required=["query"],
@@ -337,6 +345,12 @@ class MCPServer:
                 {
                     **_SUBJECT_PROPERTY,
                     "max_chars": {"type": "integer", "default": 1500},
+                    "reference_mode": {
+                        "type": "string",
+                        "enum": ["full", "compact", "none"],
+                        "default": "full",
+                        "description": "Model-visible provenance reference format; audit events always retain full IDs.",
+                    },
                     **_SESSION_PROPERTIES,
                 },
             ),

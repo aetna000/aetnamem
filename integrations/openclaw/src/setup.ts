@@ -59,6 +59,8 @@ export function setupWrites(options: SetupOptions): Array<[string, string, boole
     },
     persona: { enabled: true, maxChars: 600, ttlSeconds: 300 },
     capture: { enabled: true, captureAssistant: true },
+    cacheAware: { enabled: true, compactReferences: true },
+    tools: { enabled: true },
   };
   return [
     ["plugins.entries.memory-aetnamem.enabled", "true", true],

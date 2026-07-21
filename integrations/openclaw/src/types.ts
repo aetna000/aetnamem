@@ -69,7 +69,18 @@ export interface OpenClawPluginApi {
     handler: (
       event: BeforePromptBuildEvent,
       ctx: OpenClawHookCtx,
-    ) => Promise<{ prependContext?: string } | void> | { prependContext?: string } | void,
+    ) =>
+      | Promise<{
+          prependContext?: string;
+          appendContext?: string;
+          appendSystemContext?: string;
+        } | void>
+      | {
+          prependContext?: string;
+          appendContext?: string;
+          appendSystemContext?: string;
+        }
+      | void,
   ): void;
   on(
     event: "agent_end",
