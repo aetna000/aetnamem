@@ -1,0 +1,2267 @@
+{
+  "metadata": {
+    "benchmark_version": 1,
+    "completed_at_utc": "2026-07-21T02:30:07.266614+00:00",
+    "random_seed": 20260722,
+    "repetitions_per_case": 2,
+    "cases": 10,
+    "arms": [
+      "native",
+      "aetnamem_current",
+      "aetnamem_cache_aware"
+    ],
+    "cache_probes_per_arm": 2,
+    "model": "deepseek/deepseek-v4-flash",
+    "thinking": "off",
+    "openclaw_version": "2026.7.1-2",
+    "deepseek_provider_package": "@openclaw/deepseek-provider@2026.7.1",
+    "aetnamem_distribution_version": "0.4.0a1",
+    "aetnamem_git_commit": "efc1b0bed127859171cf5a93f290847a015fdfe5",
+    "openclaw_plugin_version": "0.2.4",
+    "python": "3.12.2",
+    "node": "v22.23.1",
+    "platform": "macOS-26.5.1-x86_64-i386-64bit",
+    "baseline_memory_chars": 19489,
+    "baseline_memory_sha256": "bb9ac5bac614a2c3d925bae17647f8d04ca407b96757d95eb55cb7aa3dc0804c",
+    "minimal_memory_chars": 163,
+    "case_file_sha256": "560fed3e1023d1afe57ce4bfa640c198c8f315c251b53f4b98b30c18afff28df",
+    "harness_sha256": "d4c144911e0400ab1f27446f2ed9f0a049ee45855eca4cd874d1e5a189c59e5a",
+    "no_trial_exclusions": true,
+    "task_order": "three-arm rotating Latin order by case and repetition",
+    "scoring": "case-insensitive containment of every pre-registered expected fragment"
+  },
+  "summary": {
+    "task_arms": {
+      "native": {
+        "trials": 20,
+        "correct": 20,
+        "accuracy": 1.0,
+        "prompt_tokens_total": 596581,
+        "prompt_tokens_mean": 29829.05,
+        "prompt_tokens_median": 29829.0,
+        "uncached_input_tokens_total": 353381,
+        "cache_read_tokens_total": 243200,
+        "cache_hit_fraction": 0.407656,
+        "output_tokens_total": 513,
+        "provider_cost_usd_total": 0.05642658,
+        "latency_seconds_mean": 11.426,
+        "latency_seconds_median": 11.382,
+        "target_retrievals": 0
+      },
+      "aetnamem_current": {
+        "trials": 20,
+        "correct": 20,
+        "accuracy": 1.0,
+        "prompt_tokens_total": 521858,
+        "prompt_tokens_mean": 26092.9,
+        "prompt_tokens_median": 26076.5,
+        "uncached_input_tokens_total": 363138,
+        "cache_read_tokens_total": 158720,
+        "cache_hit_fraction": 0.304144,
+        "output_tokens_total": 455,
+        "provider_cost_usd_total": 0.05541088,
+        "latency_seconds_mean": 11.012,
+        "latency_seconds_median": 10.956,
+        "target_retrievals": 20
+      },
+      "aetnamem_cache_aware": {
+        "trials": 20,
+        "correct": 20,
+        "accuracy": 1.0,
+        "prompt_tokens_total": 517118,
+        "prompt_tokens_mean": 25855.9,
+        "prompt_tokens_median": 25844.5,
+        "uncached_input_tokens_total": 358398,
+        "cache_read_tokens_total": 158720,
+        "cache_hit_fraction": 0.306932,
+        "output_tokens_total": 471,
+        "provider_cost_usd_total": 0.05475176,
+        "latency_seconds_mean": 11.114,
+        "latency_seconds_median": 11.111,
+        "target_retrievals": 20
+      }
+    },
+    "cache_probes": {
+      "native": {
+        "cold_prompt_tokens": 29816,
+        "cold_cache_read_tokens": 1408,
+        "cold_cache_hit_fraction": 0.04722297,
+        "cold_cost_usd": 0.004017944000000001,
+        "warm_prompt_tokens": 29814,
+        "warm_cache_read_tokens": 6400,
+        "warm_cache_hit_fraction": 0.21466425,
+        "warm_cost_usd": 0.0034585600000000003
+      },
+      "aetnamem_current": {
+        "cold_prompt_tokens": 25976,
+        "cold_cache_read_tokens": 1408,
+        "cold_cache_hit_fraction": 0.05420388,
+        "cold_cost_usd": 0.0034806240000000003,
+        "warm_prompt_tokens": 25977,
+        "warm_cache_read_tokens": 2176,
+        "warm_cache_hit_fraction": 0.08376641,
+        "warm_cost_usd": 0.0033944680000000003
+      },
+      "aetnamem_cache_aware": {
+        "cold_prompt_tokens": 25763,
+        "cold_cache_read_tokens": 1408,
+        "cold_cache_hit_fraction": 0.05465202,
+        "cold_cost_usd": 0.0034505240000000004,
+        "warm_prompt_tokens": 25765,
+        "warm_cache_read_tokens": 2176,
+        "warm_cache_hit_fraction": 0.08445566,
+        "warm_cost_usd": 0.003364788
+      }
+    },
+    "comparisons": {
+      "native_to_current": {
+        "left": "native",
+        "right": "aetnamem_current",
+        "paired_trials": 20,
+        "prompt_tokens_saved_total": 74723,
+        "prompt_token_reduction_percent": 12.525,
+        "paired_prompt_tokens_saved_mean": 3736.15,
+        "paired_prompt_tokens_saved_median": 3752.5,
+        "paired_mean_savings_95pct_bootstrap_ci_tokens": [
+          3715.75,
+          3756.35
+        ],
+        "provider_cost_change_percent": -1.8
+      },
+      "native_to_cache_aware": {
+        "left": "native",
+        "right": "aetnamem_cache_aware",
+        "paired_trials": 20,
+        "prompt_tokens_saved_total": 79463,
+        "prompt_token_reduction_percent": 13.32,
+        "paired_prompt_tokens_saved_mean": 3973.15,
+        "paired_prompt_tokens_saved_median": 3985.0,
+        "paired_mean_savings_95pct_bootstrap_ci_tokens": [
+          3958.5,
+          3987.25
+        ],
+        "provider_cost_change_percent": -2.968
+      },
+      "current_to_cache_aware": {
+        "left": "aetnamem_current",
+        "right": "aetnamem_cache_aware",
+        "paired_trials": 20,
+        "prompt_tokens_saved_total": 4740,
+        "prompt_token_reduction_percent": 0.908,
+        "paired_prompt_tokens_saved_mean": 237,
+        "paired_prompt_tokens_saved_median": 235.0,
+        "paired_mean_savings_95pct_bootstrap_ci_tokens": [
+          231.1,
+          243.05
+        ],
+        "provider_cost_change_percent": -1.19
+      }
+    }
+  },
+  "aetnamem_evidence": {
+    "aetnamem_current": {
+      "audit_chain_valid": true,
+      "audit_events": 252,
+      "retrieval_events": 22,
+      "seeded_records": 94
+    },
+    "aetnamem_cache_aware": {
+      "audit_chain_valid": true,
+      "audit_events": 252,
+      "retrieval_events": 22,
+      "seeded_records": 94
+    }
+  },
+  "trials": [
+    {
+      "phase": "cache_probe_cold",
+      "case_id": "cache-ready",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-cache_probe_cold-cache-ready-r1-native",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.794821,
+      "prompt_tokens": 29816,
+      "uncached_input_tokens": 28408,
+      "cache_read_tokens": 1408,
+      "output_tokens": 5,
+      "total_tokens": 29821,
+      "provider_cost_usd": 0.004017944000000001,
+      "cache_hit_fraction": 0.04722297,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "7b167c723264b7c3725b3bac54ff8824aeac19de5b014c93a12346af7dd627fc"
+    },
+    {
+      "phase": "cache_probe_warm",
+      "case_id": "cache-ready",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-cache_probe_warm-cache-ready-r2-native",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.885099,
+      "prompt_tokens": 29814,
+      "uncached_input_tokens": 23414,
+      "cache_read_tokens": 6400,
+      "output_tokens": 5,
+      "total_tokens": 29819,
+      "provider_cost_usd": 0.0034585600000000003,
+      "cache_hit_fraction": 0.21466425,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "a905b6458d91176e3876e7a74597347911e8937f892468f45b293bca0cc2ce68"
+    },
+    {
+      "phase": "cache_probe_cold",
+      "case_id": "cache-ready",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-cache_probe_cold-cache-ready-r1-aetnamem_current",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.224637,
+      "prompt_tokens": 25976,
+      "uncached_input_tokens": 24568,
+      "cache_read_tokens": 1408,
+      "output_tokens": 6,
+      "total_tokens": 25982,
+      "provider_cost_usd": 0.0034806240000000003,
+      "cache_hit_fraction": 0.05420388,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "d2876385c2dcffb7bdec36a6d9f7da8a010ee094e03f2d82f1a9607f6c6b1548"
+    },
+    {
+      "phase": "cache_probe_warm",
+      "case_id": "cache-ready",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-cache_probe_warm-cache-ready-r2-aetnamem_current",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.143378,
+      "prompt_tokens": 25977,
+      "uncached_input_tokens": 23801,
+      "cache_read_tokens": 2176,
+      "output_tokens": 5,
+      "total_tokens": 25982,
+      "provider_cost_usd": 0.0033944680000000003,
+      "cache_hit_fraction": 0.08376641,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "b8d05a3adf945d5093a2b01b51e51d4650ceb6743d65b8e3c87e76a02e4b6d21"
+    },
+    {
+      "phase": "cache_probe_cold",
+      "case_id": "cache-ready",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-cache_probe_cold-cache-ready-r1-aetnamem_cache_aware",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.278354,
+      "prompt_tokens": 25763,
+      "uncached_input_tokens": 24355,
+      "cache_read_tokens": 1408,
+      "output_tokens": 5,
+      "total_tokens": 25768,
+      "provider_cost_usd": 0.0034505240000000004,
+      "cache_hit_fraction": 0.05465202,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "d1b14a391b059da8f2c53c0a07bfaccfefb6b7baa0996f43b8ab8b8045da5114"
+    },
+    {
+      "phase": "cache_probe_warm",
+      "case_id": "cache-ready",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-cache_probe_warm-cache-ready-r2-aetnamem_cache_aware",
+      "answer": "CACHE_READY",
+      "expected": [
+        "CACHE_READY"
+      ],
+      "correct": true,
+      "latency_seconds": 11.146186,
+      "prompt_tokens": 25765,
+      "uncached_input_tokens": 23589,
+      "cache_read_tokens": 2176,
+      "output_tokens": 5,
+      "total_tokens": 25770,
+      "provider_cost_usd": 0.003364788,
+      "cache_hit_fraction": 0.08445566,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "42d71800325ae8e5f101db5cf4ac394eb7a8445dafd9061753e453efaf17b522"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-cedar-rollback-r1-native",
+      "answer": "The CEDAR medication-reconciliation rollout must be rolled back after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.411281,
+      "prompt_tokens": 29830,
+      "uncached_input_tokens": 17670,
+      "cache_read_tokens": 12160,
+      "output_tokens": 30,
+      "total_tokens": 29860,
+      "provider_cost_usd": 0.00282268,
+      "cache_hit_fraction": 0.40764331,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "47a27a2e245ed34cacf6a797e6a9806a6ed2a2b32e4fb3d1b0c5c959fc1c7b19"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-cedar-rollback-r1-aetnamem_current",
+      "answer": "Two consecutive 15-minute windows each above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 10.692719,
+      "prompt_tokens": 26161,
+      "uncached_input_tokens": 18225,
+      "cache_read_tokens": 7936,
+      "output_tokens": 18,
+      "total_tokens": 26179,
+      "provider_cost_usd": 0.002778748,
+      "cache_hit_fraction": 0.30335232,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_9d346f28371843f681dfe293a8f079fa",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "cedar-rollback",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "238186043ed2211b93b9afbc2f4459379feeeaba596fd6fe5a89b3239c9eaa95"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-cedar-rollback-r1-aetnamem_cache_aware",
+      "answer": "The CEDAR medication-reconciliation rollout triggers a rollback after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.145418,
+      "prompt_tokens": 25902,
+      "uncached_input_tokens": 17966,
+      "cache_read_tokens": 7936,
+      "output_tokens": 30,
+      "total_tokens": 25932,
+      "provider_cost_usd": 0.0027458480000000004,
+      "cache_hit_fraction": 0.30638561,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_05b334e1c9e6423b949a584e19f71402",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "cedar-rollback",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "c9ac39ffdd067f45bf2babb879bdd670a86c11c03e2ab9f32d7e642c546a9cc9"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-orbit-downtime-r1-aetnamem_current",
+      "answer": "The ORBIT downtime escalation route is the Teams channel orbit-command and pager group CLIN-27.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 11.13554,
+      "prompt_tokens": 26045,
+      "uncached_input_tokens": 18109,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 26067,
+      "provider_cost_usd": 0.0027636279999999997,
+      "cache_hit_fraction": 0.3047034,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_e34d9b140fb54e829caceae0d6318cb1"
+      ],
+      "retrieved_labels": [
+        "orbit-downtime"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "95455109a2355c661dec9cf08d5e661e5a32731bbe45d7bcdc70ac161ae199b2"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-orbit-downtime-r1-aetnamem_cache_aware",
+      "answer": "The Teams channel **orbit-command** and pager group **CLIN-27**.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 11.252257,
+      "prompt_tokens": 25825,
+      "uncached_input_tokens": 17889,
+      "cache_read_tokens": 7936,
+      "output_tokens": 18,
+      "total_tokens": 25843,
+      "provider_cost_usd": 0.0027317080000000002,
+      "cache_hit_fraction": 0.30729913,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_2bdc4dae72274c738d28a8234cf9faad"
+      ],
+      "retrieved_labels": [
+        "orbit-downtime"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "7bf626b13754042dab6e5a44a182f4353d417c836eacdc36ab8c69c90d1e437d"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-orbit-downtime-r1-native",
+      "answer": "The ORBIT downtime escalation route is the Teams channel orbit-command plus pager group CLIN-27.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 11.550683,
+      "prompt_tokens": 29834,
+      "uncached_input_tokens": 17674,
+      "cache_read_tokens": 12160,
+      "output_tokens": 22,
+      "total_tokens": 29856,
+      "provider_cost_usd": 0.0028209999999999997,
+      "cache_hit_fraction": 0.40758866,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "eb4883bd8a5ebde39b8d208020fbe89d9a298cd6c068bbe0d73984d8ed267903"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-harbor-retention-r1-aetnamem_cache_aware",
+      "answer": "HARBOR retains raw event payloads for 30 days and signed decision receipts for 7 years.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 10.584317,
+      "prompt_tokens": 25826,
+      "uncached_input_tokens": 17890,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 25848,
+      "provider_cost_usd": 0.0027329679999999997,
+      "cache_hit_fraction": 0.30728723,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_6d9f2fe0f565459995427f5ef7fa99f7"
+      ],
+      "retrieved_labels": [
+        "harbor-retention"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "b5227eeadf7ae34dda15d487c616905c4d9e8755479bcbb41e315f3b2243efa5"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-harbor-retention-r1-native",
+      "answer": "HARBOR retains raw event payloads for 30 days and signed decision receipts for 7 years.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 11.251835,
+      "prompt_tokens": 29827,
+      "uncached_input_tokens": 17667,
+      "cache_read_tokens": 12160,
+      "output_tokens": 23,
+      "total_tokens": 29850,
+      "provider_cost_usd": 0.0028203000000000004,
+      "cache_hit_fraction": 0.40768431,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "7dc72db1b42f9cfc4cbebc449ee5447dd984b92ea9b72e211c9f3efcb5efd25f"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-harbor-retention-r1-aetnamem_current",
+      "answer": "HARBOR retains raw event payloads for 30 days and signed decision receipts for 7 years.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 10.99408,
+      "prompt_tokens": 26051,
+      "uncached_input_tokens": 18115,
+      "cache_read_tokens": 7936,
+      "output_tokens": 23,
+      "total_tokens": 26074,
+      "provider_cost_usd": 0.002764748,
+      "cache_hit_fraction": 0.30463322,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_1e71faedaa2648e18ebd6606c90ce7a7"
+      ],
+      "retrieved_labels": [
+        "harbor-retention"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "f945c6a92ebfe18edf09c9724071511ed33b42044e291121b9f0972a3e3e9a4f"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-lantern-training-r1-native",
+      "answer": "The LANTERN go-live training gate requires simulation-lab completion and a score of at least 80 percent on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.097476,
+      "prompt_tokens": 29828,
+      "uncached_input_tokens": 17668,
+      "cache_read_tokens": 12160,
+      "output_tokens": 26,
+      "total_tokens": 29854,
+      "provider_cost_usd": 0.0028212800000000007,
+      "cache_hit_fraction": 0.40767065,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "0fdd8f91753d96280618ffbb5fc4da4080ebd919d813421bb01a421c85a37b3f"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-lantern-training-r1-aetnamem_current",
+      "answer": "Simulation-lab completion and a score of at least 80% on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 10.648839,
+      "prompt_tokens": 26051,
+      "uncached_input_tokens": 18115,
+      "cache_read_tokens": 7936,
+      "output_tokens": 18,
+      "total_tokens": 26069,
+      "provider_cost_usd": 0.0027633480000000005,
+      "cache_hit_fraction": 0.30463322,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "5b340c5594901df56c431f5c3082f34c9834142de48e6888f504702a9fdb5ff4"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-lantern-training-r1-aetnamem_cache_aware",
+      "answer": "The LANTERN go-live training gate requires simulation-lab completion and a score of at least 80% on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.259298,
+      "prompt_tokens": 25823,
+      "uncached_input_tokens": 17887,
+      "cache_read_tokens": 7936,
+      "output_tokens": 26,
+      "total_tokens": 25849,
+      "provider_cost_usd": 0.0027336680000000007,
+      "cache_hit_fraction": 0.30732293,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "f8a1cba08cf8b964b95204fcbd3480df0d380c548f1ef94a8942aed21810fa45"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-wattle-freeze-r1-aetnamem_current",
+      "answer": "The WATTLE production change freeze runs from Friday 16:00 until Monday 06:00 in the Australia/Sydney timezone.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 10.872686,
+      "prompt_tokens": 26160,
+      "uncached_input_tokens": 18224,
+      "cache_read_tokens": 7936,
+      "output_tokens": 28,
+      "total_tokens": 26188,
+      "provider_cost_usd": 0.002781408,
+      "cache_hit_fraction": 0.30336391,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_3f2bd7ddc7e14883b54f6c4867951bb6",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "wattle-freeze",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "9c63477de0882a4eb81c223374a84ad43888d2569e5ae81eafc0546a07f29e7c"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-wattle-freeze-r1-aetnamem_cache_aware",
+      "answer": "The WATTLE production change-freeze window is Friday 16:00 to Monday 06:00 in the Australia/Sydney timezone.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 11.198968,
+      "prompt_tokens": 25902,
+      "uncached_input_tokens": 17966,
+      "cache_read_tokens": 7936,
+      "output_tokens": 29,
+      "total_tokens": 25931,
+      "provider_cost_usd": 0.0027455680000000003,
+      "cache_hit_fraction": 0.30638561,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_71f01b8b76ca418a9718fba9d30c7170",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "wattle-freeze",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "60e7b121e5af55f236716a9fed2d5881124dea621dbbb8378729ad1db8535021"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-wattle-freeze-r1-native",
+      "answer": "The WATTLE production change freeze runs from Friday 16:00 until Monday 06:00 in the Australia/Sydney timezone.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 11.457311,
+      "prompt_tokens": 29828,
+      "uncached_input_tokens": 17668,
+      "cache_read_tokens": 12160,
+      "output_tokens": 28,
+      "total_tokens": 29856,
+      "provider_cost_usd": 0.00282184,
+      "cache_hit_fraction": 0.40767065,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "69cfdf60513919d9117581aa53613538882c3045483c31d1bfcdf517778b938a"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-meridian-owner-r1-aetnamem_cache_aware",
+      "answer": "**Owner:** Director of Clinical Safety. **Backup:** Chief Medical Information Officer.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 11.064142,
+      "prompt_tokens": 25825,
+      "uncached_input_tokens": 17889,
+      "cache_read_tokens": 7936,
+      "output_tokens": 17,
+      "total_tokens": 25842,
+      "provider_cost_usd": 0.002731428,
+      "cache_hit_fraction": 0.30729913,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "8569b23b5b591649e9bd633cb9692105f0f52766ffedf178fcd5a2b7a08f6ceb"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-meridian-owner-r1-native",
+      "answer": "The MERIDIAN clinical-risk acceptance owner is the Director of Clinical Safety, and the named backup role is the Chief Medical Information Officer.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 10.901362,
+      "prompt_tokens": 29829,
+      "uncached_input_tokens": 17669,
+      "cache_read_tokens": 12160,
+      "output_tokens": 27,
+      "total_tokens": 29856,
+      "provider_cost_usd": 0.0028217000000000008,
+      "cache_hit_fraction": 0.40765698,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "d263cda24df40f4d89098b078d831b791044e8175a4300138e71467b5f9f9fad"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-meridian-owner-r1-aetnamem_current",
+      "answer": "The Director of Clinical Safety owns MERIDIAN clinical-risk acceptance, and the Chief Medical Information Officer is the named backup.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 11.160039,
+      "prompt_tokens": 26048,
+      "uncached_input_tokens": 18112,
+      "cache_read_tokens": 7936,
+      "output_tokens": 24,
+      "total_tokens": 26072,
+      "provider_cost_usd": 0.002764608,
+      "cache_hit_fraction": 0.3046683,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "d81e91e131aeee3ed434fad68908ea3948f5ea15141fd273bb458772fd906058"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-quartz-database-r1-native",
+      "answer": "sslmode=verify-full and certificates issued by the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 11.070977,
+      "prompt_tokens": 29827,
+      "uncached_input_tokens": 17667,
+      "cache_read_tokens": 12160,
+      "output_tokens": 16,
+      "total_tokens": 29843,
+      "provider_cost_usd": 0.00281834,
+      "cache_hit_fraction": 0.40768431,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "219d1e7bb7a0303a52c380782629cbc9ad89a84568fdb437ffde9a61cecbd3f6"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-quartz-database-r1-aetnamem_current",
+      "answer": "sslmode=verify-full with certificates issued by the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 11.15273,
+      "prompt_tokens": 26150,
+      "uncached_input_tokens": 18214,
+      "cache_read_tokens": 7936,
+      "output_tokens": 17,
+      "total_tokens": 26167,
+      "provider_cost_usd": 0.0027769279999999997,
+      "cache_hit_fraction": 0.30347992,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_6bf10e11abc743f99a0d2d7bb25fd802",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "quartz-database",
+        "lantern-training",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "c39f37a9b5939f1b4647023da9d9cca4dc4f4dea1c5429d04ced11da091eaa38"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-quartz-database-r1-aetnamem_cache_aware",
+      "answer": "QUARTZ production requires `sslmode=verify-full` and certificates from the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 10.926345,
+      "prompt_tokens": 25895,
+      "uncached_input_tokens": 17959,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 25917,
+      "provider_cost_usd": 0.0027426280000000004,
+      "cache_hit_fraction": 0.30646843,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_2610af1444f846f4996f8d9b6b928288",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "quartz-database",
+        "lantern-training",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "4f682faf0815ce7c3e00e3018dc9cce33a50b105a25ab4720d97e2fa3c6c8f82"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-ember-severity-r1-aetnamem_current",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 10.779291,
+      "prompt_tokens": 26054,
+      "uncached_input_tokens": 18118,
+      "cache_read_tokens": 7936,
+      "output_tokens": 28,
+      "total_tokens": 26082,
+      "provider_cost_usd": 0.0027665679999999996,
+      "cache_hit_fraction": 0.30459814,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_fbd0b6c5bcff4f11ad7f9a127feb0aa8"
+      ],
+      "retrieved_labels": [
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "73108f31b8fb93feeda7dad95f60b0c5bf8a056ce58d287717bab5defc074bfa"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-ember-severity-r1-aetnamem_cache_aware",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 11.075113,
+      "prompt_tokens": 25821,
+      "uncached_input_tokens": 17885,
+      "cache_read_tokens": 7936,
+      "output_tokens": 27,
+      "total_tokens": 25848,
+      "provider_cost_usd": 0.0027336680000000007,
+      "cache_hit_fraction": 0.30734673,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_a311d2ab76214f6bb50e4743749a26fd"
+      ],
+      "retrieved_labels": [
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "aa8d7d5bc85ccedd3689511677a0e2cbd3454a2d179ff347b9bd1a6733edeb0e"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-ember-severity-r1-native",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 11.85356,
+      "prompt_tokens": 29828,
+      "uncached_input_tokens": 17668,
+      "cache_read_tokens": 12160,
+      "output_tokens": 27,
+      "total_tokens": 29855,
+      "provider_cost_usd": 0.0028215600000000007,
+      "cache_hit_fraction": 0.40767065,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "150568544a113688df2e021bb103f0fbaa32d649738a3e3c70de0e0a90e96723"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-summit-approval-r1-aetnamem_cache_aware",
+      "answer": "Clinical Governance, Privacy, and the Service Owner.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 11.056337,
+      "prompt_tokens": 25860,
+      "uncached_input_tokens": 17924,
+      "cache_read_tokens": 7936,
+      "output_tokens": 10,
+      "total_tokens": 25870,
+      "provider_cost_usd": 0.002734368,
+      "cache_hit_fraction": 0.30688322,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_0d09bce8bbb04e4ebc2d4f1c876e8a47",
+        "rec_a311d2ab76214f6bb50e4743749a26fd"
+      ],
+      "retrieved_labels": [
+        "summit-approval",
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "3a4c174668c60dc504a8cb32ed5f722a14499b9f06a27eb7e223525c0e358cc4"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-summit-approval-r1-native",
+      "answer": "Clinical Governance, Privacy, and the Service Owner must all approve before a SUMMIT model update can be deployed to production.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 11.295331,
+      "prompt_tokens": 29832,
+      "uncached_input_tokens": 17672,
+      "cache_read_tokens": 12160,
+      "output_tokens": 25,
+      "total_tokens": 29857,
+      "provider_cost_usd": 0.00282156,
+      "cache_hit_fraction": 0.40761598,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "1b45ad4f24fac594ef2b4dfdb2ac62d511b4b8e85fdcf7aec3c88057e32f9203"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-summit-approval-r1-aetnamem_current",
+      "answer": "The three mandatory approvals before a SUMMIT model update reaches production are Clinical Governance, Privacy, and the Service Owner.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 11.665996,
+      "prompt_tokens": 26099,
+      "uncached_input_tokens": 18163,
+      "cache_read_tokens": 7936,
+      "output_tokens": 24,
+      "total_tokens": 26123,
+      "provider_cost_usd": 0.002771748,
+      "cache_hit_fraction": 0.30407295,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_da89e7eaecbd4c0db071f220728d2595",
+        "rec_fbd0b6c5bcff4f11ad7f9a127feb0aa8"
+      ],
+      "retrieved_labels": [
+        "summit-approval",
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "eb68e59cdd893ae4bf26e37d65d47ca04f2efacba789c7376357662045729f48"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 1,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-tide-monitoring-r1-native",
+      "answer": "TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 11.351926,
+      "prompt_tokens": 29826,
+      "uncached_input_tokens": 17666,
+      "cache_read_tokens": 12160,
+      "output_tokens": 34,
+      "total_tokens": 29860,
+      "provider_cost_usd": 0.0028232400000000003,
+      "cache_hit_fraction": 0.40769798,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "8571e91ba5047f709221de81d9cf3905eab9293f980b5200efc6f5583c19125b"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 1,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-tide-monitoring-r1-aetnamem_current",
+      "answer": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 10.81065,
+      "prompt_tokens": 26110,
+      "uncached_input_tokens": 18174,
+      "cache_read_tokens": 7936,
+      "output_tokens": 35,
+      "total_tokens": 26145,
+      "provider_cost_usd": 0.0027763680000000004,
+      "cache_hit_fraction": 0.30394485,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_062e90cbb1664b6993c8bf31fec6302d",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "tide-monitoring",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "e244372aefed0561ac1e03580d9fee071a53bfe10f6414dc9612a5b48108000b"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 1,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-tide-monitoring-r1-aetnamem_cache_aware",
+      "answer": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 10.986319,
+      "prompt_tokens": 25872,
+      "uncached_input_tokens": 17936,
+      "cache_read_tokens": 7936,
+      "output_tokens": 34,
+      "total_tokens": 25906,
+      "provider_cost_usd": 0.0027427679999999996,
+      "cache_hit_fraction": 0.30674088,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_0b41e5588f96402a996afaa1530adcdb",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "tide-monitoring",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "eb1fe4fcf4aa04785dd00a9f3bb6cb5da7b919356e08c00317acc5fe5761cda4"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-cedar-rollback-r2-aetnamem_current",
+      "answer": "The CEDAR medication-reconciliation rollout must be rolled back after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.029168,
+      "prompt_tokens": 26159,
+      "uncached_input_tokens": 18223,
+      "cache_read_tokens": 7936,
+      "output_tokens": 31,
+      "total_tokens": 26190,
+      "provider_cost_usd": 0.002782108,
+      "cache_hit_fraction": 0.30337551,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_9d346f28371843f681dfe293a8f079fa",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "cedar-rollback",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "3ff8c1e1d0344961a8cb67d6c5a1d84e79ca1a2f04cbf0f9b80f9678861216a2"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-cedar-rollback-r2-aetnamem_cache_aware",
+      "answer": "The CEDAR medication-reconciliation rollout must be rolled back after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.339697,
+      "prompt_tokens": 25906,
+      "uncached_input_tokens": 17970,
+      "cache_read_tokens": 7936,
+      "output_tokens": 30,
+      "total_tokens": 25936,
+      "provider_cost_usd": 0.0027464080000000005,
+      "cache_hit_fraction": 0.3063383,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_05b334e1c9e6423b949a584e19f71402",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "cedar-rollback",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "186649d316fae7b54461d255026afeec21b730921edc29bc9f1c4d6d270ce4e1"
+    },
+    {
+      "phase": "task",
+      "case_id": "cedar-rollback",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-cedar-rollback-r2-native",
+      "answer": "The CEDAR medication-reconciliation rollout must be rolled back after two consecutive 15-minute windows above a 2.5 percent reconciliation-error rate.",
+      "expected": [
+        "two consecutive 15-minute windows",
+        "2.5 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.726324,
+      "prompt_tokens": 29832,
+      "uncached_input_tokens": 17672,
+      "cache_read_tokens": 12160,
+      "output_tokens": 30,
+      "total_tokens": 29862,
+      "provider_cost_usd": 0.0028229600000000002,
+      "cache_hit_fraction": 0.40761598,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "0ad8ee6314dcfc8f3a510f776e8f19a7e564f7133abb6ff5e67669240c70e73d"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-orbit-downtime-r2-aetnamem_cache_aware",
+      "answer": "The ORBIT downtime escalation route is the Teams channel orbit-command plus pager group CLIN-27.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 10.802542,
+      "prompt_tokens": 25827,
+      "uncached_input_tokens": 17891,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 25849,
+      "provider_cost_usd": 0.0027331079999999997,
+      "cache_hit_fraction": 0.30727533,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_2bdc4dae72274c738d28a8234cf9faad"
+      ],
+      "retrieved_labels": [
+        "orbit-downtime"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "e5a88087c40a0053e1980c4b034785049293d1e42415164ff2dbd0dc3fbb13f7"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-orbit-downtime-r2-native",
+      "answer": "The ORBIT downtime escalation route is the Teams channel orbit-command plus pager group CLIN-27.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 11.290363,
+      "prompt_tokens": 29831,
+      "uncached_input_tokens": 17671,
+      "cache_read_tokens": 12160,
+      "output_tokens": 22,
+      "total_tokens": 29853,
+      "provider_cost_usd": 0.0028205799999999996,
+      "cache_hit_fraction": 0.40762965,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "d772c79e846eacf5f44a125e7868509c48fdb0d8cf5dd0291d0d1d0f6dcf3d2a"
+    },
+    {
+      "phase": "task",
+      "case_id": "orbit-downtime",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-orbit-downtime-r2-aetnamem_current",
+      "answer": "orbit-command and CLIN-27.",
+      "expected": [
+        "orbit-command",
+        "CLIN-27"
+      ],
+      "correct": true,
+      "latency_seconds": 10.876857,
+      "prompt_tokens": 26048,
+      "uncached_input_tokens": 18112,
+      "cache_read_tokens": 7936,
+      "output_tokens": 9,
+      "total_tokens": 26057,
+      "provider_cost_usd": 0.0027604080000000007,
+      "cache_hit_fraction": 0.3046683,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_e34d9b140fb54e829caceae0d6318cb1"
+      ],
+      "retrieved_labels": [
+        "orbit-downtime"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "a56b5d4d938003268a7b86c83aeb99a38d1188f9e8e1001c18331f055978a693"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-harbor-retention-r2-native",
+      "answer": "Raw event payloads are retained for 30 days and signed decision receipts for 7 years.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 11.027941,
+      "prompt_tokens": 29826,
+      "uncached_input_tokens": 17666,
+      "cache_read_tokens": 12160,
+      "output_tokens": 19,
+      "total_tokens": 29845,
+      "provider_cost_usd": 0.00281904,
+      "cache_hit_fraction": 0.40769798,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "49e9003b68cd02a9c0ceff844c37538a29981c8845dd8a5a506f21f031fdd0e3"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-harbor-retention-r2-aetnamem_current",
+      "answer": "30 days for raw event payloads, 7 years for signed decision receipts.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 10.770332,
+      "prompt_tokens": 26054,
+      "uncached_input_tokens": 18118,
+      "cache_read_tokens": 7936,
+      "output_tokens": 16,
+      "total_tokens": 26070,
+      "provider_cost_usd": 0.0027632079999999996,
+      "cache_hit_fraction": 0.30459814,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_1e71faedaa2648e18ebd6606c90ce7a7"
+      ],
+      "retrieved_labels": [
+        "harbor-retention"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "753afb0720a72f404549ae2aebfe7cf0630ae86dc3f970b20ce6449526881967"
+    },
+    {
+      "phase": "task",
+      "case_id": "harbor-retention",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-harbor-retention-r2-aetnamem_cache_aware",
+      "answer": "HARBOR retains raw event payloads for 30 days and signed decision receipts for 7 years.",
+      "expected": [
+        "30 days",
+        "7 years"
+      ],
+      "correct": true,
+      "latency_seconds": 10.443494,
+      "prompt_tokens": 25828,
+      "uncached_input_tokens": 17892,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 25850,
+      "provider_cost_usd": 0.0027332479999999998,
+      "cache_hit_fraction": 0.30726344,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_6d9f2fe0f565459995427f5ef7fa99f7"
+      ],
+      "retrieved_labels": [
+        "harbor-retention"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "34a3f197c3dd9ccebc4a639c33d549b451921ddfd66f7ad73d23691e07738af6"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-lantern-training-r2-aetnamem_current",
+      "answer": "Simulation-lab completion and a score of at least 80 percent on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 10.917985,
+      "prompt_tokens": 26046,
+      "uncached_input_tokens": 18110,
+      "cache_read_tokens": 7936,
+      "output_tokens": 19,
+      "total_tokens": 26065,
+      "provider_cost_usd": 0.0027629280000000004,
+      "cache_hit_fraction": 0.3046917,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "29bba6fa043d1d0a162d7aee9cabef97eef28f244b4c4efb5d9300a745900147"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-lantern-training-r2-aetnamem_cache_aware",
+      "answer": "Simulation-lab completion and a score of at least 80% on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.097867,
+      "prompt_tokens": 25821,
+      "uncached_input_tokens": 17885,
+      "cache_read_tokens": 7936,
+      "output_tokens": 18,
+      "total_tokens": 25839,
+      "provider_cost_usd": 0.002731148,
+      "cache_hit_fraction": 0.30734673,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "e2395d888a65ed4a9ede5d69330a62a175662a9821b6220f08b9498d85200965"
+    },
+    {
+      "phase": "task",
+      "case_id": "lantern-training",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-lantern-training-r2-native",
+      "answer": "The LANTERN go-live training gate requires simulation-lab completion and a score of at least 80 percent on the competency assessment.",
+      "expected": [
+        "simulation",
+        "80 percent"
+      ],
+      "correct": true,
+      "latency_seconds": 11.52772,
+      "prompt_tokens": 29829,
+      "uncached_input_tokens": 17669,
+      "cache_read_tokens": 12160,
+      "output_tokens": 26,
+      "total_tokens": 29855,
+      "provider_cost_usd": 0.0028214200000000007,
+      "cache_hit_fraction": 0.40765698,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "49c9a3cc7d0fadc87aee2169d9cc4a3e001f2796572f0445468e8f3878031bd4"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-wattle-freeze-r2-aetnamem_cache_aware",
+      "answer": "The WATTLE production change freeze runs from Friday 16:00 until Monday 06:00 in the Australia/Sydney timezone.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 11.001191,
+      "prompt_tokens": 25901,
+      "uncached_input_tokens": 17965,
+      "cache_read_tokens": 7936,
+      "output_tokens": 28,
+      "total_tokens": 25929,
+      "provider_cost_usd": 0.002745148,
+      "cache_hit_fraction": 0.30639744,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_71f01b8b76ca418a9718fba9d30c7170",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a"
+      ],
+      "retrieved_labels": [
+        "wattle-freeze",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "a307cf8e57128ca1a6d7f1c131ea610770f7c734c5641db60ee0d9af7a1249e2"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-wattle-freeze-r2-native",
+      "answer": "The WATTLE production change freeze runs from Friday 16:00 until Monday 06:00 in the Australia/Sydney timezone.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 11.255452,
+      "prompt_tokens": 29829,
+      "uncached_input_tokens": 17669,
+      "cache_read_tokens": 12160,
+      "output_tokens": 28,
+      "total_tokens": 29857,
+      "provider_cost_usd": 0.00282198,
+      "cache_hit_fraction": 0.40765698,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "a5c9895ec559b93c6c622e54ff2ace41af8130e0a277b8ced141be68e55dad0c"
+    },
+    {
+      "phase": "task",
+      "case_id": "wattle-freeze",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-wattle-freeze-r2-aetnamem_current",
+      "answer": "Friday 16:00 until Monday 06:00 in Australia/Sydney.",
+      "expected": [
+        "Friday 16:00",
+        "Monday 06:00",
+        "Australia/Sydney"
+      ],
+      "correct": true,
+      "latency_seconds": 10.649614,
+      "prompt_tokens": 26156,
+      "uncached_input_tokens": 18220,
+      "cache_read_tokens": 7936,
+      "output_tokens": 17,
+      "total_tokens": 26173,
+      "provider_cost_usd": 0.002777768,
+      "cache_hit_fraction": 0.30341031,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_3f2bd7ddc7e14883b54f6c4867951bb6",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37"
+      ],
+      "retrieved_labels": [
+        "wattle-freeze",
+        "meridian-owner",
+        "lantern-training"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "b5d705d1cd86a6b22dfa29f1dedd08bc0d3e93ea5ef355c540a660296fade588"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-meridian-owner-r2-native",
+      "answer": "The MERIDIAN clinical-risk acceptance owner is the Director of Clinical Safety, and the named backup role is the Chief Medical Information Officer.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 11.129798,
+      "prompt_tokens": 29830,
+      "uncached_input_tokens": 17670,
+      "cache_read_tokens": 12160,
+      "output_tokens": 28,
+      "total_tokens": 29858,
+      "provider_cost_usd": 0.00282212,
+      "cache_hit_fraction": 0.40764331,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "5c56bb06e544b03714bf98b7b846b28c3d9cf7585e1b4d4993a68eb808e3af8e"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-meridian-owner-r2-aetnamem_current",
+      "answer": "The Director of Clinical Safety owns MERIDIAN clinical-risk acceptance, and the Chief Medical Information Officer is the named backup.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 11.222097,
+      "prompt_tokens": 26051,
+      "uncached_input_tokens": 18115,
+      "cache_read_tokens": 7936,
+      "output_tokens": 24,
+      "total_tokens": 26075,
+      "provider_cost_usd": 0.002765028,
+      "cache_hit_fraction": 0.30463322,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "faf960bbfce30d794ec9f6e8dc9a835c83e3558baf816ec4a81eb1f82348b6bf"
+    },
+    {
+      "phase": "task",
+      "case_id": "meridian-owner",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-meridian-owner-r2-aetnamem_cache_aware",
+      "answer": "The Director of Clinical Safety owns clinical-risk acceptance for MERIDIAN, backed up by the Chief Medical Information Officer.",
+      "expected": [
+        "Director of Clinical Safety",
+        "Chief Medical Information Officer"
+      ],
+      "correct": true,
+      "latency_seconds": 11.755952,
+      "prompt_tokens": 25828,
+      "uncached_input_tokens": 17892,
+      "cache_read_tokens": 7936,
+      "output_tokens": 23,
+      "total_tokens": 25851,
+      "provider_cost_usd": 0.002733528,
+      "cache_hit_fraction": 0.30726344,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "745bc64eed617f98697a94b86640a9eccec9589a774823232220a6041e6cedc1"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-quartz-database-r2-aetnamem_current",
+      "answer": "sslmode=verify-full with certificates issued by the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 11.153224,
+      "prompt_tokens": 26150,
+      "uncached_input_tokens": 18214,
+      "cache_read_tokens": 7936,
+      "output_tokens": 17,
+      "total_tokens": 26167,
+      "provider_cost_usd": 0.0027769279999999997,
+      "cache_hit_fraction": 0.30347992,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_6bf10e11abc743f99a0d2d7bb25fd802",
+        "rec_068d0332f4344aae9d3ed88aa10dfc37",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "quartz-database",
+        "lantern-training",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "ad05650e0648cd7eea9e654ec7e2abd1dedf964c8afdaac8ab70a0138379ae9f"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-quartz-database-r2-aetnamem_cache_aware",
+      "answer": "QUARTZ production requires `sslmode=verify-full` with certificates issued by the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 11.125064,
+      "prompt_tokens": 25895,
+      "uncached_input_tokens": 17959,
+      "cache_read_tokens": 7936,
+      "output_tokens": 23,
+      "total_tokens": 25918,
+      "provider_cost_usd": 0.0027429080000000005,
+      "cache_hit_fraction": 0.30646843,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_2610af1444f846f4996f8d9b6b928288",
+        "rec_5b068404373f4166b87a4ccdf5d12a7a",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "quartz-database",
+        "lantern-training",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "81bf76d77963b6be96ecfab26bd3578d4a6771dedcb0f7c6077afa8e3e7f5720"
+    },
+    {
+      "phase": "task",
+      "case_id": "quartz-database",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-quartz-database-r2-native",
+      "answer": "sslmode=verify-full and certificates issued by the hospital-platform root CA.",
+      "expected": [
+        "sslmode=verify-full",
+        "hospital-platform root CA"
+      ],
+      "correct": true,
+      "latency_seconds": 11.69974,
+      "prompt_tokens": 29827,
+      "uncached_input_tokens": 17667,
+      "cache_read_tokens": 12160,
+      "output_tokens": 16,
+      "total_tokens": 29843,
+      "provider_cost_usd": 0.00281834,
+      "cache_hit_fraction": 0.40768431,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "eb79ce51bc50d22f31407856eef09e17c19fcd081980cfb40c301865a20ffae6"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 1,
+      "session_key": "cache-task-ember-severity-r2-aetnamem_cache_aware",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 11.474275,
+      "prompt_tokens": 25829,
+      "uncached_input_tokens": 17893,
+      "cache_read_tokens": 7936,
+      "output_tokens": 27,
+      "total_tokens": 25856,
+      "provider_cost_usd": 0.002734788,
+      "cache_hit_fraction": 0.30725154,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_a311d2ab76214f6bb50e4743749a26fd"
+      ],
+      "retrieved_labels": [
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "c24e58f79335f1551eddfb0fab9a0b865c14d37099910f04ab2c3ffe1a3b720c"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 2,
+      "session_key": "cache-task-ember-severity-r2-native",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 11.903762,
+      "prompt_tokens": 29831,
+      "uncached_input_tokens": 17671,
+      "cache_read_tokens": 12160,
+      "output_tokens": 27,
+      "total_tokens": 29858,
+      "provider_cost_usd": 0.00282198,
+      "cache_hit_fraction": 0.40762965,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "ac6f5c2252376420eddd64dcd897302fc50566b27fc836e38f6565a7794040a5"
+    },
+    {
+      "phase": "task",
+      "case_id": "ember-severity",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 3,
+      "session_key": "cache-task-ember-severity-r2-aetnamem_current",
+      "answer": "EMBER classifies a wrong-patient recommendation as Severity 1 when it reaches a clinician, even if the clinician rejects it before treatment.",
+      "expected": [
+        "reaches a clinician",
+        "rejects it before treatment"
+      ],
+      "correct": true,
+      "latency_seconds": 11.462908,
+      "prompt_tokens": 26056,
+      "uncached_input_tokens": 18120,
+      "cache_read_tokens": 7936,
+      "output_tokens": 28,
+      "total_tokens": 26084,
+      "provider_cost_usd": 0.0027668479999999997,
+      "cache_hit_fraction": 0.30457476,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_fbd0b6c5bcff4f11ad7f9a127feb0aa8"
+      ],
+      "retrieved_labels": [
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "f2c71195b90ca28c9ab08cccded81ae1d7f21672871862c47e7d72f06edbca22"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 1,
+      "session_key": "cache-task-summit-approval-r2-native",
+      "answer": "Clinical Governance, Privacy, and the Service Owner must all approve before a SUMMIT model update can be deployed to production.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 12.009953,
+      "prompt_tokens": 29829,
+      "uncached_input_tokens": 17669,
+      "cache_read_tokens": 12160,
+      "output_tokens": 25,
+      "total_tokens": 29854,
+      "provider_cost_usd": 0.0028211400000000006,
+      "cache_hit_fraction": 0.40765698,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "2a8e7cd33b998c4a5fd584b388bff5fb8ba5562f7fb59bd778e07897bce31041"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 2,
+      "session_key": "cache-task-summit-approval-r2-aetnamem_current",
+      "answer": "Clinical Governance, Privacy, and the Service Owner approvals are mandatory before a SUMMIT model update reaches production.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 10.890176,
+      "prompt_tokens": 26097,
+      "uncached_input_tokens": 18161,
+      "cache_read_tokens": 7936,
+      "output_tokens": 22,
+      "total_tokens": 26119,
+      "provider_cost_usd": 0.002770908,
+      "cache_hit_fraction": 0.30409626,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_da89e7eaecbd4c0db071f220728d2595",
+        "rec_fbd0b6c5bcff4f11ad7f9a127feb0aa8"
+      ],
+      "retrieved_labels": [
+        "summit-approval",
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "32c8331cac8987abe1f14efcba5bfe5497747329cb23d0d6e749c083207dcc9b"
+    },
+    {
+      "phase": "task",
+      "case_id": "summit-approval",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 3,
+      "session_key": "cache-task-summit-approval-r2-aetnamem_cache_aware",
+      "answer": "Clinical Governance, Privacy, and Service Owner.",
+      "expected": [
+        "Clinical Governance",
+        "Privacy",
+        "Service Owner"
+      ],
+      "correct": true,
+      "latency_seconds": 11.564719,
+      "prompt_tokens": 25860,
+      "uncached_input_tokens": 17924,
+      "cache_read_tokens": 7936,
+      "output_tokens": 9,
+      "total_tokens": 25869,
+      "provider_cost_usd": 0.002734088,
+      "cache_hit_fraction": 0.30688322,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_0d09bce8bbb04e4ebc2d4f1c876e8a47",
+        "rec_a311d2ab76214f6bb50e4743749a26fd"
+      ],
+      "retrieved_labels": [
+        "summit-approval",
+        "ember-severity"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "39309f97e62aaa6d944416bcd8b132b1a0caa73c61c9782560310bd76520761a"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 2,
+      "arm": "aetnamem_current",
+      "order_in_block": 1,
+      "session_key": "cache-task-tide-monitoring-r2-aetnamem_current",
+      "answer": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with the medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 11.363633,
+      "prompt_tokens": 26112,
+      "uncached_input_tokens": 18176,
+      "cache_read_tokens": 7936,
+      "output_tokens": 35,
+      "total_tokens": 26147,
+      "provider_cost_usd": 0.0027766480000000005,
+      "cache_hit_fraction": 0.30392157,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_062e90cbb1664b6993c8bf31fec6302d",
+        "rec_cd0b9ba61b1b43caa55fd889a35d0c3b"
+      ],
+      "retrieved_labels": [
+        "tide-monitoring",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "dc6448bfd07edf21317bee741cc3029a891f095b841a7191f504e5fdd7ef5099"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 2,
+      "arm": "aetnamem_cache_aware",
+      "order_in_block": 2,
+      "session_key": "cache-task-tide-monitoring-r2-aetnamem_cache_aware",
+      "answer": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 11.136214,
+      "prompt_tokens": 25872,
+      "uncached_input_tokens": 17936,
+      "cache_read_tokens": 7936,
+      "output_tokens": 34,
+      "total_tokens": 25906,
+      "provider_cost_usd": 0.0027427679999999996,
+      "cache_hit_fraction": 0.30674088,
+      "retrieval_event_count": 1,
+      "retrieval_candidate_count": 50,
+      "retrieved_record_ids": [
+        "rec_0b41e5588f96402a996afaa1530adcdb",
+        "rec_8acbff2553fd4c6ca396e9a1f207c6eb"
+      ],
+      "retrieved_labels": [
+        "tide-monitoring",
+        "meridian-owner"
+      ],
+      "target_record_retrieved": true,
+      "session_log_sha256": "324c1a9cae18557f9a49bf60c65a52443d8f5a678b7ee1388a612b6db1b32121"
+    },
+    {
+      "phase": "task",
+      "case_id": "tide-monitoring",
+      "repetition": 2,
+      "arm": "native",
+      "order_in_block": 3,
+      "session_key": "cache-task-tide-monitoring-r2-native",
+      "answer": "The TIDE post-deployment review occurs at 24 hours, 7 days, and 30 days, with medication-omission rate as the primary safety measure.",
+      "expected": [
+        "24 hours",
+        "7 days",
+        "30 days",
+        "medication-omission rate"
+      ],
+      "correct": true,
+      "latency_seconds": 11.707464,
+      "prompt_tokens": 29828,
+      "uncached_input_tokens": 17668,
+      "cache_read_tokens": 12160,
+      "output_tokens": 34,
+      "total_tokens": 29862,
+      "provider_cost_usd": 0.0028235200000000004,
+      "cache_hit_fraction": 0.40767065,
+      "retrieval_event_count": 0,
+      "retrieval_candidate_count": 0,
+      "retrieved_record_ids": [],
+      "retrieved_labels": [],
+      "target_record_retrieved": null,
+      "session_log_sha256": "774917d3778792b7111de829162e0fc6c3c598277cf86ed41372d7a4e2cf46a6"
+    }
+  ]
+}

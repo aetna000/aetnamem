@@ -22,17 +22,18 @@ fixed subject for multiple authenticated users.
 
 ## Measured result and what it means
 
-Our reproducible OpenClaw 2026.7.1-2 / DeepSeek V4 Flash run used 20 paired
-fresh-session tasks over a 94-fact synthetic hospital-operations memory. Native
-`MEMORY.md` replay consumed 596,296 prompt tokens; AetnaMem's bounded recall
-consumed 520,837, a 12.655% reduction, while both arms answered 20/20 correctly.
-Every AetnaMem trial retrieved its registered target and the post-run audit
-chain verified.
+Our 2026-07-21 reproducible OpenClaw 2026.7.1-2 / DeepSeek V4 Flash follow-up
+used 20 matched tasks per arm over a 94-fact synthetic hospital memory. Native
+`MEMORY.md` used 596,581 prompt tokens, current AetnaMem used 521,858, and the
+cache-aware candidate used 517,118. The optimized arm reduced prompt tokens by
+13.320% and provider cost by 2.968% versus native; every arm answered 20/20,
+both AetnaMem arms retrieved 20/20 targets, and both audit chains verified.
 
-The provider cost did **not** fall: it increased 0.674% because DeepSeek served
-more of the repeated native file from its unusually inexpensive prompt cache.
-This is the practical rule: measure prompt tokens (uncached input + cache
-reads), cache mix, actual price, latency, and task success separately. The
+Absolute cache reads were unchanged between current and cache-aware AetnaMem,
+so the additional benefit came from the smaller optimized prompt surface, not
+new cache hits. An earlier run observed a small cost increase under a different
+cache mix. This is the practical rule: measure prompt tokens (uncached input +
+cache reads), cache mix, actual price, latency, and task success separately. The
 [protocol, raw trials, generated report, and limitations](../bench/openclaw_memory/)
 are public and reproducible; this single-model synthetic evaluation is not a
 clinical pilot or a universal savings guarantee.

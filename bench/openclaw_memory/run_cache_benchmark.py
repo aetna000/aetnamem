@@ -416,11 +416,11 @@ Native → cache-aware saved **{comp['native_to_cache_aware']['prompt_tokens_sav
 
 ## Cache probes
 
-Two identical, unrelated fresh-session prompts ran consecutively per arm. The first is the cold observation and the second
-the immediate warm observation. DeepSeek caching is best-effort, so these six calls are descriptive rather than a controlled
-cache-disable experiment.
+Two identical, unrelated fresh-session prompts ran consecutively per arm. The first is a first observation, not a guaranteed
+cold cache (it already contained cache hits); the second is the immediate repeat. DeepSeek caching is best-effort, so these
+six calls are descriptive rather than a controlled cache-disable experiment.
 
-| Arm | Cold cache hit | Warm cache hit | Cold cost | Warm cost |
+| Arm | First cache hit | Repeat cache hit | First cost | Repeat cost |
 |---|---:|---:|---:|---:|
 | Native | {summary['cache_probes']['native']['cold_cache_hit_fraction']:.1%} | {summary['cache_probes']['native']['warm_cache_hit_fraction']:.1%} | ${summary['cache_probes']['native']['cold_cost_usd']:.6f} | ${summary['cache_probes']['native']['warm_cost_usd']:.6f} |
 | Current AetnaMem | {summary['cache_probes']['aetnamem_current']['cold_cache_hit_fraction']:.1%} | {summary['cache_probes']['aetnamem_current']['warm_cache_hit_fraction']:.1%} | ${summary['cache_probes']['aetnamem_current']['cold_cost_usd']:.6f} | ${summary['cache_probes']['aetnamem_current']['warm_cost_usd']:.6f} |

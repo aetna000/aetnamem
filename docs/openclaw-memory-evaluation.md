@@ -111,6 +111,54 @@ of repeated context, while selective memory removes irrelevant context. They
 can be complementary, but pricing, prefix stability, cache lifetime, and
 retrieval variability determine the economic result.
 
+## Cache-aware follow-up
+
+On 2026-07-21 UTC, commit
+`efc1b0bed127859171cf5a93f290847a015fdfe5` ran a pre-registered three-arm
+follow-up: native `MEMORY.md`, the pre-0.2.4 AetnaMem layout, and the 0.2.4
+cache-aware candidate. The candidate placed its stable persona through
+OpenClaw `appendSystemContext`, placed query-specific recall through
+`appendContext`, used compact model-visible references while auditing full
+IDs, and omitted optional explicit search/forget schemas. The other task,
+model, memory, scoring, and fresh-session controls remained the same. A
+rotating three-arm order replaced the two-arm counterbalance.
+
+| Outcome | Native | Current AetnaMem | Cache-aware AetnaMem |
+|---|---:|---:|---:|
+| prompt tokens | 596,581 | 521,858 | **517,118** |
+| median prompt tokens / task | 29,829 | 26,076.5 | **25,844.5** |
+| uncached input tokens | 353,381 | 363,138 | **358,398** |
+| cache-read tokens | 243,200 | 158,720 | **158,720** |
+| cache-hit fraction | 40.8% | 30.4% | 30.7% |
+| provider cost | $0.056427 | $0.055411 | **$0.054752** |
+| correct answers | 20/20 | 20/20 | 20/20 |
+| target retrieved | not applicable | 20/20 | 20/20 |
+
+Relative to native memory, the cache-aware arm saved 79,463 prompt tokens
+(13.320%) and cost 2.968% less. Relative to current AetnaMem, it saved 4,740
+prompt tokens (0.908%) and cost 1.190% less. The paired mean cache-aware saving
+over native was 3,973.15 tokens per task; its deterministic paired bootstrap
+interval was [3,958.5, 3,987.25]. No trial was excluded. Both AetnaMem evidence
+chains verified with 94 seeded records, 22 retrieval events, and 252 audit
+events each. Raw evidence is in
+[`deepseek-v4-flash-cache-aware-2026-07-21.json`](../bench/openclaw_memory/results/deepseek-v4-flash-cache-aware-2026-07-21.json).
+
+The prompt-placement hypothesis was **not supported as an additional cache-hit
+mechanism** in this run: current and cache-aware AetnaMem both received exactly
+158,720 cache-read tokens. The cache-aware hit fraction is slightly larger only
+because its denominator is smaller. Two immediate-repeat probes likewise gave
+both AetnaMem layouts 2,176 cached tokens on the repeat. The optimized bundle
+still improved context and cost by removing uncached model-visible overhead,
+but this design cannot attribute that 0.908% improvement separately to compact
+references, tool omission, or placement.
+
+The earlier run's +0.674% cost result and this run's −2.968% result are not a
+discrepancy: DeepSeek cache state is best-effort and differed across runs. They
+jointly demonstrate that selective memory reliably reduced prompt size in this
+workload, while dollar savings depended on the observed hit/miss mix. A
+stronger causal study should add one arm per optimization and use a provider or
+test fixture with controllable cache state.
+
 ## Threats to validity
 
 - **External validity:** one synthetic English workload, one memory size, one

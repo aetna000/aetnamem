@@ -14,8 +14,8 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 
 | OpenClaw hook | engine call | behavior |
 |---|---|---|
-| `before_prompt_build` | `memory_persona` | injects a `<user_persona>` snapshot (stable fact slots first, provenance ids on every line), cached with a TTL and invalidated whenever new memory is captured |
-| `before_prompt_build` | `memory_recall_block` | injects a bounded `<relevant_memories>` block; a lexical match is required (`minScore` 0.3), and the engine audits exactly which record IDs entered context |
+| `before_prompt_build` | `memory_persona` | in cache-aware mode, adds a stable `<user_persona>` through `appendSystemContext`; correction, capture, and plugin-driven forgetting invalidate it |
+| `before_prompt_build` | `memory_recall_block` | adds query-specific `<relevant_memories>` through `appendContext`; a lexical match is required and the audit retains full record IDs even when the model sees compact references |
 | `agent_end` | `memory_capture` | the clean user turn runs the full write pipeline; the assistant reply is logged as a **digest only** (never becomes memory) |
 | `before_message_write` | — | strips injected blocks from persisted history so recalls don't feed back |
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
@@ -52,9 +52,19 @@ version), then configure:
   "subject": "you",
   "recall": { "maxRecords": 3, "maxChars": 1200, "minScore": 0.3 },
   "persona": { "maxChars": 600 },
-  "capture": { "captureAssistant": true }
+  "capture": { "captureAssistant": true },
+  "cacheAware": { "enabled": true, "compactReferences": true },
+  "tools": { "enabled": true }
 }
 ```
+
+`openclaw aetnamem setup` in the 0.2.4 candidate enables cache-aware placement
+for new configurations; install from this checkout until 0.2.4 is published.
+Existing configurations without `cacheAware.enabled` retain the pre-0.2.4
+combined `prependContext` layout. Set `tools.enabled` to `false` only when
+automatic recall/capture is sufficient; doing so removes the explicit search
+and forget schemas from model context, so forgetting must remain available
+through a trusted UI, CLI, or another host control.
 
 Expect the plugin to bound new memory context, not to erase existing prompt
 costs. Token use falls only after you verify AetnaMem recall and reduce facts
@@ -91,30 +101,38 @@ in the prompt at all.
 
 ## Measured OpenClaw + DeepSeek result
 
-On 2026-07-20 UTC we ran a checked-in paired integration benchmark with
-OpenClaw 2026.7.1-2 and DeepSeek V4 Flash (thinking off). The synthetic,
-hospital-operations workload contained 94 durable facts in a 19,489-character
-native `MEMORY.md`; the AetnaMem arm stored the identical facts out of prompt
-and used a 163-character bootstrap file. Each of 10 pre-registered questions
-ran twice per arm in a fresh session, with pair order alternated.
+On 2026-07-21 UTC we compared native memory, the pre-0.2.4 AetnaMem layout, and
+the cache-aware 0.2.4 candidate using OpenClaw 2026.7.1-2 and DeepSeek V4 Flash
+(thinking off). The synthetic hospital-operations workload contained 94 facts
+in a 19,489-character native `MEMORY.md`; each of 10 pre-registered questions
+ran twice per arm in a fresh session using a rotating three-arm order.
 
-| Metric | Native `MEMORY.md` | AetnaMem | Result |
+| Metric | Native `MEMORY.md` | Current AetnaMem | Cache-aware AetnaMem |
 |---|---:|---:|---:|
-| prompt tokens (uncached input + cache read) | 596,296 | 520,837 | **75,459 fewer (12.655%)** |
-| median prompt tokens / task | 29,808 | 26,028 | **3,801 paired median fewer** |
-| correct answers | 20/20 | 20/20 | equal |
-| provider-reported cost | $0.056273 | $0.056652 | AetnaMem **0.674% higher** |
-| median end-to-end latency | 12.421 s | 12.215 s | descriptive only |
+| prompt tokens | 596,581 | 521,858 | **517,118** |
+| median prompt tokens / task | 29,829 | 26,076.5 | **25,844.5** |
+| cache-read tokens | 243,200 | 158,720 | **158,720** |
+| provider-reported cost | $0.056427 | $0.055411 | **$0.054752** |
+| correct answers | 20/20 | 20/20 | 20/20 |
+| target retrieved | — | 20/20 | 20/20 |
 
-Every treatment trial retrieved its pre-registered target record, and the
-248-event AetnaMem audit chain verified after the run. DeepSeek served 41.0%
-of native prompt tokens versus 28.1% of AetnaMem prompt tokens from its very
-cheap cache. That is why context fell while the bill did not: selective memory
-and prompt caching optimize different quantities.
+Against native memory, cache-aware AetnaMem used **79,463 fewer prompt tokens
+(13.320%)** and cost **2.968% less**. Against the current layout it used 4,740
+fewer prompt tokens (0.908%) and cost 1.190% less. Both AetnaMem audit chains
+verified.
+
+The cache-aware layout did **not** recover additional absolute cache hits:
+current and optimized AetnaMem both received 158,720 cache-read tokens. The
+optimized bundle's gain came from reducing model-visible overhead through
+compact references and omitted optional tool schemas; this three-arm run does
+not isolate how much each change contributed. An earlier 2026-07-20 run found
+AetnaMem cost 0.674% more than native under a different observed cache mix.
+Together the runs show why cache state, tokens, cost, and correctness must be
+reported separately rather than turning one bill into a universal claim.
 
 This is measured evidence, not a universal savings promise or a clinical
-pilot. It covers one model, one OpenClaw release, 20 paired tasks, and a
-synthetic mature memory. See the [machine-readable trials and full method](https://github.com/aetna000/aetnamem/tree/main/bench/openclaw_memory/results),
+pilot. It covers one model, one OpenClaw release, 20 matched tasks per arm, and
+a synthetic mature memory. See the [machine-readable trials and full method](https://github.com/aetna000/aetnamem/tree/main/bench/openclaw_memory/results),
 the [pre-registered cases](https://github.com/aetna000/aetnamem/blob/main/bench/openclaw_memory/cases.json),
 and the [benchmark protocol](https://github.com/aetna000/aetnamem/tree/main/bench/openclaw_memory).
 
