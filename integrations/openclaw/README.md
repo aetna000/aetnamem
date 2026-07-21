@@ -58,8 +58,8 @@ version), then configure:
 }
 ```
 
-`openclaw aetnamem setup` in the 0.2.4 candidate enables cache-aware placement
-for new configurations; install from this checkout until 0.2.4 is published.
+`openclaw aetnamem setup` in release 0.2.4 enables cache-aware placement
+for new configurations.
 Existing configurations without `cacheAware.enabled` retain the pre-0.2.4
 combined `prependContext` layout. Set `tools.enabled` to `false` only when
 automatic recall/capture is sufficient; doing so removes the explicit search
@@ -102,7 +102,7 @@ in the prompt at all.
 ## Measured OpenClaw + DeepSeek result
 
 On 2026-07-21 UTC we compared native memory, the pre-0.2.4 AetnaMem layout, and
-the cache-aware 0.2.4 candidate using OpenClaw 2026.7.1-2 and DeepSeek V4 Flash
+the cache-aware 0.2.4 release using OpenClaw 2026.7.1-2 and DeepSeek V4 Flash
 (thinking off). The synthetic hospital-operations workload contained 94 facts
 in a 19,489-character native `MEMORY.md`; each of 10 pre-registered questions
 ran twice per arm in a fresh session using a rotating three-arm order.

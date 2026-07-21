@@ -151,6 +151,22 @@ def main() -> None:
     persona_parser.add_argument("subject_id")
     persona_parser.add_argument("--max-chars", type=int, default=1500)
 
+    context_parser = subparsers.add_parser(
+        "context-pack", help="Build host-neutral stable and dynamic prompt context"
+    )
+    context_parser.add_argument("path")
+    context_parser.add_argument("subject_id")
+    context_parser.add_argument("query")
+    context_parser.add_argument("--session", default=None)
+    context_parser.add_argument("--persona-max-chars", type=int, default=600)
+    context_parser.add_argument("--recall-max-records", type=int, default=3)
+    context_parser.add_argument("--recall-max-chars", type=int, default=1200)
+    context_parser.add_argument("--min-score", type=float, default=0.3)
+    context_parser.add_argument("--graph", action="store_true")
+    context_parser.add_argument(
+        "--reference-mode", choices=("full", "compact", "none"), default="compact"
+    )
+
     scenes_parser = subparsers.add_parser(
         "scenes", help="Deterministic L2 scene view: sessions with their episodes/records"
     )
@@ -425,6 +441,20 @@ def main() -> None:
         _print(memory.consolidate(args.subject_id))
     elif args.command == "persona":
         _print(memory.build_persona(args.subject_id, max_chars=args.max_chars))
+    elif args.command == "context-pack":
+        _print(
+            memory.build_context_pack(
+                args.subject_id,
+                args.query,
+                session_id=args.session,
+                persona_max_chars=args.persona_max_chars,
+                recall_max_records=args.recall_max_records,
+                recall_max_chars=args.recall_max_chars,
+                min_score=args.min_score,
+                use_graph=args.graph,
+                reference_mode=args.reference_mode,
+            )
+        )
     elif args.command == "scenes":
         _print(memory.scenes(args.subject_id))
     elif args.command == "propose":

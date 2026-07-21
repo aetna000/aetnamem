@@ -125,6 +125,80 @@ def test_prompt_reference_mode_is_validated() -> None:
         memory.build_recall_block("u1", "anything", reference_mode="invalid")
 
 
+def test_context_pack_is_host_neutral_bounded_and_fully_audited() -> None:
+    memory = Memory(":memory:")
+    [color] = memory.remember("u1", "My favorite color is teal.")["records"]
+    [city] = memory.remember("u1", "My home city is Sydney.")["records"]
+
+    pack = memory.build_context_pack(
+        "u1", "What is my favorite color?", session_id="s1"
+    )
+
+    assert pack["format"] == "aetnamem-context-pack-v1"
+    assert "teal" in pack["stable_context"]
+    # Query-specific recall does not repeat a fact already present in the
+    # stable prefix, reducing uncached turn-tail material.
+    assert pack["dynamic_context"] == ""
+    assert pack["placement"] == {
+        "stable_context": "stable_system_prefix",
+        "dynamic_context": "current_turn_tail",
+    }
+    assert color["id"] not in pack["stable_context"]
+    assert color["id"] not in pack["dynamic_context"]
+    assert set(pack["stable_record_ids"]) == {color["id"], city["id"]}
+    assert pack["dynamic_record_ids"] == []
+    assert pack["stable_sha256"] == sha256_hex(pack["stable_context"])
+    assert pack["dynamic_sha256"] == sha256_hex(pack["dynamic_context"])
+
+    [event] = [
+        item
+        for item in memory.audit("u1")["audit_log"]
+        if item["event_type"] == "memory.context_pack_built"
+    ]
+    assert event["payload"]["stable_record_ids"] == pack["stable_record_ids"]
+    assert event["payload"]["dynamic_record_ids"] == pack["dynamic_record_ids"]
+    assert event["payload"]["query_sha256"] == sha256_hex(
+        "What is my favorite color?"
+    )
+    assert "favorite color?" not in str(event["payload"])
+    assert memory.audit("u1")["audit_chain_valid"] is True
+
+
+def test_context_pack_rejects_negative_budgets() -> None:
+    memory = Memory(":memory:")
+    with pytest.raises(ValueError, match="non-negative"):
+        memory.build_context_pack("u1", "query", recall_max_chars=-1)
+
+
+def test_context_pack_uses_dynamic_block_when_fact_is_not_in_stable_budget() -> None:
+    memory = Memory(":memory:")
+    [record] = memory.remember("u1", "My favorite color is teal.")["records"]
+    pack = memory.build_context_pack(
+        "u1", "favorite color", persona_max_chars=0
+    )
+    assert pack["stable_context"] == ""
+    assert "teal" in pack["dynamic_context"]
+    assert pack["dynamic_record_ids"] == [record["id"]]
+
+
+def test_recall_exclusions_do_not_expand_record_budget() -> None:
+    memory = Memory(":memory:")
+    records = []
+    for index in range(4):
+        records.extend(
+            memory.remember("u1", f"My favorite color {index} is teal.")[
+                "records"
+            ]
+        )
+    result = memory.build_recall_block(
+        "u1",
+        "favorite colors",
+        max_records=1,
+        exclude_record_ids={records[-1]["id"]},
+    )
+    assert result["count"] <= 1
+
+
 def test_consolidate_collapses_duplicates_and_repairs_keys() -> None:
     memory = Memory(":memory:")
     # Forge a pathological state directly at the store layer: two identical

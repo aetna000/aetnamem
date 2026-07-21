@@ -346,6 +346,7 @@ not as protocol errors, so the agent can read and recover.
 | `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id`, `use_graph` (false) | array of records, best first; graph hits include path evidence |
 | `memory_recall_block` | `query` | `subject_id`, `max_records` (5), `max_chars` (2000), `min_score` (0.3), `session_id`, `use_graph` (false) | `{block, record_ids, count}` — bounded `<relevant_memories>` block; injection is audited |
 | `memory_persona` | — | `subject_id`, `max_chars` (1500), `session_id` | `{block, record_ids, count}` — live-derived `<user_persona>` snapshot, audited |
+| `memory_context_pack` | `query` | `subject_id`, `persona_max_chars` (600), `recall_max_records` (3), `recall_max_chars` (1200), `min_score` (0.3), `reference_mode` (`compact`), `session_id`, `use_graph` | `aetnamem-context-pack-v1` with stable/dynamic blocks, hashes, full record IDs, budgets, and placement hints |
 | `memory_capture` | `role`, `content` | `subject_id`, `tool_name`, `session_id`, `turn_id` | user → full pipeline; assistant/tool\_\* → digest-only audit event |
 | `memory_list` | — | `subject_id`, `include_inactive` (false) | array of records |
 | `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id`, `turn_id` | `{deleted, record_ids, receipt}` |

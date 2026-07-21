@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-315A7D?style=flat-square">
+  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -356,7 +356,8 @@ takes the same command + args shape):
 ```
 
 The agent gets `memory_remember`, `memory_recall`, `memory_recall_block`
-(bounded prompt-injection block), `memory_persona`, `memory_capture`
+(bounded prompt-injection block), `memory_persona`, `memory_context_pack`
+(host-neutral stable/dynamic context), `memory_capture`
 (auto-capture with digest-only assistant/tool logging), `memory_list`,
 `memory_forget`, `memory_promote`, `memory_audit`, `memory_verify`, and
 `memory_graph_status`, `memory_graph_merges`, `memory_graph_history`, and
@@ -429,14 +430,34 @@ aetnamem mcp --db ~/.aetnamem/memories.db --subject you
 ```
 
 Then configure the host to expose the `memory_*` tools. This is the right
-first path for Hermes-style agents, Claude Desktop, Claude Code, and any
-framework that can launch a stdio MCP server.
+first path for Hermes, Claude Desktop, Claude Code, and any framework that
+can launch a stdio MCP server. The dedicated [Hermes guide](./docs/hermes-agent.md)
+includes the exact commands and explains the boundary between tool-based
+memory and automatic prompt injection.
+
+For an automatic adapter, call one provider-neutral operation before the
+model invocation:
+
+```python
+pack = memory.build_context_pack("user-42", current_query)
+system_prefix += "\n" + pack["stable_context"]
+current_turn += "\n" + pack["dynamic_context"]
+```
+
+The same contract is available as CLI `aetnamem context-pack` and MCP tool
+`memory_context_pack`. The stable block is deterministic and suitable for a
+stable system-prefix position; the dynamic block is selective and belongs
+near the current turn. Records already present in the stable block are not
+repeated in the dynamic block. This layout can preserve provider prefix-cache reuse
+while keeping the total prompt bounded, but it cannot guarantee cache hits:
+cache boundaries, minimum cacheable lengths, TTLs, and billing remain provider
+and host behavior.
 
 Build a native adapter only when the framework gives useful hooks:
 
 | hook point | aetnamem call | purpose |
 |---|---|---|
-| before prompt/context build | `memory_persona` + `memory_recall_block` | inject bounded, audited context |
+| before prompt/context build | `memory_context_pack` / `build_context_pack` | inject bounded, audited stable + dynamic context |
 | after user/agent turn | `memory_capture` | capture user facts; log assistant/tool output as digests |
 | before history write | strip `<user_persona>` / `<relevant_memories>` | prevent recall feedback loops |
 | explicit agent tools | `memory_recall`, `memory_forget`, `memory_audit`, `memory_verify` | search, request logical purge, and verify recorded behavior |
@@ -450,7 +471,7 @@ Priority targets:
 | framework / host | first integration | native adapter shape |
 |---|---|---|
 | OpenClaw | implemented [native plugin](https://github.com/aetna000/aetnamem/tree/main/integrations/openclaw) | hook-based auto-recall/capture |
-| Hermes | MCP setup guide first | memory-provider/plugin wrapper if its provider API is stable |
+| Hermes | implemented [MCP setup guide](./docs/hermes-agent.md) | context-engine/plugin wrapper consuming `memory_context_pack` |
 | LangGraph | Python helper node/store | recall node before model call, capture node after turn |
 | OpenAI Agents SDK | tools + runner/session wrapper | pre-run context builder and post-run capture |
 | CrewAI | external memory tools | memory adapter if its memory API can preserve receipts/audit IDs |

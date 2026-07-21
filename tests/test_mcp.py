@@ -51,6 +51,7 @@ def test_initialize_and_tools_list() -> None:
     assert {
         "memory_remember",
         "memory_recall",
+        "memory_context_pack",
         "memory_forget",
         "memory_promote",
         "memory_audit",
@@ -94,6 +95,25 @@ def test_compact_recall_block_over_mcp() -> None:
     )
     assert f"[m:{record_id.removeprefix('rec_')[:8]}]" in recalled["block"]
     assert record_id not in recalled["block"]
+
+
+def test_context_pack_over_mcp() -> None:
+    server = _server()
+    stored = _call(
+        server, 1, "memory_remember", {"message": "My favorite tea is oolong."}
+    )
+    record_id = stored["records"][0]["id"]
+    pack = _call(
+        server,
+        2,
+        "memory_context_pack",
+        {"query": "Which tea do I like?"},
+    )
+    assert pack["format"] == "aetnamem-context-pack-v1"
+    assert "oolong" in pack["stable_context"]
+    assert pack["dynamic_context"] == ""
+    assert record_id in pack["stable_record_ids"]
+    assert record_id not in pack["stable_context"]
 
 
 def test_quarantine_flow_over_mcp() -> None:

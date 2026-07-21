@@ -635,6 +635,7 @@ class Memory:
         min_score: float = 0.3,
         use_graph: bool | None = None,
         reference_mode: str = "full",
+        exclude_record_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         """Deterministic, bounded <relevant_memories> block for prompt injection.
 
@@ -646,11 +647,12 @@ class Memory:
         """
         if reference_mode not in {"full", "compact", "none"}:
             raise ValueError("reference_mode must be full, compact, or none")
+        excluded = exclude_record_ids or set()
         records = self.recall(
             subject_id,
             query,
             session_id=session_id,
-            limit=max_records,
+            limit=max_records + len(excluded),
             min_score=min_score,
             use_graph=use_graph,
         )
@@ -658,6 +660,10 @@ class Memory:
         included: list[str] = []
         used = 0
         for record in records:
+            if len(included) >= max_records:
+                break
+            if record["id"] in excluded:
+                continue
             reference = _prompt_reference(str(record["id"]), reference_mode)
             line = f"- {reference}{record['content']}"
             if used + len(line) + 1 > max_chars:
@@ -742,6 +748,87 @@ class Memory:
             },
         )
         return {"block": block, "record_ids": included, "count": len(included)}
+
+    @_atomic
+    def build_context_pack(
+        self,
+        subject_id: str,
+        query: str,
+        *,
+        session_id: str | None = None,
+        persona_max_chars: int = 600,
+        recall_max_records: int = 3,
+        recall_max_chars: int = 1200,
+        min_score: float = 0.3,
+        use_graph: bool | None = None,
+        reference_mode: str = "compact",
+    ) -> dict[str, Any]:
+        """Build a provider-neutral, cache-aware prompt context contract.
+
+        ``stable_context`` is the deterministic persona prefix a host should
+        keep in a stable system-prompt location. ``dynamic_context`` is the
+        bounded, query-specific suffix a host should place close to the
+        current user turn. The method does not call a model or depend on an
+        agent framework, and the audit plane always retains full record IDs
+        even when model-visible references are compact or omitted.
+        """
+        if min(persona_max_chars, recall_max_records, recall_max_chars) < 0:
+            raise ValueError("context-pack budgets must be non-negative")
+
+        persona = self.build_persona(
+            subject_id,
+            session_id=session_id,
+            max_chars=persona_max_chars,
+            reference_mode=reference_mode,
+        )
+        recall = self.build_recall_block(
+            subject_id,
+            query,
+            session_id=session_id,
+            max_records=recall_max_records,
+            max_chars=recall_max_chars,
+            min_score=min_score,
+            use_graph=use_graph,
+            reference_mode=reference_mode,
+            exclude_record_ids=set(persona["record_ids"]),
+        )
+        stable = str(persona["block"])
+        dynamic = str(recall["block"])
+        result = {
+            "format": "aetnamem-context-pack-v1",
+            "stable_context": stable,
+            "dynamic_context": dynamic,
+            "stable_record_ids": list(persona["record_ids"]),
+            "dynamic_record_ids": list(recall["record_ids"]),
+            "stable_sha256": _sha256(stable),
+            "dynamic_sha256": _sha256(dynamic),
+            "placement": {
+                "stable_context": "stable_system_prefix",
+                "dynamic_context": "current_turn_tail",
+            },
+            "budgets": {
+                "persona_max_chars": persona_max_chars,
+                "recall_max_records": recall_max_records,
+                "recall_max_chars": recall_max_chars,
+            },
+            "reference_mode": reference_mode,
+        }
+        self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="memory.context_pack_built",
+            actor="system",
+            session_id=session_id,
+            payload={
+                "format": result["format"],
+                "stable_record_ids": result["stable_record_ids"],
+                "dynamic_record_ids": result["dynamic_record_ids"],
+                "stable_sha256": result["stable_sha256"],
+                "dynamic_sha256": result["dynamic_sha256"],
+                "query_sha256": _sha256(query),
+                "reference_mode": reference_mode,
+            },
+        )
+        return result
 
     def scenes(self, subject_id: str) -> list[dict[str, Any]]:
         """L2: deterministic scene view — one scene per session.
