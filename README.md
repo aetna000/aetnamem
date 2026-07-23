@@ -22,6 +22,7 @@
   <a href="#install--use">Quick start</a> &middot;
   <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
   <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
+  <a href="./examples/grok-memory-game/">Grok memory game</a> &middot;
   <a href="./paper/aetnamem-control-plane.pdf">Scientific report</a> &middot;
   <a href="./docs/guarded-actions.md">Guarded actions</a> &middot;
   <a href="./TODO.md">Roadmap</a>
@@ -49,6 +50,7 @@ changes. You can adopt one part without adopting the rest.
 | Add automatic memory to OpenClaw | The npm plugin injects bounded recall before a prompt and captures trusted user facts after a turn | [OpenClaw setup](./docs/openclaw-setup.md) |
 | Add memory tools to Hermes | Hermes can discover AetnaMem over MCP; a context-engine wrapper can consume the same cache-aware context pack | [Hermes guide](./docs/hermes-agent.md) |
 | Use Claude, Grok, DeepSeek, OpenAI, Ollama, or another model | Memory policy and storage remain outside the model; swap the inference provider without replacing the memory engine | [Grok/xAI guide](./docs/grok-xai.md) and [integration guide](./docs/integration-guide.md) |
+| See how AetnaMem helps Grok in a game | The Grok Memory Challenge demonstrates selective recall, correction, poisoned-context quarantine, deletion receipts, and audit verification in a short playable vault adventure | [Play or watch the Grok memory game](./examples/grok-memory-game/) |
 | Run a private local assistant | A desktop-style dashboard combines local chat, searchable memory, approvals, files, and live audit verification | [Desktop guide](./docs/macos-desktop.md) |
 | Stop webpages or tool output from silently becoming trusted memory | Classified untrusted content is quarantined and needs an explicit promotion step | [Audit and trust model](./docs/auditing-guide.md) |
 | Recall relationships, not only matching text | An optional governed graph adds bounded multi-hop retrieval with visible path evidence and direct-record fallback | [Graph memory design](./docs/graph-memory-design.md) |
