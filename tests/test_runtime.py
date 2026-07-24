@@ -34,7 +34,7 @@ LEGACY_TOOL_NAMES = [
 
 def _runtime(tmp_path: Path, *, skill_path: Path | None = None) -> MemoryRuntime:
     config = preset_config(
-        "benchmark",
+        "starter",
         db_path=str(tmp_path / "memory.db"),
         subject_id="alice",
         agent_id="openclaw-primary",

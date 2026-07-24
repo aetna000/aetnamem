@@ -63,4 +63,3 @@ for their stated scopes. They are not CML causal results.
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |
-| Product exploration | [`idea.md`](../idea.md), which is not an implementation status source |
