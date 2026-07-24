@@ -37,6 +37,7 @@ jobs:
       - run: python -m pip install -e ../..
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build
       - name: Run OpenClaw tests with visible failure annotation
         shell: bash
         run: |
