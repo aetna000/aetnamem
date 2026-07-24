@@ -28,7 +28,7 @@ import { runSetup } from "./src/setup.js";
 
 const TAG = "[memory-aetnamem]";
 const INJECT_RE =
-  /<(relevant_memories|user_persona)>[\s\S]*?<\/(relevant_memories|user_persona)>\s*/g;
+  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory)>\s*/g;
 const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface PluginConfig {
@@ -47,17 +47,36 @@ interface PluginConfig {
   capture: { enabled: boolean; captureAssistant: boolean };
   cacheAware: { enabled: boolean; compactReferences: boolean };
   tools: { enabled: boolean };
+  orchestration: {
+    enabled: boolean;
+    agentId: string;
+    runtimeConfig: string;
+    fallback: "legacy" | "none";
+  };
 }
 
 function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
   const cfg = (raw ?? {}) as Record<string, any>;
   const dbPath = expandHome(String(cfg.dbPath ?? "~/.aetnamem/memories.db"));
   const subject = String(cfg.subject ?? "default");
+  const orchestration = {
+    enabled: cfg.orchestration?.enabled === true,
+    agentId: String(cfg.orchestration?.agentId ?? "openclaw-primary"),
+    runtimeConfig: expandHome(
+      String(cfg.orchestration?.runtimeConfig ?? "~/.aetnamem/runtime.json"),
+    ),
+    fallback:
+      cfg.orchestration?.fallback === "none"
+        ? ("none" as const)
+        : ("legacy" as const),
+  };
   return {
     command: String(cfg.command ?? "aetnamem"),
     commandArgs: Array.isArray(cfg.commandArgs)
       ? cfg.commandArgs.map(String)
-      : ["mcp", "--db", dbPath, "--subject", subject],
+      : orchestration.enabled
+        ? ["runtime", "mcp", "--config", orchestration.runtimeConfig]
+        : ["mcp", "--db", dbPath, "--subject", subject],
     dbPath,
     subject,
     recall: {
@@ -81,6 +100,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
       compactReferences: cfg.cacheAware?.compactReferences !== false,
     },
     tools: { enabled: cfg.tools?.enabled !== false },
+    orchestration,
   };
 }
 
@@ -123,7 +143,10 @@ function register(api: OpenClawPluginApi): void {
 
   // Clean user prompts cached per session so agent_end captures the turn
   // without the injected memory block.
-  const pendingPrompts = new Map<string, { text: string; ts: number }>();
+  const pendingPrompts = new Map<
+    string,
+    { text: string; ts: number; runId?: string; manifestSha256?: string }
+  >();
 
   api.registerCli?.(
     ({ program }) => {
@@ -137,6 +160,13 @@ function register(api: OpenClawPluginApi): void {
         .option("--subject <id>", "Stable single-user memory subject", "you")
         .option("--command <path>", "AetnaMem executable", cfg.command)
         .option("--db-path <path>", "AetnaMem SQLite database", cfg.dbPath)
+        .option("--orchestrated", "Use all four AetnaMem memory planes")
+        .option(
+          "--runtime-config <path>",
+          "AetnaMem four-memory runtime configuration",
+          cfg.orchestration.runtimeConfig,
+        )
+        .option("--agent-id <id>", "Stable agent identity", cfg.orchestration.agentId)
         .option("--no-restart", "Do not restart the OpenClaw gateway")
         .action(async (options) => {
           await runSetup({
@@ -144,6 +174,9 @@ function register(api: OpenClawPluginApi): void {
             command: String(options.command),
             dbPath: String(options.dbPath),
             restart: options.restart !== false,
+            orchestrated: options.orchestrated === true,
+            runtimeConfig: String(options.runtimeConfig),
+            agentId: String(options.agentId),
           });
         });
     },
@@ -189,6 +222,58 @@ function register(api: OpenClawPluginApi): void {
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
+
+    if (cfg.orchestration.enabled) {
+      try {
+        const available = await client.hasTool(
+          "memory_prepare_turn",
+          cfg.recall.timeoutMs,
+        );
+        if (!available) {
+          throw new Error("connected AetnaMem does not expose memory_prepare_turn");
+        }
+        const pack = (await client.callTool(
+          "memory_prepare_turn",
+          {
+            query: userText,
+            session_id: sessionKey,
+            task_state: { goal: userText, phase: "respond" },
+          },
+          cfg.recall.timeoutMs,
+        )) as {
+          run_id?: string;
+          manifest_sha256?: string;
+          stable_context?: string;
+          dynamic_context?: string;
+          degraded_planes?: string[];
+        };
+        pendingPrompts.set(sessionKey, {
+          text: userText,
+          ts: Date.now(),
+          runId: pack.run_id,
+          manifestSha256: pack.manifest_sha256,
+        });
+        api.logger.info(
+          `${TAG} four-memory pack prepared` +
+            (pack.degraded_planes?.length
+              ? ` (degraded: ${pack.degraded_planes.join(", ")})`
+              : ""),
+        );
+        const result: { appendSystemContext?: string; appendContext?: string } = {};
+        if (pack.stable_context) result.appendSystemContext = pack.stable_context;
+        if (pack.dynamic_context) result.appendContext = pack.dynamic_context;
+        if (Object.keys(result).length) return result;
+        return;
+      } catch (error) {
+        api.logger.warn(
+          `${TAG} four-memory orchestration unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        if (cfg.orchestration.fallback === "none") return;
+      }
+    }
+
     if (!cfg.recall.enabled && !cfg.persona.enabled) return;
 
     let persona = "";
@@ -242,7 +327,6 @@ function register(api: OpenClawPluginApi): void {
 
   // ---- auto-capture: user turn through the pipeline, assistant as digest -
   api.on("agent_end", async (event: AgentEndEvent, ctx) => {
-    if (!cfg.capture.enabled || event.success === false) return;
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
 
     const cached = pendingPrompts.get(sessionKey);
@@ -250,7 +334,7 @@ function register(api: OpenClawPluginApi): void {
     const userText = cached?.text?.replace(INJECT_RE, "").trim();
 
     try {
-      if (userText) {
+      if (cfg.capture.enabled && event.success !== false && userText) {
         await client.callTool("memory_capture", {
           role: "user",
           content: userText,
@@ -258,7 +342,11 @@ function register(api: OpenClawPluginApi): void {
         });
         personaCache = null; // new memory may change the persona
       }
-      if (cfg.capture.captureAssistant) {
+      if (
+        cfg.capture.enabled &&
+        event.success !== false &&
+        cfg.capture.captureAssistant
+      ) {
         const messages = Array.isArray(event.messages) ? event.messages : [];
         for (let index = messages.length - 1; index >= 0; index -= 1) {
           const message = messages[index] as { role?: string; content?: unknown };
@@ -275,6 +363,25 @@ function register(api: OpenClawPluginApi): void {
           }
         }
       }
+      if (cfg.orchestration.enabled && cached?.runId) {
+        await client.callTool(
+          "memory_record_outcome",
+          {
+            run_id: cached.runId,
+            ...(cached.manifestSha256
+              ? { manifest_sha256: cached.manifestSha256 }
+              : {}),
+            success: event.success !== false,
+            summary:
+              event.success === false
+                ? "OpenClaw agent turn failed"
+                : "OpenClaw agent turn completed",
+            session_id: sessionKey,
+            idempotency_key: `openclaw:${sessionKey}:${cached.runId}`,
+          },
+          cfg.recall.timeoutMs,
+        );
+      }
     } catch (error) {
       api.logger.warn(
         `${TAG} auto-capture failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -287,7 +394,11 @@ function register(api: OpenClawPluginApi): void {
     const message = event.message;
     if (message.role !== "user") return;
     const hasInjection = (text: string) =>
-      text.includes("<relevant_memories>") || text.includes("<user_persona>");
+      text.includes("<relevant_memories>") ||
+      text.includes("<user_persona>") ||
+      text.includes("<working_memory>") ||
+      text.includes("<episodic_memory>") ||
+      text.includes("<procedural_memory>");
     if (typeof message.content === "string") {
       if (!hasInjection(message.content)) return;
       const cleaned = message.content.replace(INJECT_RE, "").trim();
@@ -384,7 +495,8 @@ function register(api: OpenClawPluginApi): void {
 
   api.logger.info(
     `${TAG} registered (db=${cfg.dbPath}, subject=${cfg.subject}, ` +
-      `recall=${cfg.recall.enabled}, capture=${cfg.capture.enabled})`,
+      `recall=${cfg.recall.enabled}, capture=${cfg.capture.enabled}, ` +
+      `fourMemory=${cfg.orchestration.enabled})`,
   );
 }
 

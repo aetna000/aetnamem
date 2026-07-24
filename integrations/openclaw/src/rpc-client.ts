@@ -31,6 +31,7 @@ export class AetnamemClient {
   private nextId = 1;
   private initialized: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private toolNames: Set<string> | null = null;
 
   constructor(private readonly options: AetnamemClientOptions) {}
 
@@ -60,6 +61,27 @@ export class AetnamemClient {
       } catch {
         return text;
       }
+    } finally {
+      this.scheduleIdleClose();
+    }
+  }
+
+  /** Discover optional server capabilities without assuming a package version. */
+  async hasTool(name: string, timeoutMs?: number): Promise<boolean> {
+    try {
+      this.cancelIdleClose();
+      if (this.toolNames === null) {
+        await this.ensureInitialized();
+        const result = (await this.request("tools/list", {}, timeoutMs)) as {
+          tools?: Array<{ name?: string }>;
+        };
+        this.toolNames = new Set(
+          (result?.tools ?? [])
+            .map((tool) => String(tool.name ?? ""))
+            .filter(Boolean),
+        );
+      }
+      return this.toolNames.has(name);
     } finally {
       this.scheduleIdleClose();
     }
@@ -120,7 +142,7 @@ export class AetnamemClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.2.4" },
+      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.3.0" },
     });
     this.notify("notifications/initialized", {});
   }

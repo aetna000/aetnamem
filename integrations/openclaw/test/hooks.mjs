@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -11,7 +11,13 @@ function fakeApi(config) {
   const hooks = new Map();
   const tools = new Map();
   const services = [];
-  const logger = { debug() {}, info() {}, warn() {}, error() {} };
+  const logs = [];
+  const logger = {
+    debug(message) { logs.push(String(message)); },
+    info(message) { logs.push(String(message)); },
+    warn(message) { logs.push(String(message)); },
+    error(message) { logs.push(String(message)); },
+  };
   const api = {
     pluginConfig: config,
     logger,
@@ -20,7 +26,7 @@ function fakeApi(config) {
     registerService(service) { services.push(service); },
   };
   plugin.register(api);
-  return { hooks, tools, services };
+  return { hooks, tools, services, logs };
 }
 
 
@@ -118,7 +124,69 @@ try {
   assert.equal(legacyInjection.appendSystemContext, undefined);
   for (const service of legacy.services) await service.stop?.();
 
-  console.log("hooks: cache-aware placement, invalidation, cleanup, and compatibility verified");
+  const fourDb = path.join(dataDir, "four-memory.db");
+  const fourConfigPath = path.join(dataDir, "runtime.json");
+  writeFileSync(
+    fourConfigPath,
+    JSON.stringify({
+      format: "aetnamem-runtime-config-v1",
+      preset: "starter",
+      db_path: fourDb,
+      scope: { subject_id: "four-user", agent_id: "openclaw-primary" },
+      budgets: {
+        total_chars: 4200,
+        working_chars: 700,
+        semantic_chars: 1800,
+        episodic_chars: 900,
+        procedural_chars: 800,
+      },
+      planes: {
+        working: { enabled: true },
+        semantic: { enabled: true, max_records: 3, min_score: 0.3 },
+        episodic: { enabled: true, max_outcomes: 3 },
+        procedural: { enabled: true, skill_paths: [] },
+      },
+      failure_policy: "degrade",
+    }),
+  );
+  const fourMemory = fakeApi({
+    ...base,
+    dbPath: fourDb,
+    subject: "four-user",
+    commandArgs: ["runtime", "mcp", "--config", fourConfigPath],
+    orchestration: {
+      enabled: true,
+      agentId: "openclaw-primary",
+      runtimeConfig: fourConfigPath,
+      fallback: "legacy",
+    },
+  });
+  const fourBefore = fourMemory.hooks.get("before_prompt_build");
+  const fourEnd = fourMemory.hooks.get("agent_end");
+  const firstPack = await fourBefore(
+    { prompt: "My deployment region is Sydney." },
+    { sessionKey: "four-1" },
+  );
+  assert.ok(
+    firstPack?.appendContext?.includes("<working_memory>"),
+    fourMemory.logs.join("\n"),
+  );
+  await fourEnd({ success: true, messages: [] }, { sessionKey: "four-1" });
+  const recalledPack = await fourBefore(
+    { prompt: "What is my deployment region?" },
+    { sessionKey: "four-2" },
+  );
+  assert.ok(
+    `${recalledPack.appendSystemContext ?? ""}${recalledPack.appendContext ?? ""}`.includes(
+      "Sydney",
+    ),
+  );
+  await fourEnd({ success: true, messages: [] }, { sessionKey: "four-2" });
+  for (const service of fourMemory.services) await service.stop?.();
+
+  console.log(
+    "hooks: legacy compatibility and opt-in four-memory orchestration verified",
+  );
 } finally {
   for (const service of runtime.services) await service.stop?.();
   rmSync(dataDir, { recursive: true, force: true });

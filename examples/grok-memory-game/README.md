@@ -15,6 +15,12 @@ The game demonstrates real AetnaMem behavior—not mocked output:
 - deletion with a receipt; and
 - verification of the hash-linked audit chain.
 
+It is an explanatory integration demo, not a CML causal benchmark. It does not
+show that AetnaMem improves Grok's verified outcome-per-cost. The planned Grok
+CLI study, randomized intervention ledger, and falsification gates are tracked
+in [`../../plan.md`](../../plan.md) and
+[`../../docs/current-status.md`](../../docs/current-status.md).
+
 ## Run the recording version
 
 From the repository root:

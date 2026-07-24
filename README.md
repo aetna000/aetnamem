@@ -5,21 +5,23 @@
 <h1 align="center">aetnamem</h1>
 
 <p align="center">
-  <strong>Evidence before effect.</strong><br>
-  Auditable memory and exact-plan guarded actions for stateful AI agents.
+  <strong>AetnaMem remembers whether remembering actually helped.</strong><br>
+  Four governed memory planes, one agent connection, and an experimental evidence loop.
 </p>
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-315A7D?style=flat-square">
+  <img alt="Version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="#what-can-you-do-with-this-repository">Use cases</a> &middot;
-  <a href="#install--use">Quick start</a> &middot;
+  <a href="#give-openclaw-four-kinds-of-memory">OpenClaw quick start</a> &middot;
+  <a href="./docs/current-status.md">Current status</a> &middot;
+  <a href="#the-four-memories-in-plain-language">Four memories</a> &middot;
+  <a href="#ready-made-configurations">Presets</a> &middot;
   <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
   <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
   <a href="./examples/grok-memory-game/">Grok memory game</a> &middot;
@@ -28,10 +30,129 @@
   <a href="./TODO.md">Roadmap</a>
 </p>
 
-A local-first Python engine for provenance-aware agent memory
-and optional guarded actions. The reference store is one SQLite file. Its
-security claims are deterministic and testable, but deliberately narrower
-than “the database is trusted” or “every external action is reversible.”
+AetnaMem is a local-first memory runtime and evidence layer for agents. Instead of making an
+OpenClaw user configure four databases or four tools, AetnaMem coordinates all
+four kinds of memory behind one connection and gives the agent one bounded
+context pack. Its experimental Causal Memory Ledger (CML) records which
+eligible memory contributions were assigned, which were actually shown, and
+which outcome was later reported. That is the foundation for testing whether
+memory earned its context cost rather than assuming that retrieval was useful.
+
+The current public release is **Python v0.5.0** with
+**OpenClaw plugin v0.3.0**. It includes the opt-in four-memory runtime and the
+first default-off CML foundation. CML does not yet prove a causal benefit;
+the synthetic causal benchmark, estimators, held-out policy evaluation, and
+trusted host adapters remain roadmap work. See
+[current capability status](./docs/current-status.md) before relying on a
+development feature.
+
+## Give OpenClaw four kinds of memory
+
+You do not need to understand memory databases. Install AetnaMem and its
+OpenClaw plugin, run the wizard, and enable the configuration it creates:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+aetnamem setup
+openclaw aetnamem setup --single-user --subject you \
+  --orchestrated --runtime-config ~/.aetnamem/runtime.json
+```
+
+The wizard walks through exactly ten short steps:
+
+1. Explain what AetnaMem will add.
+2. Choose a ready-made setup.
+3. Name the person whose memories these are.
+4. Name the agent.
+5. Choose the private SQLite location.
+6. Optionally point to OpenClaw `SKILL.md` files.
+7. Choose where the configuration is saved.
+8. Confirm the safety model.
+9. Write and validate the configuration.
+10. Print the exact OpenClaw and generic MCP commands.
+
+For a scripted install with safe single-user defaults:
+
+```bash
+aetnamem setup --yes --preset starter --subject you \
+  --agent openclaw-primary
+```
+
+Check the result before connecting an agent:
+
+```bash
+aetnamem runtime status --config ~/.aetnamem/runtime.json
+```
+
+Existing `aetnamem mcp`, Python `Memory`, and non-orchestrated OpenClaw setups
+continue to use the original semantic recall path. Four-memory orchestration is
+opt-in and falls back to legacy recall if the connected Python package does not
+offer the runtime tools.
+
+## The four memories in plain language
+
+Imagine an agent completing a task:
+
+```text
+What am I doing now?      → Working memory
+What facts do I know?     → Semantic memory
+What happened last time?  → Episodic memory
+How should I do this?      → Procedural memory
+                                  │
+                                  ▼
+                         One bounded context pack
+                                  │
+                                  ▼
+                         OpenClaw or another agent
+```
+
+| Memory | What it gives the agent | A simple example |
+|---|---|---|
+| **Working** | The current goal, constraints, progress, and unresolved items | “The report is drafted; upload is still pending.” |
+| **Semantic** | Governed facts and preferences with provenance, correction, and deletion | “Production reports must be PDF.” |
+| **Episodic** | Relevant prior attempts, successes, failures, and reviewed lessons | “The previous upload timed out after using the old endpoint.” |
+| **Procedural** | The best versioned skill or procedure for the task | “Use the report-upload skill and verify its receipt.” |
+
+After the agent acts, AetnaMem can record the outcome reported by the caller.
+The generic CLI and MCP paths label this evidence `caller_asserted`; a trusted
+host integration must separately authenticate evidence before labeling it
+`host_attested`. Failed
+outcomes may create a **quarantined lesson proposal** for review. A skill can
+inform an action, but it never authorizes an action; optional Guarded Actions
+remain the approval boundary.
+
+## Ready-made configurations
+
+The wizard creates normal JSON, but most users should start from a preset:
+
+| Preset | Best for | Behavior |
+|---|---|---|
+| `starter` | One person and one OpenClaw agent | Balanced local defaults |
+| `private` | Minimal local context and conservative retrieval | Smaller budgets and stricter matching |
+| `team` | Several cooperating agents behind a trusted host | Larger budgets and team-ready policy fields |
+| `benchmark` | Reproducible comparisons | Generous deterministic budgets |
+
+List or generate presets without the wizard:
+
+```bash
+aetnamem runtime presets
+aetnamem runtime init --preset private --subject you \
+  --agent openclaw-primary --output ~/.aetnamem/runtime.json
+```
+
+The same runtime works with Grok, Claude, DeepSeek, OpenAI, Ollama, or another
+model because coordination happens through generic MCP:
+
+```bash
+aetnamem runtime mcp --config ~/.aetnamem/runtime.json
+```
+
+See the [four-memory runtime guide](./docs/four-memory-runtime.md) for the
+configuration, lifecycle, lesson review, and generic MCP tools. The
+[four-memory ablation benchmark](./bench/four_memory/) shows the complete
+runtime beside semantic-only and each leave-one-plane-out variant without
+making a model-quality claim.
 
 ## What can you do with this repository?
 
@@ -464,12 +585,14 @@ returns receipts, and you can independently audit the same SQLite file with
 Full tool catalog, host configs, and troubleshooting:
 [integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md).
 
-Install the native integration in three commands:
+Install the native four-memory integration:
 
 ```bash
 python3 -m pip install --upgrade aetnamem
 openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
-openclaw aetnamem setup --single-user --subject you
+aetnamem setup
+openclaw aetnamem setup --single-user --subject you \
+  --orchestrated --runtime-config ~/.aetnamem/runtime.json
 ```
 
 The setup applies conservative context budgets and enables the required
@@ -535,9 +658,9 @@ Build a native adapter only when the framework gives useful hooks:
 
 | hook point | aetnamem call | purpose |
 |---|---|---|
-| before prompt/context build | `memory_context_pack` / `build_context_pack` | inject bounded, audited stable + dynamic context |
-| after user/agent turn | `memory_capture` | capture user facts; log assistant/tool output as digests |
-| before history write | strip `<user_persona>` / `<relevant_memories>` | prevent recall feedback loops |
+| before prompt/context build | `memory_prepare_turn` or legacy `memory_context_pack` | inject bounded, audited stable + dynamic context |
+| after user/agent turn | `memory_record_outcome` plus `memory_capture` | close the learning loop and capture user facts |
+| before history write | strip injected memory blocks | prevent recall feedback loops |
 | explicit agent tools | `memory_recall`, `memory_forget`, `memory_audit`, `memory_verify` | search, request logical purge, and verify recorded behavior |
 
 Native adapters should pass the host's `session_id` and `turn_id` whenever
@@ -587,7 +710,10 @@ control, identity, lawful basis, and jurisdiction-specific requirements remain
 deployment responsibilities. See the [audit-log specification](https://github.com/aetna000/aetnamem/blob/main/docs/audit-log-spec.md)
 for the precise integrity threat model.
 
-## Memory layers
+## Current semantic-memory storage pipeline
+
+These L0–L3 labels describe the internal pipeline used by the semantic
+provider. They are not alternatives to the four runtime memory types above.
 
 - **L0 — episodes**: raw turns, append-only, purged by deletion.
 - **L1 — records**: extracted facts with provenance.
@@ -624,11 +750,12 @@ aetnamem graph-merges ./memories.db user-1 --status pending
 aetnamem graph-inspect ./memories.db user-1
 ```
 
-## What v0 is and is not
+## What v0.5 is and is not
 
-v0 extraction is deterministic (generic sentence patterns: "my X is Y",
+Semantic extraction is deterministic (generic sentence patterns: "my X is Y",
 "use Y as my X", "remember that …", "I avoid …") so that policy failures are
-debuggable, not probabilistic. The local Python API, CLI, MCP server,
+debuggable, not probabilistic. The embedded four-memory runtime, setup
+presets, local Python API, CLI, MCP server,
 deterministic consolidation, persona snapshots, scenes, checkpoints, and
 independent memory verifier are implemented. An optional, deterministic graph
 index provides bounded multi-hop recall with path evidence and direct-record
@@ -638,7 +765,7 @@ adapter, recovery fencing, external journal import, and independent action
 verifier. A fail-closed, filter-only MCP gate is implemented; automatic
 conversion of arbitrary upstream writes into staged actions, authenticated
 host identity, encrypted payloads, LLM-backed graph extraction, public HTTP
-deployments, and additional
+deployments, remote memory-plane transport, and additional
 storage backends remain roadmap work — see the [roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md).
 The policy gates in [aetnamem/core/policy.py](https://github.com/aetna000/aetnamem/blob/main/aetnamem/core/policy.py) are
 the product; nothing in the engine may reference the vocabulary of a
@@ -646,6 +773,10 @@ benchmark scenario.
 
 ## Documentation
 
+- **[Current capability status](./docs/current-status.md)** — canonical
+  implemented, experimental, public, and planned boundary.
+- **[0.5.0 release notes](./docs/releases/v0.5.0.md)** — four-memory runtime,
+  ten-step setup, presets, runtime MCP, OpenClaw 0.3.0, deletion, and benchmark.
 - **[0.4.1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.1.md)** — provider-neutral
   cache-aware context packs, OpenClaw npm release, Hermes integration, measured
   token/cost results, and claims boundaries.

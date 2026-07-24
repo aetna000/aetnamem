@@ -1,7 +1,14 @@
-# OpenClaw plugin: memory-aetnamem
+# OpenClaw plugin: four-memory AetnaMem
 
-Gives an OpenClaw assistant automatic, auditable memory: auto-recall before
-prompts, auto-capture after turns, and agent-callable search and forget tools.
+> **AetnaMem remembers whether remembering actually helped.**
+
+This README describes the public npm `0.3.0` plugin for Python `v0.5.0`. See
+the repository's [current capability status](../../docs/current-status.md) for
+the precise implemented, experimental, and planned boundary.
+
+Gives an OpenClaw assistant one connection to working, semantic, episodic, and
+procedural memory. Four-memory orchestration is opt-in; existing auto-recall,
+auto-capture, search, and forget behavior remains the compatibility fallback.
 Memory operations use the aetnamem engine's quarantine, recognized fact-slot
 supersession, logical purge receipts, and hash-chained events. These controls
 do not authenticate subject IDs or recover provenance that the host removed;
@@ -21,6 +28,11 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
 | tool `aetnamem_forget` | `memory_forget` | deletion on user request, returns the receipt |
 
+With `orchestration.enabled`, `before_prompt_build` instead calls
+`memory_prepare_turn`, and `agent_end` closes the run through
+`memory_record_outcome`. Capability detection uses MCP `tools/list`; missing
+runtime tools fall back to the legacy hooks by default.
+
 Recall failures/timeouts never block a turn — the agent just proceeds
 without injection.
 
@@ -29,7 +41,9 @@ without injection.
 ```bash
 python3 -m pip install --upgrade aetnamem
 openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
-openclaw aetnamem setup --single-user --subject you
+aetnamem setup
+openclaw aetnamem setup --single-user --subject you \
+  --orchestrated --runtime-config ~/.aetnamem/runtime.json
 ```
 
 `--single-user` describes the supported deployment boundary and is retained in
@@ -54,7 +68,13 @@ version), then configure:
   "persona": { "maxChars": 600 },
   "capture": { "captureAssistant": true },
   "cacheAware": { "enabled": true, "compactReferences": true },
-  "tools": { "enabled": true }
+  "tools": { "enabled": true },
+  "orchestration": {
+    "enabled": true,
+    "agentId": "openclaw-primary",
+    "runtimeConfig": "~/.aetnamem/runtime.json",
+    "fallback": "legacy"
+  }
 }
 ```
 

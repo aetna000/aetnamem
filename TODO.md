@@ -1,8 +1,40 @@
-# aetnamem Guarded Actions TODO
+# AetnaMem engineering roadmap
 
-This is the implementation checklist for **aetnamem Guarded Actions**: a
-causal transaction layer connecting evidence, memory, authority, tool effects,
-verification, and recovery. `aetnamem` is the canonical CLI executable.
+This checklist tracks unfinished repository work. It complements the
+[current capability status](docs/current-status.md) and the normative
+[Causal Memory Ledger plan](plan.md); it does not turn planned work into a
+shipped capability. `aetnamem` is the canonical CLI executable.
+
+## Causal Memory Ledger
+
+> **AetnaMem remembers whether remembering actually helped.**
+
+- [x] Add default-off `off`, `shadow`, and benchmark-only `experiment` modes.
+- [x] Persist candidate hashes and assigned/applied interventions before
+      context compilation.
+- [x] Record marginal and joint propensities, assigned/applied arm IDs,
+      stratum, policy identity, pinning reason, and seed commitment.
+- [x] Preserve runtime-pack v1 when CML is off and emit experimental
+      runtime-pack v2 when enabled.
+- [x] Bind CML outcomes to the exact committed context-manifest digest.
+- [x] Store structured outcome metrics and distinguish `caller_asserted` from
+      `host_attested`.
+- [x] Forward the context-manifest digest through the OpenClaw outcome hook.
+- [ ] Add a separately authenticated trusted outcome adapter and verifier.
+- [ ] Add disposable benchmark database and namespace enforcement.
+- [ ] Add a balanced block allocator alongside the current deterministic
+      Bernoulli allocator.
+- [ ] Build the planted-effect/confounding benchmark and propensity-aware
+      estimators with confidence intervals.
+- [ ] Build the frozen Grok CLI reference study and 16-condition task suite.
+- [ ] Learn a policy on training tasks, freeze it, and evaluate verified
+      success per dollar on held-out tasks.
+- [ ] Publish causal claims only if the falsification and held-out gates pass.
+
+## Guarded Actions
+
+Guarded Actions is the adjacent transaction layer connecting evidence, memory,
+authority, tool effects, verification, and recovery.
 
 ## Foundation
 

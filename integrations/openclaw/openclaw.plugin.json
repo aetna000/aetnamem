@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -75,6 +75,25 @@
         "description": "Agent-callable explicit memory tools; automatic recall/capture continue when disabled",
         "properties": {
           "enabled": { "type": "boolean", "default": true, "description": "Register aetnamem_search and aetnamem_forget tool schemas" }
+        }
+      },
+      "orchestration": {
+        "type": "object",
+        "description": "Opt-in four-memory runtime. Disabled keeps the exact legacy recall/capture path.",
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "agentId": { "type": "string", "default": "openclaw-primary" },
+          "runtimeConfig": {
+            "type": "string",
+            "default": "~/.aetnamem/runtime.json",
+            "description": "Configuration created by `aetnamem setup`"
+          },
+          "fallback": {
+            "type": "string",
+            "enum": ["legacy", "none"],
+            "default": "legacy",
+            "description": "Use legacy semantic recall when runtime tools are unavailable"
+          }
         }
       }
     }

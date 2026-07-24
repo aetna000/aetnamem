@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.4.1"
+    SERVER_VERSION = "0.5.0"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -45,10 +45,12 @@ class MCPServer:
         *,
         default_subject: str = "default",
         checkpoints_path: str | None = None,
+        runtime: Any | None = None,
     ) -> None:
         self.memory = memory
         self.default_subject = default_subject
         self.checkpoints_path = checkpoints_path
+        self.runtime = runtime
 
     # ------------------------------------------------------------- transport
 
@@ -138,6 +140,13 @@ class MCPServer:
             "memory_graph_history": self._tool_graph_history,
             "memory_log_action": self._tool_log_action,
         }
+        if self.runtime is not None:
+            handlers.update(
+                {
+                    "memory_prepare_turn": self._tool_runtime_prepare,
+                    "memory_record_outcome": self._tool_runtime_outcome,
+                }
+            )
         handler = handlers.get(name)
         if handler is None:
             return _error(request_id, -32602, f"unknown tool: {name}")
@@ -286,8 +295,37 @@ class MCPServer:
         )
         return {"event_id": event_id}
 
+    def _runtime_scope(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        scope = self.runtime.default_scope.to_dict()
+        for key in ("session_id", "task_id", "turn_id"):
+            if arguments.get(key) is not None:
+                scope[key] = str(arguments[key])
+        return scope
+
+    def _tool_runtime_prepare(self, arguments: dict[str, Any]) -> Any:
+        return self.runtime.prepare_turn(
+            arguments["query"],
+            task_state=arguments.get("task_state") or {},
+            scope=self._runtime_scope(arguments),
+        )
+
+    def _tool_runtime_outcome(self, arguments: dict[str, Any]) -> Any:
+        return self.runtime.record_outcome(
+            arguments["run_id"],
+            success=bool(arguments["success"]),
+            summary=str(arguments.get("summary") or ""),
+            result_digest=arguments.get("result_digest"),
+            feedback=arguments.get("feedback"),
+            tool_receipts=arguments.get("tool_receipts") or [],
+            idempotency_key=arguments.get("idempotency_key"),
+            manifest_sha256=arguments.get("manifest_sha256"),
+            metrics=arguments.get("metrics") or {},
+            outcome_trust="caller_asserted",
+            scope=self._runtime_scope(arguments),
+        )
+
     def _tool_definitions(self) -> list[dict[str, Any]]:
-        return [
+        tools = [
             _tool(
                 "memory_remember",
                 "Store a message in auditable memory. Trusted user statements "
@@ -497,6 +535,60 @@ class MCPServer:
                 required=["action_type"],
             ),
         ]
+        if self.runtime is not None:
+            tools.extend(
+                [
+                    _tool(
+                        "memory_prepare_turn",
+                        "Prepare one bounded context pack from working, semantic, "
+                        "episodic, and procedural memory. The runtime coordinates "
+                        "all enabled planes; the agent does not call them separately.",
+                        {
+                            "query": {"type": "string"},
+                            "task_state": {
+                                "type": "object",
+                                "description": "Explicit host-supplied goal, constraints, and progress; never hidden reasoning.",
+                            },
+                            "session_id": {"type": "string"},
+                            "task_id": {"type": "string"},
+                            "turn_id": {"type": "string"},
+                        },
+                        required=["query"],
+                    ),
+                    _tool(
+                        "memory_record_outcome",
+                        "Close a prepared runtime run with a caller-asserted outcome. "
+                        "A trusted host should bind verifier and tool receipts; generic "
+                        "MCP calls are not automatically host-attested. Failures may "
+                        "create quarantined proposals, never action authority.",
+                        {
+                            "run_id": {"type": "string"},
+                            "success": {"type": "boolean"},
+                            "summary": {"type": "string"},
+                            "result_digest": {"type": "string"},
+                            "feedback": {"type": "string"},
+                            "tool_receipts": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                            },
+                            "idempotency_key": {"type": "string"},
+                            "manifest_sha256": {
+                                "type": "string",
+                                "description": "Required for CML runs; must match the prepared manifest.",
+                            },
+                            "metrics": {
+                                "type": "object",
+                                "description": "Versioned verifier, token, cost, latency, and safety metrics.",
+                            },
+                            "session_id": {"type": "string"},
+                            "task_id": {"type": "string"},
+                            "turn_id": {"type": "string"},
+                        },
+                        required=["run_id", "success"],
+                    ),
+                ]
+            )
+        return tools
 
 
 def _tool(

@@ -11,11 +11,27 @@ from aetnamem.memory import Memory
 DEFAULT_MCP_DB = os.environ.get(
     "AETNAMEM_DB", str(Path.home() / ".aetnamem" / "memories.db")
 )
+DEFAULT_RUNTIME_CONFIG = str(Path.home() / ".aetnamem" / "runtime.json")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="aetnamem")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    setup_parser = subparsers.add_parser(
+        "setup", help="Ten-step wizard for four-memory agent setup"
+    )
+    setup_parser.add_argument(
+        "--preset", choices=("starter", "private", "team", "benchmark"), default="starter"
+    )
+    setup_parser.add_argument("--db", default=DEFAULT_MCP_DB)
+    setup_parser.add_argument("--output", default=DEFAULT_RUNTIME_CONFIG)
+    setup_parser.add_argument("--subject", default="you")
+    setup_parser.add_argument("--agent", default="openclaw-primary")
+    setup_parser.add_argument("--skill-path", action="append", default=[])
+    setup_parser.add_argument(
+        "--yes", action="store_true", help="Accept defaults without interactive prompts"
+    )
 
     remember_parser = subparsers.add_parser(
         "remember", help="Ingest a message through the write pipeline"
@@ -237,6 +253,79 @@ def main() -> None:
     )
     mcp_parser.add_argument("--retain-query-text", action="store_true")
 
+    runtime_parser = subparsers.add_parser(
+        "runtime", help="Coordinate working, semantic, episodic, and procedural memory"
+    )
+    runtime_commands = runtime_parser.add_subparsers(
+        dest="runtime_command", required=True
+    )
+    runtime_commands.add_parser("presets", help="List ready-made configurations")
+
+    runtime_init = runtime_commands.add_parser(
+        "init", help="Write a ready-made runtime configuration"
+    )
+    runtime_init.add_argument(
+        "--preset", choices=("starter", "private", "team", "benchmark"), default="starter"
+    )
+    runtime_init.add_argument("--db", default=DEFAULT_MCP_DB)
+    runtime_init.add_argument("--output", default=DEFAULT_RUNTIME_CONFIG)
+    runtime_init.add_argument("--subject", default="you")
+    runtime_init.add_argument("--agent", default="default-agent")
+    runtime_init.add_argument("--skill-path", action="append", default=[])
+
+    for name, help_text in (
+        ("validate", "Validate a runtime configuration"),
+        ("status", "Show runtime health and stored learning counts"),
+        ("mcp", "Serve legacy and four-memory runtime tools over stdio"),
+    ):
+        command_parser = runtime_commands.add_parser(name, help=help_text)
+        command_parser.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+
+    runtime_prepare = runtime_commands.add_parser(
+        "prepare", help="Compile four memory planes for one agent turn"
+    )
+    runtime_prepare.add_argument("query")
+    runtime_prepare.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+    runtime_prepare.add_argument(
+        "--task-state", default="{}", help="JSON object with goal, constraints, and progress"
+    )
+    runtime_prepare.add_argument("--session", default=None)
+    runtime_prepare.add_argument("--task", default=None)
+    runtime_prepare.add_argument("--turn", default=None)
+
+    runtime_outcome = runtime_commands.add_parser(
+        "outcome", help="Record a caller-asserted outcome for a prepared turn"
+    )
+    runtime_outcome.add_argument("run_id")
+    runtime_outcome.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+    outcome_result = runtime_outcome.add_mutually_exclusive_group(required=True)
+    outcome_result.add_argument("--success", action="store_true")
+    outcome_result.add_argument("--failure", action="store_true")
+    runtime_outcome.add_argument("--summary", default="")
+    runtime_outcome.add_argument("--result-digest", default=None)
+    runtime_outcome.add_argument("--feedback", default=None)
+    runtime_outcome.add_argument("--idempotency-key", default=None)
+    runtime_outcome.add_argument("--manifest-sha256", default=None)
+    runtime_outcome.add_argument(
+        "--metrics",
+        default="{}",
+        help="JSON object with verifier, token, cost, latency, and safety metrics",
+    )
+
+    runtime_promote = runtime_commands.add_parser(
+        "promote-lesson", help="Activate a reviewed episodic lesson proposal"
+    )
+    runtime_promote.add_argument("lesson_id")
+    runtime_promote.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+
+    runtime_forget = runtime_commands.add_parser(
+        "forget", help="Purge matching content across all four memory planes"
+    )
+    runtime_forget.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+    runtime_forget_selector = runtime_forget.add_mutually_exclusive_group(required=True)
+    runtime_forget_selector.add_argument("--contains", default=None)
+    runtime_forget_selector.add_argument("--utterance", default=None)
+
     actions_parser = subparsers.add_parser(
         "actions", help="Stage, approve, execute, and verify guarded actions"
     )
@@ -339,6 +428,24 @@ def main() -> None:
     import_journal_parser.add_argument("--actor", default="journal-importer")
 
     args = parser.parse_args()
+
+    if args.command == "setup":
+        from aetnamem.runtime.wizard import run_setup_wizard
+
+        run_setup_wizard(
+            preset=args.preset,
+            db_path=args.db,
+            output_path=args.output,
+            subject_id=args.subject,
+            agent_id=args.agent,
+            skill_paths=args.skill_path,
+            non_interactive=args.yes,
+        )
+        return
+
+    if args.command == "runtime":
+        _run_runtime(args)
+        return
 
     if args.command == "actions":
         _run_actions(args)
@@ -483,6 +590,104 @@ def main() -> None:
 
 def _print(value: object) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def _run_runtime(args: argparse.Namespace) -> None:
+    from aetnamem.runtime import (
+        MemoryRuntime,
+        list_presets,
+        load_config,
+        preset_config,
+    )
+
+    if args.runtime_command == "presets":
+        _print(list_presets())
+        return
+    if args.runtime_command == "init":
+        config = preset_config(
+            args.preset,
+            db_path=str(Path(args.db).expanduser()),
+            subject_id=args.subject,
+            agent_id=args.agent,
+            skill_paths=args.skill_path,
+        )
+        output = Path(args.output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        _print({"created": str(output), "preset": args.preset, "config": config})
+        return
+    if args.runtime_command == "validate":
+        config = load_config(args.config)
+        _print(
+            {
+                "valid": True,
+                "format": config["format"],
+                "preset": config.get("preset", "custom"),
+                "planes": sorted(config["planes"]),
+            }
+        )
+        return
+
+    runtime = MemoryRuntime(args.config)
+    try:
+        if args.runtime_command == "status":
+            _print(runtime.status())
+            return
+        if args.runtime_command == "prepare":
+            task_state = json.loads(args.task_state)
+            if not isinstance(task_state, dict):
+                raise ValueError("--task-state must be a JSON object")
+            scope = runtime.default_scope.to_dict()
+            scope.update(
+                {
+                    key: value
+                    for key, value in {
+                        "session_id": args.session,
+                        "task_id": args.task,
+                        "turn_id": args.turn,
+                    }.items()
+                    if value is not None
+                }
+            )
+            _print(runtime.prepare_turn(args.query, task_state=task_state, scope=scope))
+            return
+        if args.runtime_command == "outcome":
+            metrics = json.loads(args.metrics)
+            if not isinstance(metrics, dict):
+                raise ValueError("--metrics must be a JSON object")
+            _print(
+                runtime.record_outcome(
+                    args.run_id,
+                    success=bool(args.success),
+                    summary=args.summary,
+                    result_digest=args.result_digest,
+                    feedback=args.feedback,
+                    idempotency_key=args.idempotency_key,
+                    manifest_sha256=args.manifest_sha256,
+                    metrics=metrics,
+                )
+            )
+            return
+        if args.runtime_command == "promote-lesson":
+            _print(runtime.promote_lesson(args.lesson_id))
+            return
+        if args.runtime_command == "forget":
+            _print(runtime.forget(contains=args.contains, utterance=args.utterance))
+            return
+        if args.runtime_command == "mcp":
+            from aetnamem.mcp import MCPServer
+
+            MCPServer(
+                runtime.memory,
+                default_subject=runtime.default_scope.subject_id,
+                runtime=runtime,
+            ).serve()
+            return
+        raise ValueError(f"unknown runtime command: {args.runtime_command}")
+    finally:
+        runtime.close()
 
 
 def _run_actions(args: argparse.Namespace) -> None:

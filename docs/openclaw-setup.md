@@ -1,5 +1,9 @@
 # Wiring aetnamem into OpenClaw via MCP
 
+This page covers the public legacy surface and the opt-in Python `v0.5.0` /
+npm `v0.3.0` four-memory runtime. See
+[current capability status](current-status.md) before deployment.
+
 Visual walkthrough for giving an OpenClaw assistant persistent, auditable
 memory tools via the MCP server. The same flow applies to any MCP-capable
 host (Claude Code, Claude Desktop, …) — details in the
@@ -12,10 +16,15 @@ For a single-user OpenClaw instance, the native plugin is the shortest path:
 ```bash
 python3 -m pip install --upgrade aetnamem
 openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
-openclaw aetnamem setup --single-user --subject you
+aetnamem setup
+openclaw aetnamem setup --single-user --subject you \
+  --orchestrated --runtime-config ~/.aetnamem/runtime.json
 ```
 
-This enables bounded auto-recall and post-turn capture. It does not promise an
+This enables working, semantic, episodic, and procedural memory through one
+bounded runtime connection, plus post-turn outcome capture. The
+[four-memory guide](four-memory-runtime.md) explains the ten-step wizard and
+ready-made presets. It does not promise an
 immediate token reduction or alter `MEMORY.md`: first verify recall, then remove
 duplicated durable facts from always-loaded native context. Do not use one
 fixed subject for multiple authenticated users.

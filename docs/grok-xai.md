@@ -1,5 +1,7 @@
 # Grok/xAI integration
 
+Status: **implemented tool-calling integration; CML Grok study still planned**
+
 `aetnamem` works with Grok through xAI tool calling today: Grok chooses a
 memory tool, your app executes it locally against `aetnamem`, and the result
 goes back to Grok. The core memory engine stays unchanged, so provenance,
@@ -24,6 +26,11 @@ The demo exposes four tools to Grok:
 
 This is intentionally not a separate Grok memory backend. It is Grok using
 `aetnamem` as an auditable external tool layer.
+
+The playground and memory game demonstrate integration behavior. They are not
+evidence that memory causally improved Grok. The experimental CML foundation
+and the planned frozen Grok CLI study are separated in the
+[current status](current-status.md) and [`plan.md`](../plan.md).
 
 ## Local playground
 
@@ -99,6 +106,5 @@ tool like:
 Use `allowed_tools` deliberately. For a first public demo, expose only
 `memory_recall`, `memory_forget`, `memory_audit`, and `memory_verify`; add
 write tools after auth, rate limits, and audit anchoring are in place.
-
 
 

@@ -1,6 +1,11 @@
 # Integration guide: CLI and MCP
 
-aetnamem has five integration surfaces. Pick by what your host can do:
+Repository version boundary: Python `v0.5.0` and OpenClaw npm `v0.3.0` are
+public releases. CML measurement modes remain experimental and default off.
+See [current capability status](current-status.md).
+
+aetnamem has compatibility surfaces around `Memory` plus the opt-in
+four-memory runtime. Pick by what your host can do:
 
 | surface | use when | ships since |
 |---|---|---|
@@ -9,6 +14,8 @@ aetnamem has five integration surfaces. Pick by what your host can do:
 | Collaborative decisions (`from aetnamem.decisions import DecisionEngine`) | your authenticated host needs voting, EtD, and approved-change traceability | experimental |
 | CLI (`aetnamem <verb> …`) | your agent can run shell commands (OpenClaw skills, cron, CI) | v0 |
 | memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
+| four-memory Python runtime (`from aetnamem.runtime import MemoryRuntime`) | your host wants one coordinator for all four memory types | v0.5 |
+| runtime MCP server (`aetnamem runtime mcp`) | your MCP host wants the complete prepare/outcome loop | v0.5 |
 
 Collaborative decisions are an opt-in Python SDK and add nothing to the
 default memory MCP catalog. Authentication, the HTTP server, and the user
@@ -22,6 +29,17 @@ usage is covered in the
 [README](../README.md); audit workflows in the
 [auditing guide](auditing-guide.md). This document specifies the CLI and
 MCP surfaces.
+
+The default MCP catalog remains unchanged. The runtime endpoint appends only
+`memory_prepare_turn` and `memory_record_outcome`; see the
+[four-memory runtime guide](four-memory-runtime.md) for presets, setup, scope,
+configuration, and output contracts.
+
+`memory_record_outcome` on generic MCP is always `caller_asserted`. When CML
+is enabled, it must include the `manifest_sha256` returned by
+`memory_prepare_turn`. Authentication and host verification must be supplied by
+a separate trusted integration; merely calling the MCP tool is not
+host-attested evidence.
 
 ---
 

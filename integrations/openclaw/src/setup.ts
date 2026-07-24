@@ -7,6 +7,9 @@ export interface SetupOptions {
   command: string;
   dbPath: string;
   restart: boolean;
+  orchestrated?: boolean;
+  runtimeConfig?: string;
+  agentId?: string;
 }
 
 interface Invocation {
@@ -61,11 +64,61 @@ export function setupWrites(options: SetupOptions): Array<[string, string, boole
     capture: { enabled: true, captureAssistant: true },
     cacheAware: { enabled: true, compactReferences: true },
     tools: { enabled: true },
+    orchestration: {
+      enabled: options.orchestrated === true,
+      agentId: options.agentId ?? "openclaw-primary",
+      runtimeConfig: options.runtimeConfig ?? "~/.aetnamem/runtime.json",
+      fallback: "legacy",
+    },
   };
   return [
     ["plugins.entries.memory-aetnamem.enabled", "true", true],
     ["plugins.entries.memory-aetnamem.hooks.allowConversationAccess", "true", true],
-    ["plugins.entries.memory-aetnamem.config", JSON.stringify(config), true],
+    [
+      "plugins.entries.memory-aetnamem.config.command",
+      JSON.stringify(config.command),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.dbPath",
+      JSON.stringify(config.dbPath),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.subject",
+      JSON.stringify(config.subject),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.recall",
+      JSON.stringify(config.recall),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.persona",
+      JSON.stringify(config.persona),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.capture",
+      JSON.stringify(config.capture),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.cacheAware",
+      JSON.stringify(config.cacheAware),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.tools",
+      JSON.stringify(config.tools),
+      true,
+    ],
+    [
+      "plugins.entries.memory-aetnamem.config.orchestration",
+      JSON.stringify(config.orchestration),
+      true,
+    ],
   ];
 }
 
@@ -101,7 +154,7 @@ export async function runSetup(
   }
 
   process.stdout.write(
-    "AetnaMem is configured with bounded auto-recall and capture. " +
+    `AetnaMem is configured with ${options.orchestrated ? "four-memory orchestration" : "bounded auto-recall"} and capture. ` +
       "Existing MEMORY.md files were not changed; reduce duplicate native memory only after verifying recall.\n",
   );
 }

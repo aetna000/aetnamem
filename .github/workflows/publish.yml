@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: integrations/openclaw/package-lock.json
       - uses: actions/setup-python@v5
@@ -44,6 +44,7 @@ jobs:
       - run: python -m pip install -e ../..
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: npm run smoke
 
   build:
@@ -110,6 +111,7 @@ jobs:
 
   pypi:
     name: Publish tested artifacts to PyPI
+    if: github.ref_type == 'tag'
     needs: installed-wheel
     runs-on: ubuntu-latest
     environment:
@@ -125,3 +127,59 @@ jobs:
           path: dist
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  npm:
+    name: Publish OpenClaw plugin to npm
+    if: github.ref_type == 'tag'
+    needs: openclaw-plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: integrations/openclaw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: integrations/openclaw/package-lock.json
+      - name: Require tag to match plugin release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const expected = "v0.5.0";
+            if (process.env.RELEASE_TAG !== expected || pkg.version !== "0.3.0") {
+              throw new Error(`release ${process.env.RELEASE_TAG} must publish plugin 0.3.0`);
+            }
+          '
+      - run: python -m pip install -e ../..
+      - run: npm ci
+      - run: npm publish --access public --provenance
+
+  release:
+    name: Create GitHub release
+    if: github.ref_type == 'tag'
+    needs: [pypi, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: docs/releases/v0.5.0.md
+          files: |
+            dist/*
