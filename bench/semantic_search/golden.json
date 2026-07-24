@@ -1,0 +1,39 @@
+{
+  "format": "aetnamem-semantic-search-golden-v1",
+  "records": [
+    {
+      "key": "airport",
+      "text": "My preferred airport is Sydney."
+    },
+    {
+      "key": "color",
+      "text": "My favorite color is teal."
+    },
+    {
+      "key": "backup",
+      "text": "My backup email is recovery@example.com."
+    },
+    {
+      "key": "note",
+      "text": "Remember that vehicle maintenance appointments should be scheduled before long journeys."
+    }
+  ],
+  "queries": [
+    {
+      "query": "Which departure location should be used for flights?",
+      "relevant": ["airport"]
+    },
+    {
+      "query": "What shade should be used when choosing paint?",
+      "relevant": ["color"]
+    },
+    {
+      "query": "Where can an account recovery message be sent?",
+      "relevant": ["backup"]
+    },
+    {
+      "query": "What should happen before a long road trip?",
+      "relevant": ["note"]
+    }
+  ]
+}

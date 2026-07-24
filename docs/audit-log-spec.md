@@ -180,6 +180,33 @@ chain; its `event_hash` must equal `audit_event_hash` and its payload must
 list the same purged record, episode, and derived graph IDs. Because the event is chained, the receipt is as
 tamper-evident as the chain itself.
 
+### Semantic-index deletion extension (`aetnamem-deletion-receipt-v2`)
+
+When the optional derived semantic sidecar exists, the receipt uses v2 and
+adds `semantic_index_cleanup`. That object binds affected record and epoch
+IDs, the number of removed entries, verified-absence status and time, a
+sidecar-path digest, cleanup-result digest, and full index-verification report
+digest. The same object is present in the chained `memory.forget` payload.
+
+The v2 receipt proves what the live sidecar verifier observed. It does not
+claim sanitization of backups, snapshots, process memory, swap, or physical
+storage remnants. Canonical subject/status/content-digest validation remains
+the query-time fail-closed boundary.
+
+## Investigator access chain
+
+`memories`, `search`, and `trace` do not change the agent behavioral chain.
+When `--audit-access` is supplied, AetnaMem appends a digest-only row to the
+separate `investigation_access_log` chain. The hash input binds `access_id`,
+subject, operation, caller-supplied actor, query/filter/result digests, result
+count, semantic epoch, verification-report digest, timestamp, and previous
+access hash. `aetnamem access-log <db> --subject <id>` lists the rows and
+verifies this chain.
+
+The access chain proves internal continuity, not actor authentication or
+database completeness. Use a trusted host identity and externally anchored
+checkpoints when those properties are required.
+
 ## Threat model — what each layer detects
 
 | attack | detected by |

@@ -529,6 +529,67 @@ class Memory:
             session_id=session_id,
             turn_id=turn,
         )
+        semantic_index_cleanup = None
+        if purged_ids and self.store.path != ":memory:":
+            # The semantic index is optional and derived. If it exists, purge
+            # every epoch before claiming deletion is complete. Search still
+            # validates canonical status/digest, so a stale candidate can
+            # never be returned even if a process crashes before retry.
+            from aetnamem.semantic import SemanticIndex, default_index_path
+
+            registered = self.store.semantic_index_paths(subject_id)
+            registered_by_path = {
+                str(Path(item["index_path"]).expanduser().resolve()): item
+                for item in registered
+            }
+            default_path = str(default_index_path(self.store.path).resolve())
+            if Path(default_path).exists() and default_path not in registered_by_path:
+                registered_by_path[default_path] = {
+                    "index_path": default_path,
+                    "index_path_sha256": sha256_hex(default_path),
+                    "active_epoch_id": None,
+                }
+            cleanup_results: list[dict[str, Any]] = []
+            for path_text, registry in sorted(registered_by_path.items()):
+                index_path = Path(path_text)
+                if not index_path.exists():
+                    raise RuntimeError(
+                        "registered semantic index is missing; deletion cannot "
+                        f"verify vector cleanup ({registry['index_path_sha256']})"
+                    )
+                semantic_index = SemanticIndex(index_path)
+                try:
+                    if semantic_index.active_epoch(subject_id) is not None:
+                        cleanup = semantic_index.purge(subject_id, purged_ids)
+                        verification = semantic_index.verify(self, subject_id)
+                        semantic_index.checkpoint_storage()
+                        result = {
+                            **cleanup,
+                            "index_path_sha256": registry["index_path_sha256"],
+                            "index_verification_valid": verification["valid"],
+                            "verification_report_sha256": verification["report_sha256"],
+                        }
+                        cleanup_results.append(result)
+                        if (
+                            not cleanup["verified_absent"]
+                            or not verification["valid"]
+                        ):
+                            raise RuntimeError(
+                                "semantic index purge could not be verified; "
+                                "canonical deletion was not committed"
+                            )
+                finally:
+                    semantic_index.close()
+            if cleanup_results:
+                semantic_index_cleanup = {
+                    "status": "verified_absent",
+                    "verified_absent": True,
+                    "indexes": cleanup_results,
+                    "verified_at": utc_now(),
+                }
+                semantic_index_cleanup["result_sha256"] = sha256_hex(
+                    canonical_json(semantic_index_cleanup)
+                )
         # The audit event carries the selector digest, never its text — the
         # needle usually names exactly the thing being erased.
         payload = {
@@ -538,6 +599,8 @@ class Memory:
             "purged_graph_ids": purged_graph_ids,
             "purged_count": len(purged_ids),
         }
+        if semantic_index_cleanup is not None:
+            payload["semantic_index_cleanup"] = semantic_index_cleanup
         if utterance_sha256 is not None:
             payload["utterance_sha256"] = utterance_sha256
         event_id = self.store.append_audit_event(
@@ -550,7 +613,11 @@ class Memory:
         )
         event = self.store.get_audit_event(subject_id, event_id)
         receipt = {
-            "format": "aetnamem-deletion-receipt-v1",
+            "format": (
+                "aetnamem-deletion-receipt-v2"
+                if semantic_index_cleanup is not None
+                else "aetnamem-deletion-receipt-v1"
+            ),
             "subject_id": subject_id,
             "created_at": event["created_at"],
             "selector_sha256": selector_sha256,
@@ -560,6 +627,8 @@ class Memory:
             "audit_event_id": event_id,
             "audit_event_hash": event["event_hash"],
         }
+        if semantic_index_cleanup is not None:
+            receipt["semantic_index_cleanup"] = semantic_index_cleanup
         receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
         return {
             "deleted": bool(purged_ids),

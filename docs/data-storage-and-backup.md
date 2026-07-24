@@ -11,6 +11,18 @@ They contain inactive derived edges partitioned by subject/year. They are not
 required to recover canonical records, but back them up if historical graph
 browsing matters.
 
+Optional semantic investigation search creates a derived
+`memories.db.vectors.db` sidecar by default. It is not required for recovery:
+rebuild it from canonical memory with `aetnamem index build`. The sidecar is
+plaintext SQLite on every platform, including when the macOS canonical
+database uses sealed mode. Prefer rebuilding instead of backing it up. If you
+do retain or copy it, apply the same encryption, access control, deletion, and
+backup-expiry policy as canonical memory.
+
+Optional `--audit-access` events are stored in the canonical database's
+`investigation_access_log` table, not in the vector sidecar. They are included
+when the canonical database is backed up or restored.
+
 ## Default desktop locations
 
 | Platform | Memory database | Assistant workspace | At-rest protection |

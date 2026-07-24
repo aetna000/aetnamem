@@ -57,6 +57,79 @@ def test_cli_log_action(tmp_path: Path) -> None:
     assert events[0]["event_type"] == "agent.tool_call"
 
 
+def test_cli_read_only_search_trace_and_report_files(tmp_path: Path) -> None:
+    db = str(tmp_path / "mem.db")
+    stored = _run(
+        "remember",
+        db,
+        "user-1",
+        "My preferred airport is Sydney.",
+        "--session",
+        "s1",
+        "--turn",
+        "1",
+    )
+    record_id = json.loads(stored.stdout)["records"][0]["id"]
+    assert _run(
+        "recall", db, "user-1", "Which airport?", "--session", "s1"
+    ).returncode == 0
+    assert _run(
+        "log-action",
+        db,
+        "user-1",
+        "tool_call",
+        "--payload",
+        '{"tool":"flights.search","status":"ok"}',
+        "--session",
+        "s1",
+        "--turn",
+        "2",
+    ).returncode == 0
+
+    before = json.loads(_run("audit", db, "user-1").stdout)["audit_log"]
+    searched = _run(
+        "search", db, "preferred airport", "--subject", "user-1", "--format", "json"
+    )
+    assert searched.returncode == 0, searched.stderr
+    search_report = json.loads(searched.stdout)
+    assert search_report["format"] == "aetnamem-search-v1"
+    assert search_report["audit_chain_valid"] is True
+    assert any(
+        item["kind"] == "memory" and item["id"] == record_id
+        for item in search_report["results"]
+    )
+    after = json.loads(_run("audit", db, "user-1").stdout)["audit_log"]
+    assert len(after) == len(before), "audit search must not record a memory recall"
+
+    text_path = tmp_path / "memories.txt"
+    written = _run(
+        "memories", db, "--subject", "user-1", "--output", str(text_path)
+    )
+    assert written.returncode == 0, written.stderr
+    assert written.stdout == ""
+    assert "User's preferred airport is Sydney." in text_path.read_text()
+
+    json_path = tmp_path / "trace.json"
+    traced = _run(
+        "trace",
+        db,
+        "airport",
+        "--subject",
+        "user-1",
+        "--output",
+        str(json_path),
+    )
+    assert traced.returncode == 0, traced.stderr
+    trace_report = json.loads(json_path.read_text())
+    assert trace_report["format"] == "aetnamem-trace-v1"
+    kinds = {item["kind"] for item in trace_report["timeline"]}
+    assert {"memory", "retrieval", "event"} <= kinds
+    assert any(
+        item["data"].get("event_type") == "agent.tool_call"
+        for item in trace_report["timeline"]
+    )
+
+
 def test_aetnamem_actions_cli_roundtrip(tmp_path: Path) -> None:
     db = str(tmp_path / "mem.db")
     secret = "approval-secret-that-is-at-least-32-bytes-long"

@@ -7,13 +7,16 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-24**:
+Status as of **2026-07-25**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 15-tool MCP | Public release (`v0.5.0`) | Existing compatibility surface remains supported |
-| Four-memory runtime | Public, opt-in (`v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
+| Python `Memory`, CLI, and 15-tool MCP | Public release (`v0.5.1`) | Existing compatibility surface remains supported |
+| Four-memory runtime | Public, opt-in (`v0.5.1`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
 | OpenClaw orchestration | Public, opt-in (`v0.3.0`) | Runtime hooks with capability detection and legacy fallback |
+| Audit search and trace | Public (`v0.5.1`) | Lexical discovery, relationship expansion, text/JSON reports, and optional separate digest-only investigator access chain |
+| Semantic investigation search | Public, opt-in (`v0.5.1`) | Exact vector sidecar for `memories`/`search`/`trace`; generation-cached verification, batched canonical validation, strict dimensions, Ollama digest pinning, and hybrid RRF; agent recall unchanged |
+| Semantic index deletion | Public, opt-in (`v0.5.1`) | Vector-aware v2 deletion receipt, strict absence verification, and dirty-epoch rebuild signal |
 | CML `off` mode | Public default | Legacy runtime-pack v1 behavior remains unchanged |
 | CML `shadow` mode | Experimental | Records deterministic Bernoulli assignments but shows all candidate contributions |
 | CML `experiment` mode | Experimental, benchmark-only | May withhold explicitly eligible planes; pinned and ineligible planes remain present |
@@ -57,9 +60,10 @@ for their stated scopes. They are not CML causal results.
 | Document type | Source |
 |---|---|
 | Current implementation truth | This page and tests |
+| Semantic investigation search | [`semantic-search.md`](semantic-search.md) |
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
-| Current release notes | [`releases/v0.5.0.md`](releases/v0.5.0.md) |
+| Current release notes | [`releases/v0.5.1.md`](releases/v0.5.1.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

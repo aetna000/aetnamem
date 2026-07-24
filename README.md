@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-315A7D?style=flat-square">
+  <img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -38,11 +38,14 @@ eligible memory contributions were assigned, which were actually shown, and
 which outcome was later reported. That is the foundation for testing whether
 memory earned its context cost rather than assuming that retrieval was useful.
 
-The current public release is **Python v0.5.0** with
-**OpenClaw plugin v0.3.0**. It includes the opt-in four-memory runtime and the
-first default-off CML foundation. CML does not yet prove a causal benefit;
-the synthetic causal benchmark, estimators, held-out policy evaluation, and
-trusted host adapters remain roadmap work. See
+The current public release is **Python v0.5.1** with
+**OpenClaw plugin v0.3.0**. It adds human-readable audit search and trace,
+optional exact semantic and hybrid investigation search, digest-pinned Ollama
+model identity, purge-safe derived vectors, and a separate investigator access
+chain. The opt-in four-memory runtime and default-off CML foundation remain
+available. CML does not yet prove a causal benefit; the synthetic causal
+benchmark, estimators, held-out policy evaluation, and trusted host adapters
+remain roadmap work. See
 [current capability status](./docs/current-status.md) before relying on a
 development feature.
 
@@ -175,7 +178,9 @@ changes. You can adopt one part without adopting the rest.
 | Run a private local assistant | A desktop-style dashboard combines local chat, searchable memory, approvals, files, and live audit verification | [Desktop guide](./docs/macos-desktop.md) |
 | Stop webpages or tool output from silently becoming trusted memory | Classified untrusted content is quarantined and needs an explicit promotion step | [Audit and trust model](./docs/auditing-guide.md) |
 | Recall relationships, not only matching text | An optional governed graph adds bounded multi-hop retrieval with visible path evidence and direct-record fallback | [Graph memory design](./docs/graph-memory-design.md) |
-| Investigate what an agent knew and did | Retrievals, memory transitions, agent actions, approvals, and receipts can share a hash-chained timeline with independent verification | [Audit-log specification](./docs/audit-log-spec.md) |
+| Investigate what an agent knew and did | Search by ordinary words, dates, sessions, event types, or outcomes; expand a match into a hash-chained memory-to-action timeline and export it as text or JSON | [Audit search and trace guide](./docs/audit-search.md) |
+| Search memory by meaning without changing agent recall | An optional exact-vector sidecar nominates candidates; canonical subject, status, and digest checks gate every result, and hybrid mode uses explainable rank fusion | [Semantic investigation search](./docs/semantic-search.md) |
+| Audit who investigated memory | `--audit-access` writes query, filter, and result digests to a separate hash chain without changing the agent evidence under investigation | [Audit search guide](./docs/audit-search.md#record-who-investigated) |
 | Honor correction and deletion requests | New values supersede recognized old facts; forgetting purges live content and produces a deletion receipt | [Auditing guide](./docs/auditing-guide.md) |
 | Compare memory systems reproducibly | The repository includes unit gates, MemoryStackBench integration, and raw OpenClaw/DeepSeek token, cost, accuracy, and latency trials | [Benchmark evidence](./docs/openclaw-memory-evaluation.md) |
 
@@ -320,6 +325,11 @@ exact paths and restore instructions.
   text, removes FTS entries, and returns a deletion receipt. SQLite free
   pages, WAL files, filesystem snapshots, replicas, and backups require their
   own secure-erasure and retention controls.
+- **Semantic search is optional and search-only.** Its derived vector sidecar
+  is plaintext SQLite, can be rebuilt, and never replaces canonical evidence.
+  Every candidate is revalidated by subject, live status, and content digest.
+  Local Ollama avoids content egress; a remote embedding endpoint receives
+  indexed memory during build and each semantic query.
 - **The audit log is independently checkable.** Engine-generated memory and
   guarded-action transitions join a per-subject SHA-256 chain specified in
   [audit-log specification](https://github.com/aetna000/aetnamem/blob/main/docs/audit-log-spec.md). The standard-library
@@ -397,6 +407,12 @@ aetnamem remember   ./memories.db user-1 "My preferred airport is SFO." --sessio
 aetnamem recall     ./memories.db user-1 "Which airport should I book from?"
 aetnamem forget     ./memories.db user-1 --utterance "Forget my preferred airport."
 aetnamem list       ./memories.db user-1 --all
+aetnamem memories   ./memories.db --subject user-1 --all
+aetnamem search     ./memories.db "preferred airport" --subject user-1
+aetnamem trace      ./memories.db "preferred airport" --subject user-1 --output trace.json
+aetnamem index build ./memories.db --subject user-1 --embedder ollama --model nomic-embed-text
+aetnamem search     ./memories.db "departure location" --subject user-1 --mode hybrid
+aetnamem index verify ./memories.db --subject user-1
 aetnamem promote    ./memories.db user-1 rec_...
 aetnamem log-action ./memories.db user-1 tool_call --payload '{"tool":"calendar"}'
 aetnamem consolidate ./memories.db user-1
@@ -775,6 +791,8 @@ benchmark scenario.
 
 - **[Current capability status](./docs/current-status.md)** — canonical
   implemented, experimental, public, and planned boundary.
+- **[0.5.1 release notes](./docs/releases/v0.5.1.md)** — semantic audit search,
+  chronological traces, model pinning, deletion safety, and investigator access evidence.
 - **[0.5.0 release notes](./docs/releases/v0.5.0.md)** — four-memory runtime,
   ten-step setup, presets, runtime MCP, OpenClaw 0.3.0, deletion, and benchmark.
 - **[0.4.1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.1.md)** — provider-neutral
@@ -810,6 +828,13 @@ benchmark scenario.
   incident, handling erasure/access/rectification requests with receipts,
   reviewing quarantine, logging agent actions onto the same chain, and what
   to hand an external auditor.
+- **[Audit search and trace](https://github.com/aetna000/aetnamem/blob/main/docs/audit-search.md)** — browse a
+  user's memories, search evidence without knowing internal IDs, reconstruct
+  memory-to-action timelines, and save well-formatted text or JSON reports.
+- **[Semantic investigation search](https://github.com/aetna000/aetnamem/blob/main/docs/semantic-search.md)** — optional
+  Ollama, OpenAI-compatible, or local Sentence Transformers embeddings for
+  exact semantic and hybrid audit search, with canonical validation, index
+  verification, and vector-aware deletion receipts.
 - **[Audit-log specification](https://github.com/aetna000/aetnamem/blob/main/docs/audit-log-spec.md)** — the frozen wire
   format: canonical serialization, hash preimages, chain/checkpoint/receipt
   verification rules, and the threat-model table.

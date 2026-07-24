@@ -5,7 +5,7 @@ include plan.md
 recursive-include docs *.md *.json
 recursive-include tools *.py
 recursive-include examples *.py *.md *.json
-recursive-include bench *.md *.py *.yaml
+recursive-include bench *.md *.py *.yaml *.json
 recursive-include integrations/openclaw *.ts *.json *.md *.mjs
 prune integrations/openclaw/node_modules
 global-exclude *.py[cod]

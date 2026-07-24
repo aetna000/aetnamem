@@ -138,6 +138,14 @@ the request ticket. If the caller used a natural-language `utterance`, that
 request text is not stored as an episode; the audit event stores only
 `utterance_sha256`.
 
+If the optional semantic-search sidecar exists, `forget()` also removes the
+record from every vector epoch and verifies absence before committing. The
+returned `aetnamem-deletion-receipt-v2` includes the vector cleanup result and
+verification-report digest. Without a semantic sidecar, the existing v1
+receipt remains unchanged. Run `aetnamem index verify <db> --subject <id>`
+after incidents and rebuild dirty epochs; see
+[Semantic investigation search](semantic-search.md).
+
 To verify the live database's logical purge afterwards:
 
 1. `m.recall("user-1", <related query>)` returns nothing derived from the

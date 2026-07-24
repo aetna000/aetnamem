@@ -114,12 +114,132 @@ def main() -> None:
     )
     optimize_parser.add_argument("path")
 
+    index_parser = subparsers.add_parser(
+        "index", help="Build and verify the optional semantic search index"
+    )
+    index_commands = index_parser.add_subparsers(
+        dest="index_command", required=True
+    )
+    index_build = index_commands.add_parser(
+        "build", help="Build and activate a verified versioned index epoch"
+    )
+    index_build.add_argument("path")
+    index_build.add_argument("--subject", required=True)
+    index_build.add_argument(
+        "--embedder",
+        choices=("ollama", "openai-compatible", "sentence-transformers", "hashing"),
+        default="ollama",
+    )
+    index_build.add_argument("--model", default=None)
+    index_build.add_argument("--model-version", default="unverified")
+    index_build.add_argument("--endpoint", default=None)
+    index_build.add_argument("--api-key-env", default=None)
+    index_build.add_argument("--index-path", default=None)
+    index_build.add_argument("--batch-size", type=int, default=64)
+
+    index_status = index_commands.add_parser(
+        "status", help="Show active and retired semantic index epochs"
+    )
+    index_status.add_argument("path")
+    index_status.add_argument("--subject", default=None)
+    index_status.add_argument("--index-path", default=None)
+
+    index_verify = index_commands.add_parser(
+        "verify", help="Fail if vectors are stale, orphaned, unsafe, or incomplete"
+    )
+    index_verify.add_argument("path")
+    index_verify.add_argument("--subject", required=True)
+    index_verify.add_argument("--index-path", default=None)
+
     list_parser = subparsers.add_parser("list", help="List a subject's records")
     list_parser.add_argument("path")
     list_parser.add_argument("subject_id")
     list_parser.add_argument(
         "--all", action="store_true", help="Include superseded/quarantined/tombstoned"
     )
+
+    memories_parser = subparsers.add_parser(
+        "memories", help="Browse and search a user's memories without recording a recall"
+    )
+    memories_parser.add_argument("path")
+    memories_parser.add_argument("--subject", required=True)
+    memories_parser.add_argument("--query", default="")
+    memories_parser.add_argument(
+        "--status",
+        action="append",
+        choices=("active", "quarantined", "superseded", "tombstoned"),
+        default=[],
+        help="Filter by status; repeat to select more than one",
+    )
+    memories_parser.add_argument(
+        "--all", action="store_true", help="Include every memory status"
+    )
+    memories_parser.add_argument("--since", default=None, help="ISO date or timestamp")
+    memories_parser.add_argument("--until", default=None, help="ISO date or timestamp")
+    memories_parser.add_argument("--limit", type=int, default=100)
+    _add_semantic_search_arguments(memories_parser)
+    _add_access_audit_arguments(memories_parser)
+    _add_report_arguments(memories_parser)
+
+    search_parser = subparsers.add_parser(
+        "search", help="Search across memories and audit evidence without agent recall"
+    )
+    search_parser.add_argument("path")
+    search_parser.add_argument("query", nargs="?", default="")
+    search_parser.add_argument("--subject", required=True)
+    search_parser.add_argument(
+        "--scope",
+        choices=("all", "memories", "episodes", "retrievals", "events", "runs", "actions"),
+        default="all",
+    )
+    search_parser.add_argument(
+        "--status",
+        action="append",
+        choices=("active", "quarantined", "superseded", "tombstoned"),
+        default=[],
+    )
+    search_parser.add_argument("--session", default=None)
+    search_parser.add_argument(
+        "--event-type", default=None, help="Exact type or wildcard such as memory.*"
+    )
+    search_parser.add_argument("--actor", default=None)
+    search_parser.add_argument(
+        "--plane", choices=("working", "semantic", "episodic", "procedural"), default=None
+    )
+    search_parser.add_argument(
+        "--outcome", default=None, help="success, failed, or a stored state/status"
+    )
+    search_parser.add_argument("--since", default=None, help="ISO date or timestamp")
+    search_parser.add_argument("--until", default=None, help="ISO date or timestamp")
+    search_parser.add_argument("--limit", type=int, default=100)
+    _add_semantic_search_arguments(search_parser)
+    _add_access_audit_arguments(search_parser)
+    _add_report_arguments(search_parser)
+
+    trace_parser = subparsers.add_parser(
+        "trace", help="Find a clue and reconstruct its chronological evidence trail"
+    )
+    trace_parser.add_argument("path")
+    trace_parser.add_argument("query", nargs="?", default="")
+    trace_parser.add_argument("--subject", required=True)
+    trace_parser.add_argument("--session", default=None)
+    trace_parser.add_argument("--run", default=None)
+    trace_parser.add_argument("--record", default=None)
+    trace_parser.add_argument(
+        "--event-type", default=None, help="Exact type or wildcard such as memory.*"
+    )
+    trace_parser.add_argument("--since", default=None, help="ISO date or timestamp")
+    trace_parser.add_argument("--until", default=None, help="ISO date or timestamp")
+    trace_parser.add_argument("--limit", type=int, default=500)
+    _add_semantic_search_arguments(trace_parser)
+    _add_access_audit_arguments(trace_parser)
+    _add_report_arguments(trace_parser)
+
+    access_log_parser = subparsers.add_parser(
+        "access-log", help="List and verify the separate investigator access chain"
+    )
+    access_log_parser.add_argument("path")
+    access_log_parser.add_argument("--subject", required=True)
 
     forget_parser = subparsers.add_parser(
         "forget", help="Tombstone + purge matching records; prints a deletion receipt"
@@ -447,6 +567,10 @@ def main() -> None:
         _run_runtime(args)
         return
 
+    if args.command == "index":
+        _run_index(args)
+        return
+
     if args.command == "actions":
         _run_actions(args)
         return
@@ -523,6 +647,105 @@ def main() -> None:
         _print({"optimized": True})
     elif args.command == "list":
         _print(memory.list(args.subject_id, include_inactive=args.all))
+    elif args.command == "memories":
+        from aetnamem.investigate import format_memories, search_evidence
+
+        semantic_index, embedder = _semantic_search_resources(args, memory)
+        try:
+            statuses = args.status or (
+                ("active", "quarantined", "superseded", "tombstoned")
+                if args.all
+                else ("active",)
+            )
+            report = search_evidence(
+                memory,
+                args.subject,
+                args.query,
+                scope="memories",
+                statuses=statuses,
+                since=args.since,
+                until=args.until,
+                limit=args.limit,
+                mode=args.mode,
+                semantic_index=semantic_index,
+                embedder=embedder,
+                min_similarity=args.min_similarity,
+                audit_access=args.audit_access,
+                access_actor=args.access_actor,
+                access_operation="memories",
+            )
+            _emit_report(report, format_memories(report), args)
+        finally:
+            if semantic_index is not None:
+                semantic_index.close()
+    elif args.command == "search":
+        from aetnamem.investigate import format_search, search_evidence
+
+        semantic_index, embedder = _semantic_search_resources(args, memory)
+        try:
+            report = search_evidence(
+                memory,
+                args.subject,
+                args.query,
+                scope=args.scope,
+                statuses=args.status,
+                session_id=args.session,
+                event_type=args.event_type,
+                actor=args.actor,
+                plane=args.plane,
+                outcome=args.outcome,
+                since=args.since,
+                until=args.until,
+                limit=args.limit,
+                mode=args.mode,
+                semantic_index=semantic_index,
+                embedder=embedder,
+                min_similarity=args.min_similarity,
+                audit_access=args.audit_access,
+                access_actor=args.access_actor,
+            )
+            _emit_report(report, format_search(report), args)
+        finally:
+            if semantic_index is not None:
+                semantic_index.close()
+    elif args.command == "trace":
+        from aetnamem.investigate import format_trace, trace_evidence
+
+        semantic_index, embedder = _semantic_search_resources(args, memory)
+        try:
+            report = trace_evidence(
+                memory,
+                args.subject,
+                args.query,
+                session_id=args.session,
+                run_id=args.run,
+                record_id=args.record,
+                event_type=args.event_type,
+                since=args.since,
+                until=args.until,
+                limit=args.limit,
+                mode=args.mode,
+                semantic_index=semantic_index,
+                embedder=embedder,
+                min_similarity=args.min_similarity,
+                audit_access=args.audit_access,
+                access_actor=args.access_actor,
+            )
+            _emit_report(report, format_trace(report), args)
+        finally:
+            if semantic_index is not None:
+                semantic_index.close()
+    elif args.command == "access-log":
+        _print(
+            {
+                "format": "aetnamem-investigation-access-v1",
+                "subject_id": args.subject,
+                "verification": memory.store.verify_investigation_access(
+                    args.subject
+                ),
+                "events": memory.store.list_investigation_access(args.subject),
+            }
+        )
     elif args.command == "forget":
         result = memory.forget(
             args.subject_id,
@@ -590,6 +813,153 @@ def main() -> None:
 
 def _print(value: object) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def _add_report_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--format",
+        dest="report_format",
+        choices=("text", "json"),
+        default=None,
+        help="Output format (default: text, or inferred from --output extension)",
+    )
+    parser.add_argument(
+        "--output", default=None, help="Write the complete report to this file"
+    )
+
+
+def _add_semantic_search_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--mode",
+        choices=("lexical", "semantic", "hybrid"),
+        default="lexical",
+        help="Retrieval mode; semantic/hybrid require a built index",
+    )
+    parser.add_argument(
+        "--embedder",
+        choices=("ollama", "openai-compatible", "sentence-transformers", "hashing"),
+        default=None,
+    )
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--model-version", default=None)
+    parser.add_argument("--endpoint", default=None)
+    parser.add_argument("--api-key-env", default=None)
+    parser.add_argument("--index-path", default=None)
+    parser.add_argument(
+        "--min-similarity",
+        type=float,
+        default=0.2,
+        help="Minimum cosine similarity for semantic nominations",
+    )
+
+
+def _add_access_audit_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--audit-access",
+        action="store_true",
+        help="Append a digest-only event to the separate investigation access chain",
+    )
+    parser.add_argument(
+        "--access-actor",
+        default="unauthenticated-cli",
+        help="Actor asserted by the caller; authenticated hosts should supply identity",
+    )
+
+
+def _semantic_search_resources(
+    args: argparse.Namespace, memory: Memory
+) -> tuple[object | None, object | None]:
+    if args.mode == "lexical":
+        return None, None
+    from aetnamem.semantic import SemanticIndex, create_embedder, default_index_path
+
+    index_path = Path(
+        args.index_path or default_index_path(memory.store.path)
+    ).expanduser()
+    if not index_path.exists():
+        raise ValueError(
+            f"semantic index does not exist: {index_path}; "
+            "run `aetnamem index build` first"
+        )
+    index = SemanticIndex(index_path)
+    epoch = index.active_epoch(args.subject)
+    if epoch is None:
+        index.close()
+        raise ValueError(
+            f"no semantic index for {args.subject!r}; run `aetnamem index build` first"
+        )
+    identity = epoch["identity"]
+    provider = args.embedder or str(identity["provider"])
+    if provider == "hashing-diagnostic":
+        provider = "hashing"
+    model = args.model or str(identity["model"])
+    if provider == "hashing":
+        model = str(epoch["dimensions"])
+    embedder = create_embedder(
+        provider,
+        model,
+        endpoint=args.endpoint or identity.get("endpoint"),
+        api_key_env=args.api_key_env,
+        model_version=args.model_version or str(identity.get("version", "unverified")),
+    )
+    return index, embedder
+
+
+def _run_index(args: argparse.Namespace) -> None:
+    from aetnamem.semantic import SemanticIndex, create_embedder, default_index_path
+
+    memory = Memory(args.path)
+    index = SemanticIndex(args.index_path or default_index_path(args.path))
+    try:
+        if args.index_command == "status":
+            _print(index.status(args.subject))
+            return
+        if args.index_command == "verify":
+            report = index.verify(memory, args.subject)
+            _print(report)
+            if not report["valid"]:
+                raise SystemExit(1)
+            return
+        if args.index_command == "build":
+            model = args.model
+            if args.embedder == "ollama" and not model:
+                model = "nomic-embed-text"
+            embedder = create_embedder(
+                args.embedder,
+                model,
+                endpoint=args.endpoint,
+                api_key_env=args.api_key_env,
+                model_version=args.model_version,
+            )
+            report = index.build(
+                memory,
+                args.subject,
+                embedder,
+                batch_size=args.batch_size,
+            )
+            _print(report)
+            return
+        raise ValueError(f"unknown index command: {args.index_command}")
+    finally:
+        index.close()
+        memory.close()
+
+
+def _emit_report(value: object, text: str, args: argparse.Namespace) -> None:
+    output_path = Path(args.output).expanduser() if args.output else None
+    report_format = args.report_format
+    if report_format is None:
+        report_format = "json" if output_path and output_path.suffix.lower() == ".json" else "text"
+    rendered = (
+        json.dumps(value, indent=2, sort_keys=True) + "\n"
+        if report_format == "json"
+        else text
+    )
+    if output_path is None:
+        sys.stdout.write(rendered)
+        return
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(rendered, encoding="utf-8")
 
 
 def _run_runtime(args: argparse.Namespace) -> None:

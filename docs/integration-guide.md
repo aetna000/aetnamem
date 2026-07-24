@@ -1,6 +1,6 @@
 # Integration guide: CLI and MCP
 
-Repository version boundary: Python `v0.5.0` and OpenClaw npm `v0.3.0` are
+Repository version boundary: Python `v0.5.1` and OpenClaw npm `v0.3.0` are
 public releases. CML measurement modes remain experimental and default off.
 See [current capability status](current-status.md).
 
@@ -47,13 +47,39 @@ host-attested evidence.
 
 Conventions:
 
-- Most memory commands start with `<db-path> <subject_id>`; `checkpoint`,
-  `verify`, `mcp`, and the `actions` subcommands have command-specific forms.
-- Results print as pretty JSON on stdout; nothing else is written to stdout.
+- Most memory commands start with `<db-path> <subject_id>`; `memories`,
+  `search`, `trace`, `checkpoint`, `verify`, `mcp`, and the `actions`
+  subcommands have command-specific forms.
+- Most results print as pretty JSON on stdout. The investigation commands
+  `memories`, `search`, and `trace` print text by default, support
+  `--format text|json` plus `--output FILE`, and remain read-only unless
+  `--audit-access` explicitly appends to the separate access chain; see
+  [Audit search and trace](audit-search.md).
 - Exit code 0 on success; `verify` exits 1 when a chain or checkpoint fails;
   any command exits nonzero on error.
 - The database file is created on first use; `:memory:` works anywhere a
   path is accepted (useful for smoke tests, useless for persistence).
+
+### `aetnamem index build|status|verify`
+
+The optional semantic sidecar improves only the investigation commands; it
+does not change agent recall:
+
+```bash
+aetnamem index build ./mem.db --subject user-1 \
+  --embedder ollama --model nomic-embed-text
+aetnamem index status ./mem.db --subject user-1
+aetnamem index verify ./mem.db --subject user-1
+
+aetnamem search ./mem.db "departure location" \
+  --subject user-1 --mode hybrid
+```
+
+`search`, `trace`, and `memories` accept `--mode lexical|semantic|hybrid`,
+`--min-similarity`, `--embedder`, `--model`, `--model-version`, `--endpoint`,
+`--api-key-env`, and `--index-path`. Semantic and hybrid modes fail if active
+index and query embedder identities differ. See
+[Semantic investigation search](semantic-search.md).
 
 ### `aetnamem remember <db> <subject> <message> [--session S] [--turn T] [--source-type TYPE]`
 

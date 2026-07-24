@@ -402,7 +402,7 @@ def test_release_versions_are_consistent() -> None:
     project_version = re.search(
         r"(?m)^version = \"([^\"]+)\"$", project_text
     )
-    assert project_version and project_version.group(1) == "0.5.0"
+    assert project_version and project_version.group(1) == "0.5.1"
     package = json.loads((root / "integrations/openclaw/package.json").read_text())
     lock = json.loads((root / "integrations/openclaw/package-lock.json").read_text())
     manifest = json.loads(

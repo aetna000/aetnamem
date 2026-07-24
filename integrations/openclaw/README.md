@@ -2,7 +2,7 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes the public npm `0.3.0` plugin for Python `v0.5.0`. See
+This README describes the public npm `0.3.0` plugin for Python `v0.5.1`. See
 the repository's [current capability status](../../docs/current-status.md) for
 the precise implemented, experimental, and planned boundary.
 

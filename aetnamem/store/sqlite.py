@@ -95,8 +95,15 @@ class SQLiteStore:
             self._conn.execute("DELETE FROM records WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM episodes WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM retrieval_events WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM investigation_access_log WHERE subject_id = ?",
+                (subject_id,),
+            )
             self._conn.execute("DELETE FROM audit_verification_state WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM audit_log WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM record_generations WHERE subject_id = ?", (subject_id,)
+            )
 
     def insert_episode(
         self,
@@ -191,6 +198,34 @@ class SQLiteStore:
             (subject_id, record_id),
         ).fetchone()
         return _record_from_row(row) if row else None
+
+    def get_records(
+        self, subject_id: str, record_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch canonical records in bounded batches, keyed by record ID."""
+        ids = list(dict.fromkeys(str(value) for value in record_ids))
+        records: dict[str, dict[str, Any]] = {}
+        for start in range(0, len(ids), 900):
+            batch = ids[start : start + 900]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""
+                SELECT * FROM records
+                WHERE subject_id = ? AND id IN ({placeholders})
+                """,
+                (subject_id, *batch),
+            ).fetchall()
+            records.update(
+                (str(row["id"]), _record_from_row(row)) for row in rows
+            )
+        return records
+
+    def record_generation(self, subject_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT generation FROM record_generations WHERE subject_id = ?",
+            (subject_id,),
+        ).fetchone()
+        return int(row["generation"]) if row else 0
 
     def find_duplicate_record(
         self,
@@ -786,6 +821,165 @@ class SQLiteStore:
         ).fetchall()
         return [str(row["subject_id"]) for row in rows]
 
+    def register_semantic_index(
+        self,
+        subject_id: str,
+        index_path: str,
+        *,
+        active_epoch_id: str | None = None,
+    ) -> None:
+        normalized = str(Path(index_path).expanduser().resolve())
+        path_sha256 = sha256_hex(normalized)
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO semantic_index_registry(
+                  subject_id, index_path, index_path_sha256, active_epoch_id,
+                  registered_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(subject_id, index_path_sha256) DO UPDATE SET
+                  index_path = excluded.index_path,
+                  active_epoch_id = COALESCE(
+                    excluded.active_epoch_id,
+                    semantic_index_registry.active_epoch_id
+                  ),
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    subject_id,
+                    normalized,
+                    path_sha256,
+                    active_epoch_id,
+                    utc_now(),
+                    utc_now(),
+                ),
+            )
+
+    def semantic_index_paths(self, subject_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT index_path, index_path_sha256, active_epoch_id,
+                   registered_at, updated_at
+            FROM semantic_index_registry
+            WHERE subject_id = ?
+            ORDER BY index_path_sha256
+            """,
+            (subject_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def append_investigation_access(
+        self,
+        *,
+        subject_id: str,
+        operation: str,
+        actor: str,
+        query_digest: str,
+        filters_digest: str,
+        result_digest: str,
+        result_count: int,
+        index_epoch: str | None = None,
+        verification_report_digest: str | None = None,
+    ) -> str:
+        """Append to the access chain without changing the agent evidence chain."""
+        access_id = _new_id("access")
+        created_at = utc_now()
+        with self.transaction(immediate=True):
+            previous = self._conn.execute(
+                """
+                SELECT event_hash FROM investigation_access_log
+                WHERE subject_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (subject_id,),
+            ).fetchone()
+            prev_hash = str(previous["event_hash"]) if previous else None
+            event = {
+                "access_id": access_id,
+                "subject_id": subject_id,
+                "operation": operation,
+                "actor": actor,
+                "query_digest": query_digest,
+                "filters_digest": filters_digest,
+                "result_digest": result_digest,
+                "result_count": int(result_count),
+                "index_epoch": index_epoch,
+                "verification_report_digest": verification_report_digest,
+                "created_at": created_at,
+                "prev_hash": prev_hash,
+            }
+            event_hash = _event_hash(event)
+            self._conn.execute(
+                """
+                INSERT INTO investigation_access_log(
+                  access_id, subject_id, operation, actor, query_digest,
+                  filters_digest, result_digest, result_count, index_epoch,
+                  verification_report_digest, created_at, prev_hash, event_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    access_id,
+                    subject_id,
+                    operation,
+                    actor,
+                    query_digest,
+                    filters_digest,
+                    result_digest,
+                    int(result_count),
+                    index_epoch,
+                    verification_report_digest,
+                    created_at,
+                    prev_hash,
+                    event_hash,
+                ),
+            )
+        return access_id
+
+    def list_investigation_access(self, subject_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM investigation_access_log
+            WHERE subject_id = ? ORDER BY sequence
+            """,
+            (subject_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def verify_investigation_access(self, subject_id: str) -> dict[str, Any]:
+        events = self.list_investigation_access(subject_id)
+        previous_hash: str | None = None
+        for event in events:
+            expected = _event_hash(
+                {
+                    key: event[key]
+                    for key in (
+                        "access_id",
+                        "subject_id",
+                        "operation",
+                        "actor",
+                        "query_digest",
+                        "filters_digest",
+                        "result_digest",
+                        "result_count",
+                        "index_epoch",
+                        "verification_report_digest",
+                        "created_at",
+                        "prev_hash",
+                    )
+                }
+            )
+            if event["prev_hash"] != previous_hash or event["event_hash"] != expected:
+                return {
+                    "valid": False,
+                    "events": len(events),
+                    "failed_access_id": event["access_id"],
+                }
+            previous_hash = str(event["event_hash"])
+        return {
+            "valid": True,
+            "events": len(events),
+            "failed_access_id": None,
+        }
+
     def optimize(self) -> None:
         self._conn.execute("PRAGMA optimize")
 
@@ -835,6 +1029,49 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_records_subject_key
                   ON records(subject_id, fact_key, status);
 
+                CREATE TABLE IF NOT EXISTS record_generations (
+                  subject_id TEXT PRIMARY KEY,
+                  generation INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TRIGGER IF NOT EXISTS records_generation_insert
+                AFTER INSERT ON records BEGIN
+                  INSERT INTO record_generations(subject_id, generation)
+                  VALUES (NEW.subject_id, 1)
+                  ON CONFLICT(subject_id) DO UPDATE
+                    SET generation = generation + 1;
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS records_generation_delete
+                AFTER DELETE ON records BEGIN
+                  INSERT INTO record_generations(subject_id, generation)
+                  VALUES (OLD.subject_id, 1)
+                  ON CONFLICT(subject_id) DO UPDATE
+                    SET generation = generation + 1;
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS records_generation_update_same_subject
+                AFTER UPDATE ON records
+                WHEN OLD.subject_id = NEW.subject_id BEGIN
+                  INSERT INTO record_generations(subject_id, generation)
+                  VALUES (NEW.subject_id, 1)
+                  ON CONFLICT(subject_id) DO UPDATE
+                    SET generation = generation + 1;
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS records_generation_update_subject
+                AFTER UPDATE ON records
+                WHEN OLD.subject_id <> NEW.subject_id BEGIN
+                  INSERT INTO record_generations(subject_id, generation)
+                  VALUES (OLD.subject_id, 1)
+                  ON CONFLICT(subject_id) DO UPDATE
+                    SET generation = generation + 1;
+                  INSERT INTO record_generations(subject_id, generation)
+                  VALUES (NEW.subject_id, 1)
+                  ON CONFLICT(subject_id) DO UPDATE
+                    SET generation = generation + 1;
+                END;
+
                 CREATE TABLE IF NOT EXISTS records_fts_map (
                   record_id TEXT PRIMARY KEY,
                   subject_id TEXT NOT NULL,
@@ -873,6 +1110,36 @@ class SQLiteStore:
 
                 CREATE INDEX IF NOT EXISTS idx_audit_subject_sequence
                   ON audit_log(subject_id, sequence);
+
+                CREATE TABLE IF NOT EXISTS investigation_access_log (
+                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                  access_id TEXT NOT NULL UNIQUE,
+                  subject_id TEXT NOT NULL,
+                  operation TEXT NOT NULL,
+                  actor TEXT NOT NULL,
+                  query_digest TEXT NOT NULL,
+                  filters_digest TEXT NOT NULL,
+                  result_digest TEXT NOT NULL,
+                  result_count INTEGER NOT NULL,
+                  index_epoch TEXT,
+                  verification_report_digest TEXT,
+                  created_at TEXT NOT NULL,
+                  prev_hash TEXT,
+                  event_hash TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_investigation_access_subject
+                  ON investigation_access_log(subject_id, sequence);
+
+                CREATE TABLE IF NOT EXISTS semantic_index_registry (
+                  subject_id TEXT NOT NULL,
+                  index_path TEXT NOT NULL,
+                  index_path_sha256 TEXT NOT NULL,
+                  active_epoch_id TEXT,
+                  registered_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  PRIMARY KEY(subject_id, index_path_sha256)
+                );
 
                 CREATE TABLE IF NOT EXISTS entities (
                   id TEXT PRIMARY KEY,

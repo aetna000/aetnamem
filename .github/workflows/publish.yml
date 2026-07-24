@@ -169,14 +169,21 @@ jobs:
         run: |
           node -e '
             const pkg = require("./package.json");
-            const expected = "v0.5.0";
+            const expected = "v0.5.1";
             if (process.env.RELEASE_TAG !== expected || pkg.version !== "0.3.0") {
               throw new Error(`release ${process.env.RELEASE_TAG} must publish plugin 0.3.0`);
             }
           '
       - run: python -m pip install -e ../..
       - run: npm ci
-      - run: npm publish --access public --provenance
+      - name: Publish plugin unless this exact version already exists
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if npm view "openclaw-memory-aetnamem@$version" version >/dev/null 2>&1; then
+            echo "openclaw-memory-aetnamem@$version is already published"
+          else
+            npm publish --access public --provenance
+          fi
 
   release:
     name: Create GitHub release
@@ -194,6 +201,6 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/releases/v0.5.0.md
+          body_path: docs/releases/v0.5.1.md
           files: |
             dist/*
