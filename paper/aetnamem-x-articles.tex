@@ -282,40 +282,60 @@ exports, model-provider logs, or external systems deleted their copies. Those
 systems need separate retention policies and deletion receipts.}
 
 \clearpage
-\section{Why Aetnamem Does Not Use Embeddings}
+\section{Why Aetnamem Keeps Embeddings Out of Agent Recall}
 \articlelabel{7}
-\coreidea{Avoiding embeddings is an engineering trade: less semantic reach in
-exchange for a smaller, more reproducible trusted retrieval path.}
+\coreidea{Embeddings are an optional investigator lens in Aetnamem, not a
+source of trusted agent recall or memory authority.}
 
 Embeddings are effective at finding paraphrases and conceptually similar
-text. \system{} does not claim otherwise. It deliberately omits an embedding
-model and vector database from its current memory-retrieval path.
+text. \system{} does not claim otherwise. Since version 0.5.1, it has offered
+optional semantic and hybrid discovery for the human-facing
+\texttt{memories}, \texttt{search}, and \texttt{trace} investigation
+commands. Embeddings live in a disposable SQLite sidecar and nominate
+canonical record identifiers. They do not change \texttt{Memory.recall()},
+MCP agent recall, OpenClaw automatic recall, memory admission, promotion, or
+action authority. Lexical search remains the default.
 
-The reason is operational. Replaying a lexical decision requires text
-normalization, static weights, database state, and code. Replaying an
-embedding decision also requires the exact model and tokenizer, preprocessing,
-numerical environment, vector-index state, dependencies, and often hardware
-details.
+This separation is operational. Replaying the trusted agent-recall path
+requires text normalization, static weights, database state, and code.
+Replaying a semantic investigation also requires the exact embedding model,
+tokenizer, preprocessing, numerical environment, vector-index snapshot, and
+dependencies. An agent therefore does not need to download and run a second
+model merely to remember.
 
-Deletion and correction are also simpler when the indexes are ordinary SQLite
-rows. There is no stale vector to discover, re-embedding queue to operate, or
-dimensional migration when a model changes. A local installation does not
-need to download and run a second model just to remember.
+The vector sidecar is a lens, never the source of record truth. Every semantic
+candidate is reloaded from canonical SQLite and checked for subject, lifecycle
+status, and content digest before it can be shown. Versioned index epochs keep
+model identities separate. Ollama epochs pin the model digest reported by the
+local service and fail closed if it changes; providers without a verifiable
+revision remain explicitly unverified unless the operator supplies one.
 
-Explanation is another factor. A lexical result can identify matching terms.
-A graph result can show a typed path. A nearest-neighbor score says that two
-items are close in a learned space, which is useful but usually less direct as
-a human explanation.
+Deletion is also part of the contract. Forgetting removes a record's entries
+from every registered vector epoch, verifies their absence, marks affected
+epochs dirty, and records the cleanup in a deletion receipt. The sidecar can
+be discarded and rebuilt from canonical memory. This is more work than
+maintaining only ordinary lexical indexes, but it prevents semantic reach
+from silently weakening correction and purge guarantees.
 
-The cost is real: lexical retrieval can miss synonyms, misspellings,
-multilingual paraphrases, and conceptual equivalence. The current parser is
-also intentionally narrow. \system{} chooses deterministic, deletable, and
-inspectable behavior for its present use case rather than claiming universal
-retrieval superiority.
+Explanation remains layered. A lexical result identifies matching terms and a
+graph result shows a typed path. Semantic reports add model and epoch identity,
+cosine similarity, lexical and semantic ranks, reciprocal-rank-fusion score,
+and canonical validation. Similarity explains why a record was nominated; it
+does not explain why the record was trusted or give it permission to affect
+the world.
 
-\boundary{Embedding retrieval can be reproducible when all required artifacts
-are preserved. The narrower claim is that \system{} replay does not require
-that additional learned-model artifact.}
+The trade remains real. Default lexical recall can miss synonyms,
+misspellings, multilingual paraphrases, and conceptual equivalence. Optional
+semantic investigation improves that discovery surface, while the
+model-facing recall path stays smaller, deterministic, deletable, and
+inspectable. \system{} claims neither universal lexical superiority nor that
+an embedding score is evidence of truth.
+
+\boundary{Embedding retrieval can be reproducible when every required model
+and index artifact is preserved. Aetnamem's narrower claim is that trusted
+agent recall does not require those learned-model artifacts; when an
+investigator opts into embeddings, the additional replay boundary is explicit
+and the returned record must still pass canonical verification.}
 
 \clearpage
 \section{Bounded Recall on a Laptop}
