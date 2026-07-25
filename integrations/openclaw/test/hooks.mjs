@@ -50,7 +50,30 @@ const agentEnd = runtime.hooks.get("agent_end");
 const beforeWrite = runtime.hooks.get("before_message_write");
 
 try {
-  assert.equal(runtime.tools.size, 2);
+  assert.equal(runtime.tools.size, 4);
+
+  const observe = runtime.tools.get("aetnamem_observe");
+  const observed = await observe.execute("observe-1", {
+    text: "The image contains a blue shipping label.",
+    modality: "image",
+    media_sha256: "a".repeat(64),
+    host_reference: "openclaw://media/label-1",
+    segment: { region: "whole image" },
+    extractor: {
+      provider: "grok",
+      model: "grok-vision",
+      version: "2026-07",
+    },
+    confidence: 0.91,
+  });
+  assert.equal(observed.details.status, "quarantined");
+
+  const forgetArtifact = runtime.tools.get("aetnamem_forget_artifact");
+  const artifactForgotten = await forgetArtifact.execute("forget-artifact-1", {
+    media_sha256: "a".repeat(64),
+    artifact_id: observed.details.artifactId,
+  });
+  assert.equal(artifactForgotten.details.deleted, true);
 
   await beforePrompt({ prompt: "My favorite color is teal." }, { sessionKey: "capture-1" });
   await agentEnd({ success: true, messages: [] }, { sessionKey: "capture-1" });

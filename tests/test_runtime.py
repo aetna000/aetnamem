@@ -13,8 +13,9 @@ from aetnamem.mcp import MCPServer
 from aetnamem.runtime import MemoryRuntime, RuntimeScope, preset_config
 
 
-LEGACY_TOOL_NAMES = [
+BASE_TOOL_NAMES = [
     "memory_remember",
+    "memory_observe",
     "memory_recall",
     "memory_recall_block",
     "memory_persona",
@@ -22,6 +23,7 @@ LEGACY_TOOL_NAMES = [
     "memory_capture",
     "memory_list",
     "memory_forget",
+    "memory_forget_artifact",
     "memory_promote",
     "memory_audit",
     "memory_verify",
@@ -330,13 +332,13 @@ def test_runtime_schema_is_additive_for_legacy_memory(tmp_path: Path) -> None:
         legacy.close()
 
 
-def test_default_mcp_catalog_is_unchanged_and_runtime_is_opt_in(tmp_path: Path) -> None:
+def test_base_mcp_catalog_and_runtime_tools_are_opt_in(tmp_path: Path) -> None:
     memory = Memory(tmp_path / "memory.db")
     default_server = MCPServer(memory)
     default_tools = default_server.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     )
-    assert [item["name"] for item in default_tools["result"]["tools"]] == LEGACY_TOOL_NAMES
+    assert [item["name"] for item in default_tools["result"]["tools"]] == BASE_TOOL_NAMES
 
     runtime = MemoryRuntime(
         preset_config(
@@ -354,7 +356,7 @@ def test_default_mcp_catalog_is_unchanged_and_runtime_is_opt_in(tmp_path: Path) 
         )
         tools = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         assert [item["name"] for item in tools["result"]["tools"]] == [
-            *LEGACY_TOOL_NAMES,
+            *BASE_TOOL_NAMES,
             "memory_prepare_turn",
             "memory_record_outcome",
         ]
@@ -402,10 +404,10 @@ def test_release_versions_are_consistent() -> None:
     project_version = re.search(
         r"(?m)^version = \"([^\"]+)\"$", project_text
     )
-    assert project_version and project_version.group(1) == "0.5.1"
+    assert project_version and project_version.group(1) == "0.5.2"
     package = json.loads((root / "integrations/openclaw/package.json").read_text())
     lock = json.loads((root / "integrations/openclaw/package-lock.json").read_text())
     manifest = json.loads(
         (root / "integrations/openclaw/openclaw.plugin.json").read_text()
     )
-    assert package["version"] == lock["version"] == manifest["version"] == "0.3.0"
+    assert package["version"] == lock["version"] == manifest["version"] == "0.3.1"

@@ -89,6 +89,12 @@ class SQLiteStore:
             self._conn.execute("DELETE FROM graph_merge_proposals WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM graph_archive_members WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM graph_archive_partitions WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM media_observations WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM media_artifacts WHERE subject_id = ?", (subject_id,)
+            )
             self._conn.execute("DELETE FROM edges WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM entity_aliases WHERE subject_id = ?", (subject_id,))
             self._conn.execute("DELETE FROM entities WHERE subject_id = ?", (subject_id,))
@@ -226,6 +232,438 @@ class SQLiteStore:
             (subject_id,),
         ).fetchone()
         return int(row["generation"]) if row else 0
+
+    def get_media_artifact(
+        self,
+        subject_id: str,
+        *,
+        artifact_id: str | None = None,
+        media_sha256: str | None = None,
+    ) -> dict[str, Any] | None:
+        if artifact_id:
+            row = self._conn.execute(
+                """
+                SELECT * FROM media_artifacts
+                WHERE subject_id = ? AND id = ?
+                """,
+                (subject_id, artifact_id),
+            ).fetchone()
+        elif media_sha256:
+            row = self._conn.execute(
+                """
+                SELECT * FROM media_artifacts
+                WHERE subject_id = ? AND media_sha256 = ?
+                """,
+                (subject_id, media_sha256),
+            ).fetchone()
+        else:
+            raise ValueError("artifact_id or media_sha256 is required")
+        return dict(row) if row else None
+
+    def insert_media_artifact(
+        self,
+        *,
+        subject_id: str,
+        media_sha256: str,
+        modality: str,
+        host_reference: str,
+        host_reference_sha256: str,
+        digest_assurance: str,
+    ) -> dict[str, Any]:
+        artifact_id = _new_id("media")
+        created_at = utc_now()
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO media_artifacts(
+                  id, subject_id, media_sha256, modality, host_reference,
+                  host_reference_sha256, digest_assurance, status,
+                  first_seen_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL)
+                """,
+                (
+                    artifact_id,
+                    subject_id,
+                    media_sha256,
+                    modality,
+                    host_reference,
+                    host_reference_sha256,
+                    digest_assurance,
+                    created_at,
+                ),
+            )
+        artifact = self.get_media_artifact(subject_id, artifact_id=artifact_id)
+        assert artifact is not None
+        return artifact
+
+    def get_media_observation(
+        self, subject_id: str, observation_id: str
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM media_observations
+            WHERE subject_id = ? AND id = ?
+            """,
+            (subject_id, observation_id),
+        ).fetchone()
+        return _media_observation_from_row(row) if row else None
+
+    def get_media_observation_for_record(
+        self, subject_id: str, record_id: str
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM media_observations
+            WHERE subject_id = ? AND record_id = ?
+            """,
+            (subject_id, record_id),
+        ).fetchone()
+        return _media_observation_from_row(row) if row else None
+
+    def active_media_records_for_lineage(
+        self,
+        subject_id: str,
+        lineage_sha256: str,
+        *,
+        exclude_record_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = [subject_id, lineage_sha256]
+        exclusion = ""
+        if exclude_record_id is not None:
+            exclusion = "AND r.id != ?"
+            params.append(exclude_record_id)
+        rows = self._conn.execute(
+            f"""
+            SELECT r.*, o.id AS media_observation_id
+            FROM media_observations o
+            JOIN records r
+              ON r.subject_id = o.subject_id AND r.id = o.record_id
+            WHERE o.subject_id = ? AND o.lineage_sha256 = ?
+              AND r.status = 'active' {exclusion}
+            ORDER BY r.created_at, r.id
+            """,
+            params,
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            record = _record_from_row(row)
+            record["media_observation_id"] = row["media_observation_id"]
+            result.append(record)
+        return result
+
+    def find_media_observation_by_envelope(
+        self, subject_id: str, envelope_sha256: str
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM media_observations
+            WHERE subject_id = ? AND envelope_sha256 = ?
+            """,
+            (subject_id, envelope_sha256),
+        ).fetchone()
+        return _media_observation_from_row(row) if row else None
+
+    def current_media_observations(
+        self, subject_id: str, lineage_sha256: str
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM media_observations
+            WHERE subject_id = ? AND lineage_sha256 = ? AND status = 'current'
+            ORDER BY created_at, id
+            """,
+            (subject_id, lineage_sha256),
+        ).fetchall()
+        return [_media_observation_from_row(row) for row in rows]
+
+    def insert_media_observation(
+        self,
+        *,
+        subject_id: str,
+        artifact_id: str,
+        episode_id: str,
+        record_id: str,
+        text_sha256: str,
+        segment: dict[str, Any],
+        segment_sha256: str,
+        extractor: dict[str, Any],
+        extractor_sha256: str,
+        confidence: float | None,
+        digest_assurance: str,
+        lineage_sha256: str,
+        envelope_sha256: str,
+        observed_at: str | None,
+        supersedes_observation_id: str | None,
+    ) -> dict[str, Any]:
+        observation_id = _new_id("obs")
+        created_at = utc_now()
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO media_observations(
+                  id, subject_id, artifact_id, episode_id, record_id,
+                  text_sha256, segment_json, segment_sha256,
+                  extractor_identity_json, extractor_identity_sha256,
+                  confidence, digest_assurance, lineage_sha256,
+                  envelope_sha256, status, supersedes_observation_id,
+                  observed_at, created_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'current',
+                          ?, ?, ?, NULL)
+                """,
+                (
+                    observation_id,
+                    subject_id,
+                    artifact_id,
+                    episode_id,
+                    record_id,
+                    text_sha256,
+                    _json(segment),
+                    segment_sha256,
+                    _json(extractor),
+                    extractor_sha256,
+                    confidence,
+                    digest_assurance,
+                    lineage_sha256,
+                    envelope_sha256,
+                    supersedes_observation_id,
+                    observed_at,
+                    created_at,
+                ),
+            )
+        observation = self.get_media_observation(subject_id, observation_id)
+        assert observation is not None
+        return observation
+
+    def supersede_media_observations(
+        self, subject_id: str, observation_ids: list[str], new_observation_id: str
+    ) -> list[str]:
+        superseded_records: list[str] = []
+        if not observation_ids:
+            return superseded_records
+        now = utc_now()
+        with self.transaction():
+            for observation_id in observation_ids:
+                row = self._conn.execute(
+                    """
+                    SELECT record_id FROM media_observations
+                    WHERE subject_id = ? AND id = ? AND status = 'current'
+                    """,
+                    (subject_id, observation_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                self._conn.execute(
+                    """
+                    UPDATE media_observations
+                    SET status = 'superseded'
+                    WHERE subject_id = ? AND id = ?
+                    """,
+                    (subject_id, observation_id),
+                )
+                record_id = str(row["record_id"])
+                record = self._conn.execute(
+                    """
+                    SELECT status, raw FROM records
+                    WHERE subject_id = ? AND id = ?
+                    """,
+                    (subject_id, record_id),
+                ).fetchone()
+                if record is None or record["status"] != "quarantined":
+                    continue
+                raw = _load_json(record["raw"], {})
+                raw["superseded_by_observation_id"] = new_observation_id
+                self._conn.execute(
+                    """
+                    UPDATE records
+                    SET status = 'superseded', updated_at = ?, raw = ?
+                    WHERE subject_id = ? AND id = ? AND status = 'quarantined'
+                    """,
+                    (now, _json(raw), subject_id, record_id),
+                )
+                superseded_records.append(record_id)
+        return superseded_records
+
+    def list_media_artifacts(
+        self, subject_id: str, *, include_tombstoned: bool = False
+    ) -> list[dict[str, Any]]:
+        status_clause = "" if include_tombstoned else "AND status = 'active'"
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM media_artifacts
+            WHERE subject_id = ? {status_clause}
+            ORDER BY first_seen_at, id
+            """,
+            (subject_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_media_observations(
+        self,
+        subject_id: str,
+        *,
+        artifact_id: str | None = None,
+        include_tombstoned: bool = False,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = [subject_id]
+        artifact_clause = ""
+        if artifact_id:
+            artifact_clause = "AND artifact_id = ?"
+            params.append(artifact_id)
+        status_clause = "" if include_tombstoned else "AND status != 'tombstoned'"
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM media_observations
+            WHERE subject_id = ? {artifact_clause} {status_clause}
+            ORDER BY created_at, id
+            """,
+            params,
+        ).fetchall()
+        return [_media_observation_from_row(row) for row in rows]
+
+    def media_provenance_for_records(
+        self, subject_id: str, record_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        ids = list(dict.fromkeys(str(value) for value in record_ids))
+        result: dict[str, dict[str, Any]] = {}
+        for start in range(0, len(ids), 900):
+            batch = ids[start : start + 900]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""
+                SELECT o.*, a.media_sha256, a.modality, a.host_reference,
+                       a.host_reference_sha256, a.status AS artifact_status
+                FROM media_observations o
+                JOIN media_artifacts a ON a.id = o.artifact_id
+                WHERE o.subject_id = ? AND o.record_id IN ({placeholders})
+                """,
+                (subject_id, *batch),
+            ).fetchall()
+            for row in rows:
+                observation = _media_observation_from_row(row)
+                observation["media_sha256"] = row["media_sha256"]
+                observation["modality"] = row["modality"]
+                observation["host_reference"] = row["host_reference"]
+                observation["host_reference_sha256"] = row[
+                    "host_reference_sha256"
+                ]
+                observation["artifact_status"] = row["artifact_status"]
+                result[str(row["record_id"])] = observation
+        return result
+
+    def tombstone_media_artifact(
+        self, subject_id: str, artifact_id: str
+    ) -> dict[str, Any]:
+        deleted_at = utc_now()
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE media_observations
+                SET status = 'tombstoned', segment_json = '{}',
+                    extractor_identity_json = '{}', confidence = NULL,
+                    deleted_at = ?
+                WHERE subject_id = ? AND artifact_id = ?
+                """,
+                (deleted_at, subject_id, artifact_id),
+            )
+            self._conn.execute(
+                """
+                UPDATE media_artifacts
+                SET status = 'tombstoned', host_reference = '', deleted_at = ?
+                WHERE subject_id = ? AND id = ?
+                """,
+                (deleted_at, subject_id, artifact_id),
+            )
+        observations = self.list_media_observations(
+            subject_id, artifact_id=artifact_id, include_tombstoned=True
+        )
+        artifact = self.get_media_artifact(
+            subject_id, artifact_id=artifact_id
+        )
+        return {
+            "artifact_tombstoned": bool(
+                artifact
+                and artifact["status"] == "tombstoned"
+                and artifact["host_reference"] == ""
+            ),
+            "observation_ids": [str(item["id"]) for item in observations],
+            "observations_tombstoned": all(
+                item["status"] == "tombstoned"
+                and item["segment"] == {}
+                and item["extractor"] == {}
+                and item["confidence"] is None
+                for item in observations
+            ),
+            "verified_at": utc_now(),
+        }
+
+    def tombstone_media_observations_for_records(
+        self, subject_id: str, record_ids: list[str]
+    ) -> dict[str, Any]:
+        ids = list(dict.fromkeys(str(value) for value in record_ids))
+        if not ids:
+            return {"observation_ids": [], "artifact_ids": []}
+        observations: list[sqlite3.Row] = []
+        for start in range(0, len(ids), 900):
+            batch = ids[start : start + 900]
+            placeholders = ",".join("?" for _ in batch)
+            observations.extend(
+                self._conn.execute(
+                    f"""
+                    SELECT id, artifact_id FROM media_observations
+                    WHERE subject_id = ? AND record_id IN ({placeholders})
+                      AND status != 'tombstoned'
+                    """,
+                    (subject_id, *batch),
+                ).fetchall()
+            )
+        observation_ids = [str(row["id"]) for row in observations]
+        artifact_ids = list(
+            dict.fromkeys(str(row["artifact_id"]) for row in observations)
+        )
+        if not observation_ids:
+            return {"observation_ids": [], "artifact_ids": []}
+        deleted_at = utc_now()
+        with self.transaction():
+            for start in range(0, len(observation_ids), 900):
+                batch = observation_ids[start : start + 900]
+                placeholders = ",".join("?" for _ in batch)
+                self._conn.execute(
+                    f"""
+                    UPDATE media_observations
+                    SET status = 'tombstoned', segment_json = '{{}}',
+                        extractor_identity_json = '{{}}', confidence = NULL,
+                        deleted_at = ?
+                    WHERE subject_id = ? AND id IN ({placeholders})
+                    """,
+                    (deleted_at, subject_id, *batch),
+                )
+            tombstoned_artifact_ids: list[str] = []
+            for artifact_id in artifact_ids:
+                remaining = self._conn.execute(
+                    """
+                    SELECT 1 FROM media_observations
+                    WHERE subject_id = ? AND artifact_id = ?
+                      AND status != 'tombstoned'
+                    LIMIT 1
+                    """,
+                    (subject_id, artifact_id),
+                ).fetchone()
+                if remaining is not None:
+                    continue
+                self._conn.execute(
+                    """
+                    UPDATE media_artifacts
+                    SET status = 'tombstoned', host_reference = '',
+                        deleted_at = ?
+                    WHERE subject_id = ? AND id = ?
+                    """,
+                    (deleted_at, subject_id, artifact_id),
+                )
+                tombstoned_artifact_ids.append(artifact_id)
+        return {
+            "observation_ids": observation_ids,
+            "artifact_ids": tombstoned_artifact_ids,
+        }
 
     def find_duplicate_record(
         self,
@@ -1029,6 +1467,90 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_records_subject_key
                   ON records(subject_id, fact_key, status);
 
+                CREATE TABLE IF NOT EXISTS media_artifacts (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  media_sha256 TEXT NOT NULL CHECK (
+                    length(media_sha256) = 64
+                    AND media_sha256 NOT GLOB '*[^0-9a-f]*'
+                  ),
+                  modality TEXT NOT NULL CHECK (
+                    modality IN ('image', 'audio', 'video', 'document')
+                  ),
+                  host_reference TEXT NOT NULL,
+                  host_reference_sha256 TEXT NOT NULL CHECK (
+                    length(host_reference_sha256) = 64
+                    AND host_reference_sha256 NOT GLOB '*[^0-9a-f]*'
+                  ),
+                  digest_assurance TEXT NOT NULL CHECK (
+                    digest_assurance IN (
+                      'verified_by_aetnamem', 'host_asserted', 'caller_asserted'
+                    )
+                  ),
+                  status TEXT NOT NULL CHECK (
+                    status IN ('active', 'tombstoned')
+                  ),
+                  first_seen_at TEXT NOT NULL,
+                  deleted_at TEXT,
+                  UNIQUE(subject_id, media_sha256)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_media_artifacts_subject_digest
+                  ON media_artifacts(subject_id, media_sha256, status);
+
+                CREATE TABLE IF NOT EXISTS media_observations (
+                  id TEXT PRIMARY KEY,
+                  subject_id TEXT NOT NULL,
+                  artifact_id TEXT NOT NULL,
+                  episode_id TEXT NOT NULL,
+                  record_id TEXT NOT NULL UNIQUE,
+                  text_sha256 TEXT NOT NULL CHECK (length(text_sha256) = 64),
+                  segment_json TEXT NOT NULL DEFAULT '{}',
+                  segment_sha256 TEXT NOT NULL CHECK (
+                    length(segment_sha256) = 64
+                  ),
+                  extractor_identity_json TEXT NOT NULL,
+                  extractor_identity_sha256 TEXT NOT NULL CHECK (
+                    length(extractor_identity_sha256) = 64
+                  ),
+                  confidence REAL CHECK (
+                    confidence IS NULL OR (confidence >= 0 AND confidence <= 1)
+                  ),
+                  digest_assurance TEXT NOT NULL CHECK (
+                    digest_assurance IN (
+                      'verified_by_aetnamem', 'host_asserted', 'caller_asserted'
+                    )
+                  ),
+                  lineage_sha256 TEXT NOT NULL CHECK (
+                    length(lineage_sha256) = 64
+                  ),
+                  envelope_sha256 TEXT NOT NULL CHECK (
+                    length(envelope_sha256) = 64
+                  ),
+                  status TEXT NOT NULL CHECK (
+                    status IN ('current', 'superseded', 'tombstoned')
+                  ),
+                  supersedes_observation_id TEXT,
+                  observed_at TEXT,
+                  created_at TEXT NOT NULL,
+                  deleted_at TEXT,
+                  UNIQUE(subject_id, envelope_sha256),
+                  FOREIGN KEY(artifact_id) REFERENCES media_artifacts(id),
+                  FOREIGN KEY(episode_id) REFERENCES episodes(id),
+                  FOREIGN KEY(record_id) REFERENCES records(id),
+                  FOREIGN KEY(supersedes_observation_id)
+                    REFERENCES media_observations(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_media_observations_artifact
+                  ON media_observations(subject_id, artifact_id, status);
+
+                CREATE INDEX IF NOT EXISTS idx_media_observations_lineage
+                  ON media_observations(subject_id, lineage_sha256, status);
+
+                CREATE INDEX IF NOT EXISTS idx_media_observations_record
+                  ON media_observations(subject_id, record_id);
+
                 CREATE TABLE IF NOT EXISTS record_generations (
                   subject_id TEXT PRIMARY KEY,
                   generation INTEGER NOT NULL DEFAULT 0
@@ -1653,6 +2175,15 @@ def _episode_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "raw": _load_json(row["raw"], {}),
     }
+
+
+def _media_observation_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    value = dict(row)
+    value["segment"] = _load_json(value.pop("segment_json"), {})
+    value["extractor"] = _load_json(
+        value.pop("extractor_identity_json"), {}
+    )
+    return value
 
 
 def _retrieval_from_row(row: sqlite3.Row) -> dict[str, Any]:

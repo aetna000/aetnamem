@@ -50,9 +50,11 @@ def test_initialize_and_tools_list() -> None:
     names = {tool["name"] for tool in tools["result"]["tools"]}
     assert {
         "memory_remember",
+        "memory_observe",
         "memory_recall",
         "memory_context_pack",
         "memory_forget",
+        "memory_forget_artifact",
         "memory_promote",
         "memory_audit",
         "memory_verify",
@@ -79,6 +81,44 @@ def test_tool_roundtrip_with_default_subject() -> None:
 
     verified = _call(server, 4, "memory_verify", {})
     assert verified["valid"] is True
+
+
+def test_media_observation_and_exact_artifact_deletion_over_mcp() -> None:
+    server = _server()
+    digest = "a" * 64
+    observed = _call(
+        server,
+        1,
+        "memory_observe",
+        {
+            "text": "The image contains a blue shipping label.",
+            "modality": "image",
+            "media_sha256": digest,
+            "host_reference": "openclaw://media/label-1",
+            "segment": {"region": "whole image"},
+            "extractor": {
+                "provider": "grok",
+                "model": "grok-vision",
+                "version": "2026-07",
+            },
+            "confidence": 0.91,
+        },
+    )
+    assert observed["record"]["status"] == "quarantined"
+    assert observed["observation"]["digest_assurance"] == "caller_asserted"
+
+    forgotten = _call(
+        server,
+        2,
+        "memory_forget_artifact",
+        {
+            "media_sha256": digest,
+            "artifact_id": observed["artifact"]["id"],
+        },
+    )
+    assert forgotten["deleted"] is True
+    assert forgotten["receipt"]["host_file_deleted"] is False
+    assert forgotten["receipt"]["verification"]["valid"] is True
 
 
 def test_compact_recall_block_over_mcp() -> None:

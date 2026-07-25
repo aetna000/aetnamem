@@ -47,6 +47,20 @@ def main() -> None:
         help="Override source classification (user_message, webpage, tool_output)",
     )
 
+    observe_parser = subparsers.add_parser(
+        "observe",
+        help="Admit one typed, quarantined text observation of host-controlled media",
+    )
+    observe_parser.add_argument("path")
+    observe_parser.add_argument("subject_id")
+    observe_parser.add_argument(
+        "--envelope",
+        required=True,
+        help="JSON envelope file, or - to read JSON from stdin",
+    )
+    observe_parser.add_argument("--session", default=None)
+    observe_parser.add_argument("--turn", default=None)
+
     recall_parser = subparsers.add_parser(
         "recall", help="Top-k recall over active records"
     )
@@ -189,7 +203,16 @@ def main() -> None:
     search_parser.add_argument("--subject", required=True)
     search_parser.add_argument(
         "--scope",
-        choices=("all", "memories", "episodes", "retrievals", "events", "runs", "actions"),
+        choices=(
+            "all",
+            "memories",
+            "media",
+            "episodes",
+            "retrievals",
+            "events",
+            "runs",
+            "actions",
+        ),
         default="all",
     )
     search_parser.add_argument(
@@ -252,6 +275,17 @@ def main() -> None:
         "--utterance", default=None, help='e.g. "Forget my backup email."'
     )
     forget_parser.add_argument("--session", default=None)
+
+    forget_artifact_parser = subparsers.add_parser(
+        "forget-artifact",
+        help="Purge all AetnaMem derivatives of one exact media-byte SHA-256",
+    )
+    forget_artifact_parser.add_argument("path")
+    forget_artifact_parser.add_argument("subject_id")
+    forget_artifact_parser.add_argument("media_sha256")
+    forget_artifact_parser.add_argument("--artifact-id", default=None)
+    forget_artifact_parser.add_argument("--session", default=None)
+    forget_artifact_parser.add_argument("--turn", default=None)
 
     promote_parser = subparsers.add_parser(
         "promote", help="Activate a quarantined record and audit the trust transition"
@@ -597,6 +631,25 @@ def main() -> None:
             source_type=args.source_type,
         )
         _print(result)
+    elif args.command == "observe":
+        envelope_text = (
+            sys.stdin.read()
+            if args.envelope == "-"
+            else Path(args.envelope).read_text(encoding="utf-8")
+        )
+        envelope = json.loads(envelope_text)
+        if not isinstance(envelope, dict):
+            raise ValueError("media observation envelope must be a JSON object")
+        _print(
+            memory.remember_observation(
+                args.subject_id,
+                envelope,
+                session_id=args.session,
+                turn_id=args.turn,
+                actor="cli-caller",
+                forced_assurance="caller_asserted",
+            )
+        )
     elif args.command == "recall":
         _print(
             memory.recall(
@@ -754,6 +807,16 @@ def main() -> None:
             session_id=args.session,
         )
         _print(result)
+    elif args.command == "forget-artifact":
+        _print(
+            memory.forget_artifact(
+                args.subject_id,
+                args.media_sha256,
+                artifact_id=args.artifact_id,
+                session_id=args.session,
+                turn_id=args.turn,
+            )
+        )
     elif args.command == "promote":
         _print(
             memory.promote(args.subject_id, args.record_id, session_id=args.session)

@@ -23,6 +23,12 @@ Optional `--audit-access` events are stored in the canonical database's
 `investigation_access_log` table, not in the vector sidecar. They are included
 when the canonical database is backed up or restored.
 
+In Python `v0.5.2`, multimodal provenance is also canonical:
+`media_artifacts` and `media_observations` live in the main memory database
+and are covered by the same backup. AetnaMem stores secretless host references,
+digests, and text observations—not the original media bytes. Back up or delete
+those originals through the host application separately.
+
 ## Default desktop locations
 
 | Platform | Memory database | Assistant workspace | At-rest protection |

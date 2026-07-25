@@ -2,7 +2,7 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes the public npm `0.3.0` plugin for Python `v0.5.1`. See
+This README describes npm `0.3.1` for Python `v0.5.2`. See
 the repository's [current capability status](../../docs/current-status.md) for
 the precise implemented, experimental, and planned boundary.
 
@@ -27,6 +27,8 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 | `before_message_write` | — | strips injected blocks from persisted history so recalls don't feed back |
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
 | tool `aetnamem_forget` | `memory_forget` | deletion on user request, returns the receipt |
+| tool `aetnamem_observe` | `memory_observe` | submits a typed, quarantined text observation after OpenClaw analyzes host-controlled media |
+| tool `aetnamem_forget_artifact` | `memory_forget_artifact` | purges AetnaMem derivatives of one exact-byte digest on an explicit user request |
 
 With `orchestration.enabled`, `before_prompt_build` instead calls
 `memory_prepare_turn`, and `agent_end` closes the run through
@@ -35,6 +37,12 @@ runtime tools fall back to the legacy hooks by default.
 
 Recall failures/timeouts never block a turn — the agent just proceeds
 without injection.
+
+The two media tools ship in npm `0.3.1`. They do not inspect OpenClaw media
+hooks or store media bytes. OpenClaw supplies an exact-byte SHA-256, secretless
+host reference, and extractor identity after analysis; AetnaMem preserves
+that evidence and quarantines the text. See the repository
+[multimodal observation guide](../../docs/multimodal-observations.md).
 
 ## Install
 

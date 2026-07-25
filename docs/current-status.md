@@ -11,9 +11,11 @@ Status as of **2026-07-25**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 15-tool MCP | Public release (`v0.5.1`) | Existing compatibility surface remains supported |
-| Four-memory runtime | Public, opt-in (`v0.5.1`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
-| OpenClaw orchestration | Public, opt-in (`v0.3.0`) | Runtime hooks with capability detection and legacy fallback |
+| Python `Memory`, CLI, and 17-tool MCP | Public release (`v0.5.2`) | Existing compatibility surface remains supported; two media tools were added without changing the 15 earlier contracts |
+| Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
+| MCP media tools | Public (`v0.5.2`) | `memory_observe` and `memory_forget_artifact` add governed multimodal observations |
+| Four-memory runtime | Public, opt-in (`v0.5.2`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
+| OpenClaw orchestration | Public, opt-in (`v0.3.1`) | Runtime hooks with capability detection and legacy fallback; media tools are explicit host calls |
 | Audit search and trace | Public (`v0.5.1`) | Lexical discovery, relationship expansion, text/JSON reports, and optional separate digest-only investigator access chain |
 | Semantic investigation search | Public, opt-in (`v0.5.1`) | Exact vector sidecar for `memories`/`search`/`trace`; generation-cached verification, batched canonical validation, strict dimensions, Ollama digest pinning, and hybrid RRF; agent recall unchanged |
 | Semantic index deletion | Public, opt-in (`v0.5.1`) | Vector-aware v2 deletion receipt, strict absence verification, and dirty-epoch rebuild signal |
@@ -61,9 +63,10 @@ for their stated scopes. They are not CML causal results.
 |---|---|
 | Current implementation truth | This page and tests |
 | Semantic investigation search | [`semantic-search.md`](semantic-search.md) |
+| Multimodal observation boundary | [`multimodal-observations.md`](multimodal-observations.md) |
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
-| Current release notes | [`releases/v0.5.1.md`](releases/v0.5.1.md) |
+| Current release notes | [`releases/v0.5.2.md`](releases/v0.5.2.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

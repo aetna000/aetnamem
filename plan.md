@@ -1,8 +1,8 @@
 # AetnaMem Architecture, Causal Memory Ledger, and Research Plan
 
 - **Plan status:** normative roadmap
-- **Last revised:** 2026-07-24
-- **Public baseline:** Python `v0.5.0`, OpenClaw npm `v0.3.0`
+- **Last revised:** 2026-07-25
+- **Public baseline:** Python `v0.5.2`, OpenClaw npm `v0.3.1`
 - **Next research milestone:** Causal Memory Ledger in benchmark-only mode
 
 ## 1. Executive decision
@@ -33,7 +33,7 @@ four-plane runtime, generic MCP support, local-first operation, auditability,
 deletion, provenance, and compatibility with existing pip, npm, and OpenClaw
 users.
 
-Implementation status on 2026-07-24: Phase 1 has started. Release v0.5.0
+Implementation status on 2026-07-25: Phase 1 has started. Release v0.5.0
 contains default-off `off`, `shadow`, and benchmark-only `experiment` modes,
 pre-compilation intervention records, assigned/applied arm and propensity
 logging, runtime-pack v2, structured outcomes, manifest binding, and OpenClaw
@@ -42,6 +42,11 @@ benchmark isolation, balanced allocator, causal estimators, synthetic
 identification benchmark, Grok study, and held-out evaluation remain
 unfinished. The canonical status table is
 [`docs/current-status.md`](docs/current-status.md).
+Release v0.5.1 subsequently added exact semantic/hybrid investigation search,
+purge-safe vector sidecars, and investigator-access evidence. The current
+release v0.5.2 also contains governed multimodal observation
+envelopes; see
+[`docs/multimodal-observations.md`](docs/multimodal-observations.md).
 
 ## 2. Product thesis
 
@@ -94,18 +99,21 @@ from every plane while learning that some tasks need only a subset.
 
 ### 3.1 Public baseline
 
-The latest public tag is `v0.5.0`. Its compatibility surface includes:
+The current release is `v0.5.2`. Its compatibility surface includes:
 
 - `pip install aetnamem`
 - `from aetnamem import Memory`
 - the existing CLI and console scripts
-- the default `aetnamem mcp` server and its 15-tool catalog
+- the default `aetnamem mcp` server and its 17-tool catalog; the 15 earlier
+  contracts remain unchanged
 - `aetnamem-context-pack-v1`
 - the existing SQLite records, episodes, retrieval evidence, deletion receipts,
   and audit chain
 - the published OpenClaw plugin behavior
 
 Nothing in CML may silently change those contracts.
+The development MCP catalog adds `memory_observe` and
+`memory_forget_artifact` without changing the existing 15 tool contracts.
 
 ### 3.2 Implemented in v0.5.0
 
@@ -131,7 +139,8 @@ The release contains a validated four-plane runtime:
 
 The latest local validation reported:
 
-- Python: `193 passed, 4 skipped`
+- Python: see the current repository CI run; this count changes as regression
+  coverage grows
 - OpenClaw: build, typecheck, tests, and smoke checks passed
 - Python wheel and npm package dry-run checks passed
 
@@ -153,7 +162,6 @@ not make a result host-attested.
 - synthetic recovery of planted effects under deliberate confounding
 - the frozen Grok CLI study and held-out outcome-per-cost evaluation
 - pre-action seed commitments
-- explicit `cml.mode: off | shadow | experiment` activation
 - authenticated outcome attestation and strict scope/manifest binding
 - effect estimation or confidence intervals
 - model-backed 16-condition factorial experiments
@@ -165,7 +173,6 @@ not make a result host-attested.
 
 ### 3.4 Known gaps to correct before experimentation
 
-- Current runtime configuration has no independent `cml.mode` safety boundary.
 - The generic MCP transport does not authenticate outcome or task-state
   assertions.
 - Outcome submission must be more tightly bound to committed scope and manifest
@@ -907,7 +914,7 @@ Preserve the default:
 aetnamem mcp --db ... --subject ...
 ```
 
-It must continue to expose the same 15-tool catalog and
+It must continue to expose the same pre-0.5.2 15-tool compatibility catalog and
 `aetnamem-context-pack-v1`.
 
 CML is available only through explicit runtime configuration. Existing runtime
@@ -944,7 +951,7 @@ the Python runtime, not the agent or npm hook.
 Deliver:
 
 - commit-ready Python `v0.5.0` runtime;
-- commit-ready OpenClaw npm `v0.3.0` orchestration;
+- OpenClaw npm `v0.3.1` orchestration;
 - rerun Python, wheel, npm, OpenClaw, and compatibility checks;
 - update the capability matrix with “implemented,” “experimental,” and
   “proven” as separate states;

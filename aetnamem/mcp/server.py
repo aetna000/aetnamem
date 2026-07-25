@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.5.1"
+    SERVER_VERSION = "0.5.2"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -125,6 +125,7 @@ class MCPServer:
     ) -> dict[str, Any]:
         handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "memory_remember": self._tool_remember,
+            "memory_observe": self._tool_observe,
             "memory_recall": self._tool_recall,
             "memory_recall_block": self._tool_recall_block,
             "memory_persona": self._tool_persona,
@@ -132,6 +133,7 @@ class MCPServer:
             "memory_capture": self._tool_capture,
             "memory_list": self._tool_list,
             "memory_forget": self._tool_forget,
+            "memory_forget_artifact": self._tool_forget_artifact,
             "memory_promote": self._tool_promote,
             "memory_audit": self._tool_audit,
             "memory_verify": self._tool_verify,
@@ -183,6 +185,31 @@ class MCPServer:
             session_id=arguments.get("session_id"),
             turn_id=arguments.get("turn_id"),
             source_type=arguments.get("source_type"),
+        )
+
+    def _tool_observe(self, arguments: dict[str, Any]) -> Any:
+        envelope = {
+            key: arguments[key]
+            for key in (
+                "text",
+                "modality",
+                "media_sha256",
+                "host_reference",
+                "segment",
+                "extractor",
+                "confidence",
+                "observed_at",
+                "artifact_id",
+            )
+            if key in arguments
+        }
+        return self.memory.remember_observation(
+            self._subject(arguments),
+            envelope,
+            session_id=arguments.get("session_id"),
+            turn_id=arguments.get("turn_id"),
+            actor="mcp-caller",
+            forced_assurance="caller_asserted",
         )
 
     def _tool_recall(self, arguments: dict[str, Any]) -> Any:
@@ -251,6 +278,16 @@ class MCPServer:
             utterance=arguments.get("utterance"),
             session_id=arguments.get("session_id"),
             turn_id=arguments.get("turn_id"),
+        )
+
+    def _tool_forget_artifact(self, arguments: dict[str, Any]) -> Any:
+        return self.memory.forget_artifact(
+            self._subject(arguments),
+            arguments["media_sha256"],
+            artifact_id=arguments.get("artifact_id"),
+            session_id=arguments.get("session_id"),
+            turn_id=arguments.get("turn_id"),
+            actor="mcp-caller",
         )
 
     def _tool_promote(self, arguments: dict[str, Any]) -> Any:
@@ -343,6 +380,82 @@ class MCPServer:
                     **_SESSION_PROPERTIES,
                 },
                 required=["message"],
+            ),
+            _tool(
+                "memory_observe",
+                "Store exactly one quarantined text observation derived from a "
+                "host-controlled image, audio, video, or document. AetnaMem "
+                "stores no media bytes: the caller supplies an exact-byte "
+                "SHA-256 digest, secretless host reference, segment, and "
+                "extractor identity. Generic MCP evidence is always marked "
+                "caller_asserted; confidence is evidence, never promotion "
+                "authority.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "text": {
+                        "type": "string",
+                        "description": "Extractor-produced text observation.",
+                    },
+                    "modality": {
+                        "type": "string",
+                        "enum": ["image", "audio", "video", "document"],
+                    },
+                    "media_sha256": {
+                        "type": "string",
+                        "pattern": "^(sha256:)?[0-9a-fA-F]{64}$",
+                        "description": "SHA-256 of the exact media byte stream.",
+                    },
+                    "host_reference": {
+                        "type": "string",
+                        "description": "Secretless host-controlled reference; no query string or credentials.",
+                    },
+                    "segment": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "page": {"type": "integer", "minimum": 1},
+                            "timestamp_start": {"type": "number", "minimum": 0},
+                            "timestamp_end": {"type": "number", "minimum": 0},
+                            "region": {
+                                "type": "string",
+                                "description": "Page region label or serialized coordinates.",
+                            },
+                        },
+                    },
+                    "extractor": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "provider": {"type": "string"},
+                            "model": {"type": "string"},
+                            "version": {"type": "string"},
+                            "model_digest": {"type": "string"},
+                        },
+                        "required": ["provider", "model", "version"],
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Extractor-local evidence only; never a trust threshold.",
+                    },
+                    "observed_at": {
+                        "type": "string",
+                        "description": "ISO-8601 time at which the extractor observed the artifact.",
+                    },
+                    "artifact_id": {
+                        "type": "string",
+                        "description": "Optional existing artifact id; its digest must match.",
+                    },
+                    **_SESSION_PROPERTIES,
+                },
+                required=[
+                    "text",
+                    "modality",
+                    "media_sha256",
+                    "host_reference",
+                    "extractor",
+                ],
             ),
             _tool(
                 "memory_recall",
@@ -468,6 +581,26 @@ class MCPServer:
                     "utterance": {"type": "string"},
                     **_SESSION_PROPERTIES,
                 },
+            ),
+            _tool(
+                "memory_forget_artifact",
+                "Purge every AetnaMem memory derived from one exact media byte "
+                "stream, selected by its indexed SHA-256 digest. Returns a "
+                "verifiable receipt. This does not delete the host's original "
+                "file or semantically related re-encodings.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "media_sha256": {
+                        "type": "string",
+                        "pattern": "^(sha256:)?[0-9a-fA-F]{64}$",
+                    },
+                    "artifact_id": {
+                        "type": "string",
+                        "description": "Optional second identifier; must match the digest.",
+                    },
+                    **_SESSION_PROPERTIES,
+                },
+                required=["media_sha256"],
             ),
             _tool(
                 "memory_promote",

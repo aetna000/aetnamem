@@ -4,7 +4,8 @@
  *
  * Spawns the real `aetnamem mcp` server and drives the exact tool calls the
  * plugin makes (memory_recall_block, memory_capture, memory_recall,
- * memory_forget), asserting the payload shapes index.ts depends on.
+ * memory_forget, memory_observe, memory_forget_artifact), asserting the
+ * payload shapes index.ts depends on.
  *
  * Usage: node test/smoke.mjs [--command /path/to/aetnamem]
  */
@@ -128,6 +129,29 @@ try {
   // aetnamem_search tool path
   const records = await callTool("memory_recall", { query: "favorite color", limit: 5 });
   assert.ok(Array.isArray(records) && records.length === 1);
+
+  const observed = await callTool("memory_observe", {
+    text: "The image contains a blue shipping label.",
+    modality: "image",
+    media_sha256: "a".repeat(64),
+    host_reference: "openclaw://media/label-1",
+    segment: { region: "whole image" },
+    extractor: {
+      provider: "grok",
+      model: "grok-vision",
+      version: "2026-07",
+    },
+    confidence: 0.91,
+  });
+  assert.equal(observed.record.status, "quarantined");
+  assert.equal(observed.observation.digest_assurance, "caller_asserted");
+
+  const artifactForgotten = await callTool("memory_forget_artifact", {
+    media_sha256: "a".repeat(64),
+    artifact_id: observed.artifact.id,
+  });
+  assert.equal(artifactForgotten.deleted, true);
+  assert.equal(artifactForgotten.receipt.host_file_deleted, false);
 
   // aetnamem_forget tool path: receipt comes back
   const forgotten = await callTool("memory_forget", {

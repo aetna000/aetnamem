@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-315A7D?style=flat-square">
+  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -20,6 +20,8 @@
 <p align="center">
   <a href="#give-openclaw-four-kinds-of-memory">OpenClaw quick start</a> &middot;
   <a href="./docs/current-status.md">Current status</a> &middot;
+  <a href="./docs/multimodal-observations.md">Multimodal observations</a> &middot;
+  <a href="./docs/assets/demos/aetnamem-voice-memory-short.mp4">Voice-memory demo</a> &middot;
   <a href="#the-four-memories-in-plain-language">Four memories</a> &middot;
   <a href="#ready-made-configurations">Presets</a> &middot;
   <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
@@ -38,14 +40,15 @@ eligible memory contributions were assigned, which were actually shown, and
 which outcome was later reported. That is the foundation for testing whether
 memory earned its context cost rather than assuming that retrieval was useful.
 
-The current public release is **Python v0.5.1** with
-**OpenClaw plugin v0.3.0**. It adds human-readable audit search and trace,
-optional exact semantic and hybrid investigation search, digest-pinned Ollama
-model identity, purge-safe derived vectors, and a separate investigator access
-chain. The opt-in four-memory runtime and default-off CML foundation remain
-available. CML does not yet prove a causal benefit; the synthetic causal
-benchmark, estimators, held-out policy evaluation, and trusted host adapters
-remain roadmap work. See
+The current release is **Python v0.5.2** with
+**OpenClaw plugin v0.3.1**. It adds governed text observations from image,
+audio, video, and document extractors; exact-byte artifact provenance;
+quarantine and approval; searchable traces; and narrow, verified deletion of
+every indexed AetnaMem derivative. AetnaMem does not store or analyze the
+original media. Audit search, the opt-in four-memory runtime, and the
+default-off CML foundation remain available. CML does not yet prove a causal
+benefit; the synthetic causal benchmark, estimators, held-out policy
+evaluation, and trusted host adapters remain roadmap work. See
 [current capability status](./docs/current-status.md) before relying on a
 development feature.
 
@@ -171,6 +174,7 @@ changes. You can adopt one part without adopting the rest.
 | Give an assistant durable memory | Remember, recall, correct, supersede, inspect, and forget user facts across sessions | [Integration guide](./docs/integration-guide.md) |
 | Reduce repeated prompt context | A cache-aware context pack separates a stable persona from selective turn recall, applies hard budgets, and avoids repeating the same record in both blocks | [0.4.1 release and measured result](./docs/releases/v0.4.1.md) |
 | Add memory to different agent frameworks | One Python, CLI, and MCP contract works independently of the model provider; build thin host adapters only when automatic lifecycle hooks are useful | [Agent/MCP integration](#use-from-agents-mcp) |
+| Govern observations from multimodal agents | Store typed text observations with exact-byte artifact provenance, quarantine them, search/trace their influence, and delete every indexed derivative without storing media bytes | [Multimodal observations](./docs/multimodal-observations.md) |
 | Add automatic memory to OpenClaw | The npm plugin injects bounded recall before a prompt and captures trusted user facts after a turn | [OpenClaw setup](./docs/openclaw-setup.md) |
 | Add memory tools to Hermes | Hermes can discover AetnaMem over MCP; a context-engine wrapper can consume the same cache-aware context pack | [Hermes guide](./docs/hermes-agent.md) |
 | Use Claude, Grok, DeepSeek, OpenAI, Ollama, or another model | Memory policy and storage remain outside the model; swap the inference provider without replacing the memory engine | [Grok/xAI guide](./docs/grok-xai.md) and [integration guide](./docs/integration-guide.md) |
@@ -541,7 +545,7 @@ runbook](./docs/etd-pilot-methodology-review.md).
 
 ## Use from agents (MCP)
 
-`aetnamem mcp` currently serves **memory verbs only** as MCP tools over stdio:
+`aetnamem mcp` currently serves **17 memory verbs** as MCP tools over stdio:
 newline-delimited JSON-RPC implemented with the standard library only and does
 not require an additional MCP framework. Defaults: database at
 `~/.aetnamem/memories.db` (override
@@ -570,15 +574,22 @@ takes the same command + args shape):
 }
 ```
 
-The agent gets `memory_remember`, `memory_recall`, `memory_recall_block`
+The agent gets `memory_remember`, `memory_observe`, `memory_recall`, `memory_recall_block`
 (bounded prompt-injection block), `memory_persona`, `memory_context_pack`
 (host-neutral stable/dynamic context), `memory_capture`
 (auto-capture with digest-only assistant/tool logging), `memory_list`,
-`memory_forget`, `memory_promote`, `memory_audit`, `memory_verify`, and
+`memory_forget`, `memory_forget_artifact`, `memory_promote`, `memory_audit`, `memory_verify`, and
 `memory_graph_status`, `memory_graph_merges`, `memory_graph_history`, and
 `memory_log_action`. Graph merge decisions are deliberately absent from MCP;
 they require the reviewer-authenticated dashboard/HTTP surface or explicit
 CLI use.
+
+`memory_observe` accepts a typed text observation from an image, audio, video,
+or document extractor and always quarantines it. `memory_forget_artifact`
+purges all indexed AetnaMem derivatives of one exact-byte SHA-256 while
+explicitly leaving the host's original file alone. See the
+[multimodal observation guide](./docs/multimodal-observations.md). These two
+tools ship in Python `v0.5.2`; the 15 earlier MCP contracts are unchanged.
 
 `subject_id` is a storage scope chosen by the caller, not an authenticated
 tenant identity. Likewise, exposing `memory_promote` lets the agent request a
@@ -789,6 +800,11 @@ benchmark scenario.
 
 ## Documentation
 
+- **[0.5.2 release notes](./docs/releases/v0.5.2.md)** — governed multimodal
+  observations, exact-artifact provenance and deletion, OpenClaw 0.3.1, and
+  compatibility notes.
+- **[X article: multimodal memory with evidence](./docs/marketing/x-multimodal-memory-release.md)** —
+  a plain-language release story with a short voice-note demo.
 - **[Current capability status](./docs/current-status.md)** — canonical
   implemented, experimental, public, and planned boundary.
 - **[0.5.1 release notes](./docs/releases/v0.5.1.md)** — semantic audit search,

@@ -36,6 +36,14 @@ inject memory into every model call: the agent must choose to call the tools.
 Hermes also has a built-in memory tool, so configure an explicit policy or
 tool filter to avoid storing the same fact in two memory systems.
 
+With Python `v0.5.2`, a multimodal Hermes workflow can also call
+`memory_observe` after its model analyzes an image, audio clip, video, or
+document. The tool stores the resulting text as quarantined memory with the
+exact-byte SHA-256, host reference, segment, and extractor identity. It does
+not store the media. `memory_forget_artifact` deletes every indexed AetnaMem
+derivative of that digest but not the host's original file. See the
+[multimodal observation guide](multimodal-observations.md).
+
 Hermes MCP command and configuration shapes are documented in the official
 [CLI reference](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/cli-commands.md),
 [MCP guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md),
@@ -94,4 +102,3 @@ For a multi-user Hermes service, never let the model choose `subject_id`.
 Authenticate the user in the host, derive the subject server-side, and apply
 storage/database authorization there. `--subject` is convenient single-user
 scoping, not authentication.
-

@@ -1,6 +1,6 @@
 # Integration guide: CLI and MCP
 
-Repository version boundary: Python `v0.5.1` and OpenClaw npm `v0.3.0` are
+Repository version boundary: Python `v0.5.2` and OpenClaw npm `v0.3.1` are
 public releases. CML measurement modes remain experimental and default off.
 See [current capability status](current-status.md).
 
@@ -30,7 +30,9 @@ usage is covered in the
 [auditing guide](auditing-guide.md). This document specifies the CLI and
 MCP surfaces.
 
-The default MCP catalog remains unchanged. The runtime endpoint appends only
+The default MCP catalog has 17 tools. Its 15 pre-0.5.2 contracts remain
+unchanged, and `memory_observe` plus `memory_forget_artifact` add governed
+multimodal observation support. The runtime endpoint appends only
 `memory_prepare_turn` and `memory_record_outcome`; see the
 [four-memory runtime guide](four-memory-runtime.md) for presets, setup, scope,
 configuration, and output contracts.
@@ -387,6 +389,7 @@ not as protocol errors, so the agent can read and recover.
 | tool | required args | optional args | returns |
 |---|---|---|---|
 | `memory_remember` | `message` | `subject_id`, `source_type`, `session_id`, `turn_id` | `{episode_id, records, duplicate_ids}` |
+| `memory_observe` | `text`, `modality`, `media_sha256`, `host_reference`, `extractor` | `subject_id`, `segment`, `confidence`, `observed_at`, `artifact_id`, `session_id`, `turn_id` | one typed artifact observation and one quarantined record; generic MCP evidence is `caller_asserted` |
 | `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id`, `use_graph` (false) | array of records, best first; graph hits include path evidence |
 | `memory_recall_block` | `query` | `subject_id`, `max_records` (5), `max_chars` (2000), `min_score` (0.3), `session_id`, `use_graph` (false) | `{block, record_ids, count}` — bounded `<relevant_memories>` block; injection is audited |
 | `memory_persona` | — | `subject_id`, `max_chars` (1500), `session_id` | `{block, record_ids, count}` — live-derived `<user_persona>` snapshot, audited |
@@ -394,6 +397,7 @@ not as protocol errors, so the agent can read and recover.
 | `memory_capture` | `role`, `content` | `subject_id`, `tool_name`, `session_id`, `turn_id` | user → full pipeline; assistant/tool\_\* → digest-only audit event |
 | `memory_list` | — | `subject_id`, `include_inactive` (false) | array of records |
 | `memory_forget` | `contains` *or* `utterance` | `subject_id`, `session_id`, `turn_id` | `{deleted, record_ids, receipt}` |
+| `memory_forget_artifact` | `media_sha256` | `subject_id`, matching `artifact_id`, `session_id`, `turn_id` | exact-byte artifact deletion result and scoped receipt; host file remains host-controlled |
 | `memory_promote` | `record_id` | `subject_id`, `session_id` | the activated record |
 | `memory_audit` | — | `subject_id` | `{audit_log, retrieval_events, audit_chain_valid}` |
 | `memory_verify` | — | `subject_id`, `checkpoints_path`, `incremental` (false) | `{valid, subjects}` |
@@ -411,6 +415,14 @@ Suggested system-prompt guidance for the calling agent:
 > them the receipt's `purged_record_ids` count. If `memory_remember`
 > returns a record with status `quarantined`, tell the user what was
 > extracted and call `memory_promote` only if they confirm.
+
+For multimodal hosts, call `memory_observe` only after the host has computed
+the exact media-byte digest and the model has produced a text observation.
+Never promote based on extractor confidence alone. On an explicit request to
+delete that artifact's memories, call `memory_forget_artifact` and explain
+that its receipt covers AetnaMem derivatives of that exact digest, not the
+host's original file or re-encoded copies. Full contract:
+[multimodal observations](multimodal-observations.md).
 
 ### Security properties for MCP deployments
 

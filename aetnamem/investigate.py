@@ -13,6 +13,7 @@ from aetnamem.memory import Memory
 
 _SCOPES = {
     "memories",
+    "media",
     "episodes",
     "retrievals",
     "events",
@@ -28,6 +29,8 @@ _ID_KEYS = {
     "outcome_id",
     "transaction_id",
     "operation_id",
+    "artifact_id",
+    "observation_id",
     "manifest_sha256",
 }
 
@@ -71,6 +74,40 @@ def search_evidence(
             if status_filter and str(record.get("status", "")).lower() not in status_filter:
                 continue
             results.append(_item("memory", record["id"], record, record.get("content", "")))
+
+    if "media" in selected_scopes:
+        artifacts = memory.store.list_media_artifacts(
+            subject_id, include_tombstoned=True
+        )
+        observations = memory.store.list_media_observations(
+            subject_id, include_tombstoned=True
+        )
+        records = memory.store.get_records(
+            subject_id,
+            [str(item["record_id"]) for item in observations],
+        )
+        for artifact in artifacts:
+            summary = (
+                f"{artifact['modality']} artifact · "
+                f"sha256:{str(artifact['media_sha256'])[:12]}"
+            )
+            results.append(
+                _item("artifact", str(artifact["id"]), artifact, summary)
+            )
+        for observation in observations:
+            record = records.get(str(observation["record_id"])) or {}
+            data = {
+                **observation,
+                "content": record.get("content", ""),
+                "record_status": record.get("status"),
+            }
+            summary = record.get("content") or (
+                f"purged observation · text digest "
+                f"{str(observation['text_sha256'])[:12]}"
+            )
+            results.append(
+                _item("observation", str(observation["id"]), data, summary)
+            )
 
     if "episodes" in selected_scopes:
         for episode in memory.store.list_episodes(subject_id):
@@ -442,6 +479,16 @@ def format_memories(report: dict[str, Any]) -> str:
             ]
         )
         retrieval = item.get("retrieval") or {}
+        provenance = data.get("media_observation")
+        if provenance:
+            lines.append(
+                "  Media: "
+                f"{provenance.get('modality', 'unknown')} · "
+                f"sha256:{str(provenance.get('media_sha256', ''))[:12]} · "
+                f"extractor {provenance.get('extractor', {}).get('provider', 'unknown')}/"
+                f"{provenance.get('extractor', {}).get('model', 'unknown')} · "
+                f"assurance {provenance.get('digest_assurance', 'unknown')}"
+            )
         if retrieval.get("semantic_rank") is not None:
             lines.append(
                 "  Match: "
@@ -627,7 +674,18 @@ def _links(value: Any, *, parent_key: str = "") -> dict[str, str]:
         for key, child in value.items():
             if key in _ID_KEYS and child:
                 _add_link(links, key, child)
-            elif key in {"returned_ids", "memory_ids", "item_ids", "receipt_digests"}:
+            elif key in {
+                "returned_ids",
+                "memory_ids",
+                "item_ids",
+                "receipt_digests",
+                "purged_observation_ids",
+                "purged_record_ids",
+                "linked_record_ids",
+                "linked_episode_ids",
+                "supersedes_observation_ids",
+                "superseded_record_ids",
+            }:
                 for index, item in enumerate(child or []):
                     _add_link(links, f"{key}.{index}", item)
             for nested_key, nested_value in _links(child, parent_key=key).items():
@@ -695,6 +753,14 @@ def _event_summary(event: dict[str, Any]) -> str:
     if event_type == "memory.forget":
         purged = payload.get("purged_record_ids") or payload.get("record_ids") or []
         return f"{event_type} · purged {len(purged)} records"
+    if event_type == "media.observation_admitted":
+        return (
+            f"{event_type} · {payload.get('modality', 'media')} · "
+            f"record {str(payload.get('record_id', 'unknown'))[:12]}"
+        )
+    if event_type == "media.artifact_forgotten":
+        purged = payload.get("purged_record_ids") or []
+        return f"{event_type} · purged {len(purged)} derived records"
     return event_type
 
 
@@ -756,6 +822,29 @@ def _format_item(item: dict[str, Any], *, timeline: bool = False) -> list[str]:
         f"{prefix}{item['kind'].upper()}  {item['summary'] or '(no retained content)'}",
         f"  ID: {item['id']}",
     ]
+    data = item.get("data") or {}
+    if item["kind"] == "artifact":
+        lines.append(
+            "  Artifact: "
+            f"{data.get('modality', 'unknown')} · "
+            f"sha256:{str(data.get('media_sha256', ''))[:12]} · "
+            f"{data.get('digest_assurance', 'unknown')} · "
+            f"{data.get('status', 'unknown')}"
+        )
+    elif item["kind"] == "observation":
+        extractor = data.get("extractor") or {}
+        confidence = data.get("confidence")
+        confidence_label = (
+            "not supplied" if confidence is None else f"{float(confidence):.3f}"
+        )
+        lines.append(
+            "  Extractor: "
+            f"{extractor.get('provider', 'purged')}/"
+            f"{extractor.get('model', 'purged')} "
+            f"{extractor.get('version', '')} · "
+            f"confidence evidence {confidence_label} · "
+            f"{data.get('digest_assurance', 'unknown')}"
+        )
     if item["links"]:
         visible = [f"{key}={value}" for key, value in sorted(item["links"].items()) if value != item["id"]]
         if visible:
@@ -784,17 +873,19 @@ def _format_item(item: dict[str, Any], *, timeline: bool = False) -> list[str]:
 
 def _kind_order(kind: str) -> int:
     return {
-        "episode": 1,
-        "memory": 2,
-        "retrieval": 3,
-        "event": 4,
-        "contribution": 5,
-        "intervention": 6,
-        "manifest": 7,
-        "run": 8,
-        "action": 9,
-        "operation": 10,
-        "outcome": 11,
+        "artifact": 1,
+        "observation": 2,
+        "episode": 3,
+        "memory": 4,
+        "retrieval": 5,
+        "event": 6,
+        "contribution": 7,
+        "intervention": 8,
+        "manifest": 9,
+        "run": 10,
+        "action": 11,
+        "operation": 12,
+        "outcome": 13,
     }.get(kind, 99)
 
 

@@ -14,6 +14,7 @@
  * - before_message_write → strip injected <relevant_memories> from history
  * Tools:
  * - aetnamem_search, aetnamem_forget
+ * - aetnamem_observe, aetnamem_forget_artifact
  */
 
 import os from "node:os";
@@ -490,6 +491,139 @@ function register(api: OpenClawPluginApi): void {
         },
       },
       { name: "aetnamem_forget" },
+    );
+
+    api.registerTool(
+      {
+        name: "aetnamem_observe",
+        label: "Media Observation (aetnamem)",
+        description:
+          "After analyzing an image, audio clip, video, or document, store one " +
+          "typed text observation with its exact-byte SHA-256 provenance. The " +
+          "observation is quarantined until explicitly promoted. Confidence is " +
+          "evidence only and never grants trust.",
+        parameters: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "What the extractor observed" },
+            modality: {
+              type: "string",
+              enum: ["image", "audio", "video", "document"],
+            },
+            media_sha256: {
+              type: "string",
+              description: "SHA-256 of the exact media byte stream",
+            },
+            host_reference: {
+              type: "string",
+              description: "Secretless reference controlled by OpenClaw or the user",
+            },
+            segment: {
+              type: "object",
+              description: "Optional page, timestamp range, or region label/coordinates",
+            },
+            extractor: {
+              type: "object",
+              description:
+                "Extractor identity: provider, model, version, and optional model_digest",
+            },
+            confidence: {
+              type: "number",
+              description: "Extractor-local score from 0 to 1",
+            },
+            observed_at: { type: "string", description: "Optional ISO-8601 timestamp" },
+          },
+          required: [
+            "text",
+            "modality",
+            "media_sha256",
+            "host_reference",
+            "extractor",
+          ],
+        },
+        async execute(toolCallId, params) {
+          const sessionId = `openclaw-tool:${toolCallId}`;
+          const result = (await client.callTool("memory_observe", {
+            text: String(params.text ?? ""),
+            modality: String(params.modality ?? ""),
+            media_sha256: String(params.media_sha256 ?? ""),
+            host_reference: String(params.host_reference ?? ""),
+            segment: params.segment ?? {},
+            extractor: params.extractor ?? {},
+            confidence: params.confidence,
+            observed_at: params.observed_at,
+            session_id: sessionId,
+            turn_id: toolCallId,
+          })) as {
+            artifact: { id: string };
+            observation: { id: string };
+            record: { id: string; status: string };
+            duplicate: boolean;
+          };
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Media observation ${result.duplicate ? "already existed" : "stored"} ` +
+                  `as quarantined record ${result.record.id}.`,
+              },
+            ],
+            details: {
+              artifactId: result.artifact.id,
+              observationId: result.observation.id,
+              recordId: result.record.id,
+              status: result.record.status,
+              duplicate: result.duplicate,
+              sessionId,
+            },
+          };
+        },
+      },
+      { name: "aetnamem_observe" },
+    );
+
+    api.registerTool(
+      {
+        name: "aetnamem_forget_artifact",
+        label: "Forget Media Artifact (aetnamem)",
+        description:
+          "Only when the user explicitly requests deletion, purge all AetnaMem " +
+          "observations derived from one exact-byte SHA-256. This does not " +
+          "delete the host's original file or a re-encoded copy.",
+        parameters: {
+          type: "object",
+          properties: {
+            media_sha256: {
+              type: "string",
+              description: "SHA-256 of the exact media byte stream",
+            },
+            artifact_id: {
+              type: "string",
+              description: "Optional artifact id that must match the digest",
+            },
+          },
+          required: ["media_sha256"],
+        },
+        async execute(toolCallId, params) {
+          const sessionId = `openclaw-tool:${toolCallId}`;
+          const result = (await client.callTool("memory_forget_artifact", {
+            media_sha256: String(params.media_sha256 ?? ""),
+            artifact_id: params.artifact_id,
+            session_id: sessionId,
+            turn_id: toolCallId,
+          })) as { deleted: boolean; record_ids: string[]; receipt?: unknown };
+          if (result.deleted) personaCache = null;
+          const text = result.deleted
+            ? `Purged ${result.record_ids.length} derived memorie(s). Receipt: ${JSON.stringify(result.receipt)}`
+            : "No active AetnaMem artifact matched that exact digest.";
+          return {
+            content: [{ type: "text", text }],
+            details: { deleted: result.deleted, sessionId },
+          };
+        },
+      },
+      { name: "aetnamem_forget_artifact" },
     );
   }
 

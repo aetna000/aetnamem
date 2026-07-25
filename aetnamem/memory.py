@@ -7,6 +7,7 @@ from typing import Any, Callable, TypeVar
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
 from aetnamem.core.policy import (
+    TRUST_TIER_UNTRUSTED,
     classify_source,
     find_duplicate,
     forget_needle,
@@ -15,6 +16,7 @@ from aetnamem.core.policy import (
 )
 from aetnamem.extract import extract_facts
 from aetnamem.graph import GRAPH_EXTRACTOR_VERSION, GraphIndex
+from aetnamem.media import MediaObservationEnvelope, normalize_media_sha256
 from aetnamem.retrieve import (
     ScoredRecord,
     query_tokens,
@@ -54,6 +56,8 @@ class Memory:
 
     - every semantic record derives from an episode and points back to it,
     - untrusted extractions are quarantined until explicitly promoted,
+    - media bytes stay host-controlled while typed text observations retain
+      exact-byte artifact, segment, and extractor provenance,
     - updates supersede (keyed on the extracted fact slot), never overwrite,
     - deletion tombstones *and* purges, including the source episode,
     - every mutation and every recall lands in the hash-linked audit log,
@@ -242,6 +246,207 @@ class Memory:
             "episode_id": episode_id,
             "records": records,
             "duplicate_ids": duplicate_ids,
+        }
+
+    @_atomic
+    def remember_observation(
+        self,
+        subject_id: str,
+        envelope: dict[str, Any],
+        *,
+        session_id: str | None = None,
+        turn_id: str | int | None = None,
+        actor: str = "media-observer",
+        forced_assurance: str | None = None,
+    ) -> dict[str, Any]:
+        """Admit one typed, quarantined text observation of external media."""
+        observation = MediaObservationEnvelope.from_mapping(
+            envelope, forced_assurance=forced_assurance
+        )
+        turn = _turn_id(turn_id)
+        artifact = None
+        if observation.artifact_id:
+            artifact = self.store.get_media_artifact(
+                subject_id, artifact_id=observation.artifact_id
+            )
+            if artifact is None:
+                raise ValueError(
+                    f"media artifact not found: {observation.artifact_id!r}"
+                )
+            if artifact["media_sha256"] != observation.media_sha256:
+                raise ValueError(
+                    "artifact digest mismatch: the supplied artifact_id names "
+                    "a different byte stream"
+                )
+        if artifact is None:
+            artifact = self.store.get_media_artifact(
+                subject_id, media_sha256=observation.media_sha256
+            )
+        if artifact is not None:
+            if artifact["status"] != "active":
+                raise ValueError(
+                    "media artifact digest was previously tombstoned; "
+                    "restoration is not implicit"
+                )
+            if artifact["modality"] != observation.modality:
+                raise ValueError(
+                    "media artifact modality mismatch: "
+                    f"stored={artifact['modality']!r}, "
+                    f"submitted={observation.modality!r}"
+                )
+        else:
+            artifact = self.store.insert_media_artifact(
+                subject_id=subject_id,
+                media_sha256=observation.media_sha256,
+                modality=observation.modality,
+                host_reference=observation.host_reference,
+                host_reference_sha256=observation.host_reference_sha256,
+                digest_assurance=observation.digest_assurance,
+            )
+
+        duplicate = self.store.find_media_observation_by_envelope(
+            subject_id, observation.envelope_sha256
+        )
+        if duplicate is not None and duplicate["status"] != "tombstoned":
+            event_id = self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="media.observation_duplicate",
+                actor=actor,
+                session_id=session_id,
+                turn_id=turn,
+                record_id=duplicate["record_id"],
+                payload={
+                    "artifact_id": artifact["id"],
+                    "observation_id": duplicate["id"],
+                    "envelope_sha256": observation.envelope_sha256,
+                },
+            )
+            record = self.store.get_record(
+                subject_id, str(duplicate["record_id"])
+            )
+            assert record is not None
+            return {
+                "format": "aetnamem-media-admission-v1",
+                "artifact": artifact,
+                "observation": duplicate,
+                "record": self._attach_media_provenance(
+                    subject_id, [record]
+                )[0],
+                "duplicate": True,
+                "audit_event_id": event_id,
+            }
+
+        previous = self.store.current_media_observations(
+            subject_id, observation.lineage_sha256
+        )
+        episode_id = self.store.insert_episode(
+            subject_id=subject_id,
+            session_id=session_id,
+            turn_id=turn,
+            message=observation.text,
+            source_type="tool_output",
+            raw={
+                "format": "aetnamem-media-observation-source-v1",
+                "artifact_id": artifact["id"],
+                "media_sha256": observation.media_sha256,
+                "envelope_sha256": observation.envelope_sha256,
+            },
+        )
+        record_id = self.store.insert_record(
+            subject_id=subject_id,
+            content=observation.text,
+            source_type="tool_output",
+            trust_tier=TRUST_TIER_UNTRUSTED,
+            source_session_id=session_id,
+            source_turn_id=turn,
+            episode_id=episode_id,
+            # Extractor confidence is retained on the evidence envelope only.
+            # It must not influence memory ranking, trust, or promotion policy.
+            confidence=None,
+            scope="media_observation",
+            status="quarantined",
+            supersedes_id=None,
+            fact_key=None,
+            raw={
+                "artifact_id": artifact["id"],
+                "media_sha256": observation.media_sha256,
+                "envelope_sha256": observation.envelope_sha256,
+            },
+        )
+        stored_observation = self.store.insert_media_observation(
+            subject_id=subject_id,
+            artifact_id=str(artifact["id"]),
+            episode_id=episode_id,
+            record_id=record_id,
+            text_sha256=observation.text_sha256,
+            segment=observation.segment,
+            segment_sha256=observation.segment_sha256,
+            extractor=observation.extractor,
+            extractor_sha256=observation.extractor_sha256,
+            confidence=observation.confidence,
+            digest_assurance=observation.digest_assurance,
+            lineage_sha256=observation.lineage_sha256,
+            envelope_sha256=observation.envelope_sha256,
+            observed_at=observation.observed_at,
+            supersedes_observation_id=(
+                str(previous[-1]["id"]) if previous else None
+            ),
+        )
+        previous_ids = [str(item["id"]) for item in previous]
+        superseded_record_ids = self.store.supersede_media_observations(
+            subject_id,
+            previous_ids,
+            str(stored_observation["id"]),
+        )
+        stored_record = self.store.get_record(subject_id, record_id)
+        assert stored_record is not None
+        graph_mutations = self.graph.supersede_records(
+            subject_id, superseded_record_ids, record_id
+        )
+        graph_mutations.extend(self.graph.index_record(stored_record))
+        self._audit_graph_mutations(
+            subject_id,
+            graph_mutations,
+            session_id=session_id,
+            turn_id=turn,
+            record_id=record_id,
+        )
+        event_id = self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="media.observation_admitted",
+            actor=actor,
+            session_id=session_id,
+            turn_id=turn,
+            record_id=record_id,
+            payload={
+                "artifact_id": artifact["id"],
+                "media_sha256": observation.media_sha256,
+                "modality": observation.modality,
+                "observation_id": stored_observation["id"],
+                "episode_id": episode_id,
+                "record_id": record_id,
+                "text_sha256": observation.text_sha256,
+                "segment_sha256": observation.segment_sha256,
+                "extractor_identity_sha256": observation.extractor_sha256,
+                "host_reference_sha256": observation.host_reference_sha256,
+                "lineage_sha256": observation.lineage_sha256,
+                "envelope_sha256": observation.envelope_sha256,
+                "digest_assurance": observation.digest_assurance,
+                "confidence": observation.confidence,
+                "status": "quarantined",
+                "supersedes_observation_ids": previous_ids,
+                "superseded_record_ids": superseded_record_ids,
+            },
+        )
+        return {
+            "format": "aetnamem-media-admission-v1",
+            "artifact": artifact,
+            "observation": stored_observation,
+            "record": self._attach_media_provenance(
+                subject_id, [stored_record]
+            )[0],
+            "duplicate": False,
+            "audit_event_id": event_id,
         }
 
     @_atomic
@@ -460,7 +665,7 @@ class Memory:
                     "path": graph_candidate["path"],
                 }
             results.append(record)
-        return results
+        return self._attach_media_provenance(subject_id, results)
 
     def list(
         self,
@@ -469,7 +674,9 @@ class Memory:
         include_inactive: bool = False,
     ) -> list[dict[str, Any]]:
         statuses = None if include_inactive else ("active",)
-        return self.store.list_records(subject_id, statuses=statuses)
+        return self._attach_media_provenance(
+            subject_id, self.store.list_records(subject_id, statuses=statuses)
+        )
 
     @_atomic
     def forget(
@@ -514,82 +721,16 @@ class Memory:
 
         record_ids = [record["id"] for record in candidates]
         selector_sha256 = _sha256(needle)
-        purged_ids, purged_episode_ids = self.store.tombstone_records(
-            subject_id=subject_id, record_ids=record_ids
-        )
-        graph_mutations = self.graph.tombstone_records(subject_id, purged_ids)
-        purged_graph_ids = [
-            str(item["object_id"])
-            for item in graph_mutations
-            if item.get("object_id")
-        ]
-        self._audit_graph_mutations(
+        cleanup = self._purge_record_ids(
             subject_id,
-            graph_mutations,
+            record_ids,
             session_id=session_id,
             turn_id=turn,
         )
-        semantic_index_cleanup = None
-        if purged_ids and self.store.path != ":memory:":
-            # The semantic index is optional and derived. If it exists, purge
-            # every epoch before claiming deletion is complete. Search still
-            # validates canonical status/digest, so a stale candidate can
-            # never be returned even if a process crashes before retry.
-            from aetnamem.semantic import SemanticIndex, default_index_path
-
-            registered = self.store.semantic_index_paths(subject_id)
-            registered_by_path = {
-                str(Path(item["index_path"]).expanduser().resolve()): item
-                for item in registered
-            }
-            default_path = str(default_index_path(self.store.path).resolve())
-            if Path(default_path).exists() and default_path not in registered_by_path:
-                registered_by_path[default_path] = {
-                    "index_path": default_path,
-                    "index_path_sha256": sha256_hex(default_path),
-                    "active_epoch_id": None,
-                }
-            cleanup_results: list[dict[str, Any]] = []
-            for path_text, registry in sorted(registered_by_path.items()):
-                index_path = Path(path_text)
-                if not index_path.exists():
-                    raise RuntimeError(
-                        "registered semantic index is missing; deletion cannot "
-                        f"verify vector cleanup ({registry['index_path_sha256']})"
-                    )
-                semantic_index = SemanticIndex(index_path)
-                try:
-                    if semantic_index.active_epoch(subject_id) is not None:
-                        cleanup = semantic_index.purge(subject_id, purged_ids)
-                        verification = semantic_index.verify(self, subject_id)
-                        semantic_index.checkpoint_storage()
-                        result = {
-                            **cleanup,
-                            "index_path_sha256": registry["index_path_sha256"],
-                            "index_verification_valid": verification["valid"],
-                            "verification_report_sha256": verification["report_sha256"],
-                        }
-                        cleanup_results.append(result)
-                        if (
-                            not cleanup["verified_absent"]
-                            or not verification["valid"]
-                        ):
-                            raise RuntimeError(
-                                "semantic index purge could not be verified; "
-                                "canonical deletion was not committed"
-                            )
-                finally:
-                    semantic_index.close()
-            if cleanup_results:
-                semantic_index_cleanup = {
-                    "status": "verified_absent",
-                    "verified_absent": True,
-                    "indexes": cleanup_results,
-                    "verified_at": utc_now(),
-                }
-                semantic_index_cleanup["result_sha256"] = sha256_hex(
-                    canonical_json(semantic_index_cleanup)
-                )
+        purged_ids = cleanup["purged_record_ids"]
+        purged_episode_ids = cleanup["purged_episode_ids"]
+        purged_graph_ids = cleanup["purged_graph_ids"]
+        semantic_index_cleanup = cleanup["semantic_index_cleanup"]
         # The audit event carries the selector digest, never its text — the
         # needle usually names exactly the thing being erased.
         payload = {
@@ -599,6 +740,8 @@ class Memory:
             "purged_graph_ids": purged_graph_ids,
             "purged_count": len(purged_ids),
         }
+        if cleanup["media_cleanup"]["observation_ids"]:
+            payload["media_cleanup"] = cleanup["media_cleanup"]
         if semantic_index_cleanup is not None:
             payload["semantic_index_cleanup"] = semantic_index_cleanup
         if utterance_sha256 is not None:
@@ -629,11 +772,291 @@ class Memory:
         }
         if semantic_index_cleanup is not None:
             receipt["semantic_index_cleanup"] = semantic_index_cleanup
+        if cleanup["media_cleanup"]["observation_ids"]:
+            receipt["media_cleanup"] = cleanup["media_cleanup"]
         receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
         return {
             "deleted": bool(purged_ids),
             "record_ids": purged_ids,
             "receipt": receipt,
+        }
+
+    @_atomic
+    def forget_artifact(
+        self,
+        subject_id: str,
+        media_sha256: str,
+        *,
+        artifact_id: str | None = None,
+        session_id: str | None = None,
+        turn_id: str | int | None = None,
+        actor: str = "user",
+    ) -> dict[str, Any]:
+        """Purge AetnaMem objects linked to one exact media byte-stream digest."""
+        digest = normalize_media_sha256(media_sha256)
+        turn = _turn_id(turn_id)
+        artifact = self.store.get_media_artifact(
+            subject_id,
+            artifact_id=artifact_id,
+            media_sha256=None if artifact_id else digest,
+        )
+        if artifact is None:
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="media.artifact_forget_rejected",
+                actor=actor,
+                session_id=session_id,
+                turn_id=turn,
+                payload={
+                    "media_sha256": digest,
+                    "reason": "artifact not found",
+                },
+            )
+            return {"deleted": False, "record_ids": [], "receipt": None}
+        if artifact["media_sha256"] != digest:
+            raise ValueError(
+                "artifact digest mismatch: artifact_id and media_sha256 "
+                "do not name the same byte stream"
+            )
+        if artifact["status"] == "tombstoned":
+            return {"deleted": False, "record_ids": [], "receipt": None}
+
+        observations = self.store.list_media_observations(
+            subject_id,
+            artifact_id=str(artifact["id"]),
+            include_tombstoned=True,
+        )
+        observation_ids = [str(item["id"]) for item in observations]
+        record_ids = list(
+            dict.fromkeys(str(item["record_id"]) for item in observations)
+        )
+        episode_ids = list(
+            dict.fromkeys(str(item["episode_id"]) for item in observations)
+        )
+        cleanup = self._purge_record_ids(
+            subject_id,
+            record_ids,
+            session_id=session_id,
+            turn_id=turn,
+        )
+        media_cleanup = self.store.tombstone_media_artifact(
+            subject_id, str(artifact["id"])
+        )
+        records = self.store.get_records(subject_id, record_ids)
+        records_tombstoned = all(
+            record_id in records
+            and records[record_id]["status"] == "tombstoned"
+            and records[record_id]["content"] == ""
+            for record_id in record_ids
+        )
+        episodes = {
+            str(item["id"]): item
+            for item in self.store.list_episodes(subject_id)
+            if str(item["id"]) in episode_ids
+        }
+        episodes_purged = all(
+            episode_id in episodes
+            and episodes[episode_id]["message"] == "[purged]"
+            for episode_id in episode_ids
+        )
+        verification = {
+            "artifact_tombstoned": media_cleanup["artifact_tombstoned"],
+            "observations_tombstoned": media_cleanup[
+                "observations_tombstoned"
+            ],
+            "records_tombstoned": records_tombstoned,
+            "episodes_purged": episodes_purged,
+            "vectors_verified_absent": (
+                cleanup["semantic_index_cleanup"] is None
+                or cleanup["semantic_index_cleanup"]["verified_absent"]
+            ),
+            "verified_at": utc_now(),
+        }
+        verification["valid"] = all(
+            value
+            for key, value in verification.items()
+            if key != "verified_at"
+        )
+        verification["report_sha256"] = sha256_hex(
+            canonical_json(verification)
+        )
+        if not verification["valid"]:
+            raise RuntimeError(
+                "artifact deletion could not be verified; transaction rolled back"
+            )
+
+        payload = {
+            "artifact_id": artifact["id"],
+            "media_sha256": digest,
+            "host_reference_sha256": artifact["host_reference_sha256"],
+            "digest_assurance": artifact["digest_assurance"],
+            "purged_observation_ids": observation_ids,
+            "linked_record_ids": record_ids,
+            "linked_episode_ids": episode_ids,
+            **{
+                key: value
+                for key, value in cleanup.items()
+                if key != "semantic_index_cleanup"
+            },
+            "verification_report_sha256": verification["report_sha256"],
+            "host_file_deleted": False,
+        }
+        if cleanup["semantic_index_cleanup"] is not None:
+            payload["semantic_index_cleanup"] = cleanup[
+                "semantic_index_cleanup"
+            ]
+        event_id = self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="media.artifact_forgotten",
+            actor=actor,
+            session_id=session_id,
+            turn_id=turn,
+            payload=payload,
+        )
+        event = self.store.get_audit_event(subject_id, event_id)
+        receipt = {
+            "format": "aetnamem-artifact-deletion-receipt-v1",
+            "subject_id": subject_id,
+            "created_at": event["created_at"],
+            "artifact_id": artifact["id"],
+            "media_sha256": digest,
+            "digest_identity": "sha256-of-exact-byte-stream",
+            "host_reference_sha256": artifact["host_reference_sha256"],
+            "digest_assurance": artifact["digest_assurance"],
+            "claim": (
+                "All live AetnaMem objects linked through recorded observations "
+                "to this exact byte-stream digest were purged or tombstoned."
+            ),
+            "host_file_deleted": False,
+            "host_boundary": (
+                "The host-controlled original, unregistered copies, "
+                "re-encodings, backups, and unlinked observations are outside "
+                "this receipt."
+            ),
+            "purged_observation_ids": observation_ids,
+            "linked_record_ids": record_ids,
+            "linked_episode_ids": episode_ids,
+            "purged_record_ids": cleanup["purged_record_ids"],
+            "purged_episode_ids": cleanup["purged_episode_ids"],
+            "purged_graph_ids": cleanup["purged_graph_ids"],
+            "verification": verification,
+            "audit_event_id": event_id,
+            "audit_event_hash": event["event_hash"],
+        }
+        if cleanup["semantic_index_cleanup"] is not None:
+            receipt["semantic_index_cleanup"] = cleanup[
+                "semantic_index_cleanup"
+            ]
+        receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
+        return {
+            "deleted": True,
+            "record_ids": cleanup["purged_record_ids"],
+            "receipt": receipt,
+        }
+
+    def _purge_record_ids(
+        self,
+        subject_id: str,
+        record_ids: list[str],
+        *,
+        session_id: str | None,
+        turn_id: str | None,
+    ) -> dict[str, Any]:
+        cleanup_ids = list(dict.fromkeys(str(value) for value in record_ids))
+        purged_ids, purged_episode_ids = self.store.tombstone_records(
+            subject_id=subject_id, record_ids=cleanup_ids
+        )
+        graph_mutations = self.graph.tombstone_records(subject_id, purged_ids)
+        purged_graph_ids = [
+            str(item["object_id"])
+            for item in graph_mutations
+            if item.get("object_id")
+        ]
+        self._audit_graph_mutations(
+            subject_id,
+            graph_mutations,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        media_cleanup = self.store.tombstone_media_observations_for_records(
+            subject_id, cleanup_ids
+        )
+        semantic_index_cleanup = None
+        if cleanup_ids and self.store.path != ":memory:":
+            from aetnamem.semantic import SemanticIndex, default_index_path
+
+            registered = self.store.semantic_index_paths(subject_id)
+            registered_by_path = {
+                str(Path(item["index_path"]).expanduser().resolve()): item
+                for item in registered
+            }
+            default_path = str(default_index_path(self.store.path).resolve())
+            if (
+                Path(default_path).exists()
+                and default_path not in registered_by_path
+            ):
+                registered_by_path[default_path] = {
+                    "index_path": default_path,
+                    "index_path_sha256": sha256_hex(default_path),
+                    "active_epoch_id": None,
+                }
+            cleanup_results: list[dict[str, Any]] = []
+            for path_text, registry in sorted(registered_by_path.items()):
+                index_path = Path(path_text)
+                if not index_path.exists():
+                    raise RuntimeError(
+                        "registered semantic index is missing; deletion cannot "
+                        f"verify vector cleanup ({registry['index_path_sha256']})"
+                    )
+                semantic_index = SemanticIndex(index_path)
+                try:
+                    if semantic_index.active_epoch(subject_id) is not None:
+                        index_cleanup = semantic_index.purge(
+                            subject_id, cleanup_ids
+                        )
+                        index_verification = semantic_index.verify(
+                            self, subject_id
+                        )
+                        semantic_index.checkpoint_storage()
+                        result = {
+                            **index_cleanup,
+                            "index_path_sha256": registry[
+                                "index_path_sha256"
+                            ],
+                            "index_verification_valid": index_verification[
+                                "valid"
+                            ],
+                            "verification_report_sha256": index_verification[
+                                "report_sha256"
+                            ],
+                        }
+                        cleanup_results.append(result)
+                        if (
+                            not index_cleanup["verified_absent"]
+                            or not index_verification["valid"]
+                        ):
+                            raise RuntimeError(
+                                "semantic index purge could not be verified; "
+                                "canonical deletion was not committed"
+                            )
+                finally:
+                    semantic_index.close()
+            if cleanup_results:
+                semantic_index_cleanup = {
+                    "status": "verified_absent",
+                    "verified_absent": True,
+                    "indexes": cleanup_results,
+                    "verified_at": utc_now(),
+                }
+                semantic_index_cleanup["result_sha256"] = sha256_hex(
+                    canonical_json(semantic_index_cleanup)
+                )
+        return {
+            "purged_record_ids": purged_ids,
+            "purged_episode_ids": purged_episode_ids,
+            "purged_graph_ids": purged_graph_ids,
+            "media_cleanup": media_cleanup,
+            "semantic_index_cleanup": semantic_index_cleanup,
         }
 
     @_atomic
@@ -1130,7 +1553,16 @@ class Memory:
         turn_id: str | int | None = None,
         actor: str = "user",
     ) -> dict[str, Any]:
-        """Activate a quarantined record after explicit user confirmation."""
+        """Activate a quarantined record after explicit user confirmation.
+
+        Media promotion is the deliberate trust boundary that closes an
+        extraction lineage: an admitted rerun cannot displace active memory,
+        but promoting it supersedes older active records from the exact same
+        artifact + segment + extractor lineage.
+        """
+        media_observation = self.store.get_media_observation_for_record(
+            subject_id, record_id
+        )
         record = self.store.promote_record(
             subject_id=subject_id, record_id=record_id
         )
@@ -1140,12 +1572,38 @@ class Memory:
         old_records = self.store.active_records_for_fact_key(
             subject_id, record.get("fact_key"), exclude_id=record_id
         )
-        old_ids = [item["id"] for item in old_records]
+        lineage_records: list[dict[str, Any]] = []
+        if media_observation is not None:
+            lineage_records = self.store.active_media_records_for_lineage(
+                subject_id,
+                str(media_observation["lineage_sha256"]),
+                exclude_record_id=record_id,
+            )
+        old_ids = list(
+            dict.fromkeys(
+                str(item["id"]) for item in [*old_records, *lineage_records]
+            )
+        )
+        superseded_observation_ids = [
+            str(item["media_observation_id"]) for item in lineage_records
+        ]
         self.store.supersede_records(
             subject_id=subject_id,
             record_ids=old_ids,
             superseded_by_id=record_id,
         )
+        promotion_payload = {
+            "trust_tier": record["trust_tier"],
+            "fact_key": record.get("fact_key"),
+            "supersedes": old_ids,
+        }
+        if media_observation is not None:
+            promotion_payload.update(
+                {
+                    "media_lineage_sha256": media_observation["lineage_sha256"],
+                    "superseded_observation_ids": superseded_observation_ids,
+                }
+            )
         self.store.append_audit_event(
             subject_id=subject_id,
             event_type="memory.record_promoted",
@@ -1153,11 +1611,7 @@ class Memory:
             session_id=session_id,
             turn_id=_turn_id(turn_id),
             record_id=record_id,
-            payload={
-                "trust_tier": record["trust_tier"],
-                "fact_key": record.get("fact_key"),
-                "supersedes": old_ids,
-            },
+            payload=promotion_payload,
         )
         promoted = self.store.get_record(subject_id, record_id)
         assert promoted is not None
@@ -1170,7 +1624,7 @@ class Memory:
             turn_id=_turn_id(turn_id),
             record_id=record_id,
         )
-        return promoted
+        return self._attach_media_provenance(subject_id, [promoted])[0]
 
     @_atomic
     def backfill_graph(
@@ -1513,6 +1967,12 @@ class Memory:
         return {
             "records": self.list(subject_id, include_inactive=True),
             "episodes": self.store.list_episodes(subject_id),
+            "media_artifacts": self.store.list_media_artifacts(
+                subject_id, include_tombstoned=True
+            ),
+            "media_observations": self.store.list_media_observations(
+                subject_id, include_tombstoned=True
+            ),
             "graph": self.inspect_graph(subject_id),
             "retrieval_events": self.store.list_retrieval_events(subject_id),
             "audit_log": self.store.list_audit_events(subject_id),
@@ -1553,6 +2013,24 @@ class Memory:
         session_id: str | None = None,
     ) -> list[dict[str, Any]]:
         return self.store.list_retrieval_events(subject_id, session_id=session_id)
+
+    def _attach_media_provenance(
+        self, subject_id: str, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        provenance = self.store.media_provenance_for_records(
+            subject_id, [str(record["id"]) for record in records]
+        )
+        return [
+            (
+                {
+                    **record,
+                    "media_observation": provenance[str(record["id"])],
+                }
+                if str(record["id"]) in provenance
+                else record
+            )
+            for record in records
+        ]
 
     def _audit_graph_mutations(
         self,

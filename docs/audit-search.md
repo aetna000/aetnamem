@@ -86,9 +86,10 @@ query digest can still be guessed when the query space is predictable; a
 deployment requiring resistance to such guessing should place the CLI behind
 an access layer that records a keyed digest.
 
-The trace resolver follows available relationships among records, episodes,
-retrieval candidates and returned IDs, audit events, four-memory runtime runs,
-context manifests, interventions, outcomes, and guarded-action transactions.
+The trace resolver follows available relationships among records, media
+artifacts and observations, episodes, retrieval candidates and returned IDs,
+audit events, four-memory runtime runs, context manifests, interventions,
+outcomes, and guarded-action transactions.
 It also reports whether the subject's local hash chain verifies.
 
 ## Save a report
@@ -136,8 +137,8 @@ aetnamem search ./memories.db calendar \
   --scope events
 ```
 
-Available scopes are `all`, `memories`, `episodes`, `retrievals`, `events`,
-`runs`, and `actions`.
+Available scopes are `all`, `memories`, `media`, `episodes`, `retrievals`,
+`events`, `runs`, and `actions`. The `media` scope ships in `v0.5.2`.
 
 Useful filters include:
 
