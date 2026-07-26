@@ -2,7 +2,9 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes npm `0.3.1` for Python `v0.5.2`. See
+This README describes npm `0.3.1`, compatible with Python `v0.5.2` through
+`v0.6.0`. Memory Impact is host-side Python experiment infrastructure and does
+not change this plugin's hooks or tool contracts. See
 the repository's [current capability status](../../docs/current-status.md) for
 the precise implemented, experimental, and planned boundary.
 

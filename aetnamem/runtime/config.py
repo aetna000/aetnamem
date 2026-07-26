@@ -10,7 +10,7 @@ from aetnamem.runtime.models import PLANE_NAMES
 
 CONFIG_FORMAT = "aetnamem-runtime-config-v1"
 CML_MODES = ("off", "shadow", "experiment")
-CML_DESIGNS = ("bernoulli",)
+CML_DESIGNS = ("bernoulli", "balanced-factorial")
 
 
 def _cml_defaults() -> dict[str, Any]:
@@ -182,6 +182,33 @@ def _validate_cml(value: Any, *, preset: str) -> None:
         )
     eligible = value.get("eligible_planes", [])
     pinned = value.get("pinned_planes", [])
+    if design == "balanced-factorial":
+        required = (
+            "assigned_arm",
+            "block_id",
+            "task_id",
+            "repetition",
+            "assignment_index",
+            "assignment_token",
+            "schedule_sha256",
+        )
+        missing = [key for key in required if value.get(key) in {None, ""}]
+        if missing:
+            raise ValueError(
+                "balanced-factorial cml requires " + ", ".join(missing)
+            )
+        arm = str(value["assigned_arm"])
+        if len(arm) != 4 or any(bit not in "01" for bit in arm):
+            raise ValueError("balanced-factorial assigned_arm must be four binary digits")
+        if set(eligible) != set(PLANE_NAMES) or pinned:
+            raise ValueError(
+                "balanced-factorial requires all four eligible planes and no pinned planes; "
+                "safety, identity, and authorization belong outside supplemental memory"
+            )
+        if float(value.get("assignment_probability", 0.0)) != 1.0 / 16.0:
+            raise ValueError(
+                "balanced-factorial assignment_probability must be exactly 1/16"
+            )
     if not isinstance(eligible, list) or not isinstance(pinned, list):
         raise ValueError("cml eligible_planes and pinned_planes must be arrays")
     unknown = (set(eligible) | set(pinned)) - set(PLANE_NAMES)

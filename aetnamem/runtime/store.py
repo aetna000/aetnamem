@@ -436,6 +436,28 @@ class RuntimeStore:
                 (_json(degraded_planes), run_id),
             )
 
+    def mark_run_invalid(self, run_id: str, reason: str) -> None:
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE runtime_runs
+                SET status = 'invalid', outcome_summary = ?
+                WHERE id = ? AND status = 'preparing'
+                """,
+                (reason[:1000], run_id),
+            )
+
+    def mark_run_aborted(self, run_id: str, reason: str) -> None:
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE runtime_runs
+                SET status = 'aborted', completed_at = ?, outcome_summary = ?
+                WHERE id = ? AND status = 'prepared'
+                """,
+                (utc_now(), reason[:1000], run_id),
+            )
+
     def save_working_snapshot(
         self,
         *,

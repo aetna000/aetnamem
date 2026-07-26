@@ -169,7 +169,7 @@ jobs:
         run: |
           node -e '
             const pkg = require("./package.json");
-            const expected = "v0.5.2";
+            const expected = "v0.6.0";
             if (process.env.RELEASE_TAG !== expected || pkg.version !== "0.3.1") {
               throw new Error(`release ${process.env.RELEASE_TAG} must publish plugin 0.3.1`);
             }
@@ -207,6 +207,6 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/releases/v0.5.2.md
+          body_path: docs/releases/v0.6.0.md
           files: |
             dist/*

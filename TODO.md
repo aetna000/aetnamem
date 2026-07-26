@@ -20,15 +20,20 @@ shipped capability. `aetnamem` is the canonical CLI executable.
 - [x] Store structured outcome metrics and distinguish `caller_asserted` from
       `host_attested`.
 - [x] Forward the context-manifest digest through the OpenClaw outcome hook.
-- [ ] Add a separately authenticated trusted outcome adapter and verifier.
-- [ ] Add disposable benchmark database and namespace enforcement.
-- [ ] Add a balanced block allocator alongside the current deterministic
+- [x] Add a separately authenticated signed host outcome controller and verifier.
+- [x] Add disposable benchmark database/workspace cloning and agent-tool isolation.
+- [x] Add a balanced block allocator alongside the current deterministic
       Bernoulli allocator.
-- [ ] Build the planted-effect/confounding benchmark and propensity-aware
+- [x] Build the planted-effect/confounding benchmark and randomized
       estimators with confidence intervals.
-- [ ] Build the frozen Grok CLI reference study and 16-condition task suite.
-- [ ] Learn a policy on training tasks, freeze it, and evaluate verified
+- [x] Build the frozen Grok CLI reference-study controller and 16-condition
+      starter task suite.
+- [x] Learn a policy on training tasks, freeze it, and evaluate verified
       success per dollar on held-out tasks.
+- [ ] Expand the starter suite according to simulation-based power, execute the
+      paid registered Grok trial, and preserve its signed result artifacts.
+- [ ] Replicate a closed Grok result with a second model, host, or independent
+      implementation.
 - [ ] Publish causal claims only if the falsification and held-out gates pass.
 
 ## Guarded Actions

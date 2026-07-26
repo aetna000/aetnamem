@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-315A7D?style=flat-square">
+  <img alt="Version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -21,6 +21,7 @@
   <a href="#give-openclaw-four-kinds-of-memory">OpenClaw quick start</a> &middot;
   <a href="./docs/current-status.md">Current status</a> &middot;
   <a href="./docs/multimodal-observations.md">Multimodal observations</a> &middot;
+  <a href="./docs/memory-impact.md">Memory Impact Lab</a> &middot;
   <a href="./docs/assets/demos/aetnamem-voice-memory-short.mp4">Voice-memory demo</a> &middot;
   <a href="#the-four-memories-in-plain-language">Four memories</a> &middot;
   <a href="#ready-made-configurations">Presets</a> &middot;
@@ -40,17 +41,69 @@ eligible memory contributions were assigned, which were actually shown, and
 which outcome was later reported. That is the foundation for testing whether
 memory earned its context cost rather than assuming that retrieval was useful.
 
-The current release is **Python v0.5.2** with
-**OpenClaw plugin v0.3.1**. It adds governed text observations from image,
-audio, video, and document extractors; exact-byte artifact provenance;
-quarantine and approval; searchable traces; and narrow, verified deletion of
-every indexed AetnaMem derivative. AetnaMem does not store or analyze the
-original media. Audit search, the opt-in four-memory runtime, and the
-default-off CML foundation remain available. CML does not yet prove a causal
-benefit; the synthetic causal benchmark, estimators, held-out policy
-evaluation, and trusted host adapters remain roadmap work. See
+The current release is **Python v0.6.0** with the compatible
+**OpenClaw plugin v0.3.1**. Version 0.6.0 adds the default-off
+**Memory Impact Lab**: balanced 16-arm allocation, exact exposure evidence,
+isolated SQLite/workspace clones, signed host outcomes, planted-effect
+calibration, factorial estimates and reports, plus a frozen held-out policy
+gate. The generic Python, CLI, MCP and OpenClaw memory surfaces remain
+compatible. This release ships the reproducible experiment—not a claim that
+memory has already improved Grok. A 2026-07-26 starter attempt stopped before
+held-out execution; its postmortem exposed a headless editing configuration
+failure, which is now guarded by a one-call paid smoke stage. A fresh paid
+100-run recovery pilot produced 57 verified successes and promising
+exploratory arm differences, but only six balanced blocks and no held-out
+evaluation. A complete paid trial, held-out result and second-model replication
+must still be executed and verified. See
 [current capability status](./docs/current-status.md) before relying on a
 development feature.
+
+## Prove whether memory helped
+
+Create a complete local lab without changing normal agent behavior:
+
+```bash
+aetnamem impact init ./memory-impact-lab
+cd ./memory-impact-lab
+aetnamem impact run --protocol protocol.yaml --stage synthetic
+```
+
+Only after the synthetic estimator gate passes should a registered operator
+start the paid Grok stages. The one-call smoke gate must first prove that the
+registered Grok invocation can edit its isolated workspace:
+
+```bash
+aetnamem impact run --protocol protocol.yaml --stage grok-smoke \
+  --confirm-paid-run
+aetnamem impact run --protocol protocol.yaml --stage grok-train \
+  --confirm-paid-run
+aetnamem impact run --protocol protocol.yaml --stage grok-held-out \
+  --confirm-paid-run
+aetnamem impact verify results/ --public-key host-public-key.pem
+aetnamem impact report results/ --public-key host-public-key.pem \
+  --output reports/memory-impact.html
+```
+
+Every task is evaluated across the 16 combinations of working, semantic,
+episodic and procedural memory. Grok never grades itself: a hidden host
+verifier signs the outcome after the agent exits. See the
+[Memory Impact guide](./docs/memory-impact.md) and
+[reference lab](./bench/causal_memory/).
+
+To give Grok CLI the normal, default-off four-memory runtime:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+aetnamem setup --yes --preset starter --subject you \
+  --agent grok-primary --skill-path ~/.grok/skills
+grok mcp add --scope user aetnamem -- \
+  aetnamem runtime mcp --config ~/.aetnamem/runtime.json
+grok mcp doctor
+```
+
+This makes governed memory available to Grok; it does not guarantee better
+performance. The [Grok/xAI guide](./docs/grok-xai.md) explains the four
+presets and how to measure the result with Memory Impact.
 
 ## Give OpenClaw four kinds of memory
 
@@ -800,6 +853,11 @@ benchmark scenario.
 
 ## Documentation
 
+- **[0.6.0 release notes](./docs/releases/v0.6.0.md)** — reproducible Memory
+  Impact Lab, balanced factorial allocation, signed host verification,
+  synthetic calibration, reports and frozen held-out policy gate.
+- **[Memory Impact guide](./docs/memory-impact.md)** — protocol, commands,
+  estimands, integrity checks and claims boundary.
 - **[0.5.2 release notes](./docs/releases/v0.5.2.md)** — governed multimodal
   observations, exact-artifact provenance and deletion, OpenClaw 0.3.1, and
   compatibility notes.

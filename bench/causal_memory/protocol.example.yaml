@@ -1,0 +1,50 @@
+{
+  "format": "aetnamem-memory-impact-protocol-v1",
+  "experiment_id": "replace-with-registered-id",
+  "replication_of": null,
+  "design": {
+    "kind": "balanced-2x2x2x2",
+    "planes": ["working", "semantic", "episodic", "procedural"],
+    "repetitions": 1,
+    "primary_estimand": "intention-to-treat",
+    "primary_interactions": ["semantic:procedural"]
+  },
+  "randomization": {
+    "seed": "replace-before-registration",
+    "reveal": "after-close"
+  },
+  "budgets": {
+    "max_context_chars": 10000,
+    "max_turns": 8,
+    "timeout_seconds": 180,
+    "max_cost_usd": 1.0
+  },
+  "model": {
+    "command": "grok",
+    "name": "grok-4.5",
+    "arguments": [
+      "--no-memory",
+      "--disable-web-search",
+      "--no-subagents",
+      "--sandbox",
+      "strict",
+      "--tools",
+      "read_file,grep,list_dir,search_replace",
+      "--permission-mode",
+      "bypassPermissions",
+      "--output-format",
+      "json",
+      "--verbatim",
+      "--no-plan"
+    ],
+    "telemetry": "provider-reported-or-explicitly-estimated"
+  },
+  "verifier": {
+    "trust": "host",
+    "command": "python verify_outcome.py",
+    "blind_to_arm": true
+  },
+  "tasks": ["tasks/train-001.json"],
+  "learning_enabled": false,
+  "results_dir": "results"
+}

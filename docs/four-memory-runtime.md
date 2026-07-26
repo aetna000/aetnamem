@@ -180,9 +180,15 @@ aetnamem runtime outcome RUN_ID --success \
   --config ~/.aetnamem/runtime.json
 ```
 
+Version 0.6.0 adds a registered balanced-factorial path, exact exposure
+evidence and signed host outcomes without changing this Bernoulli compatibility
+surface. Use `aetnamem impact init` rather than hand-authoring a balanced
+configuration: its assignment token is bound to the precommitted run ID,
+block, arm and schedule. See the [Memory Impact guide](memory-impact.md).
+
 This is experimental measurement infrastructure, not evidence that causal
-benefit has been demonstrated. See the
-[current status](current-status.md) and [research plan](../plan.md).
+benefit has been demonstrated. See the [current status](current-status.md) and
+[research plan](../plan.md).
 
 ## Try the lifecycle without an agent
 

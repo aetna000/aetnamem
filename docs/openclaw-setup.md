@@ -1,6 +1,6 @@
 # Wiring aetnamem into OpenClaw via MCP
 
-This page covers the public legacy surface and the opt-in Python `v0.5.2` /
+This page covers the public legacy surface and the opt-in Python `v0.6.0` /
 npm `v0.3.1` four-memory runtime. See
 [current capability status](current-status.md) before deployment.
 

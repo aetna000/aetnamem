@@ -93,6 +93,17 @@ class Ed25519Signer:
 
         return self._private_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
 
+    def private_key_pem(self) -> bytes:
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+        )
+
+        return self._private_key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+
 
 class Ed25519Verifier:
     def __init__(self, public_keys: dict[str, Any]) -> None:

@@ -161,14 +161,18 @@ class MemoryRuntime:
             )
             admitted_contributions = list(cml_assignment.admitted)
             cml_manifest = cml_assignment.manifest
-        pack = compile_context(
-            run_id=run_id,
-            scope=resolved_scope,
-            contributions=admitted_contributions,
-            degraded_planes=degraded,
-            budgets=self.config["budgets"],
-            cml_manifest=cml_manifest,
-        )
+        try:
+            pack = compile_context(
+                run_id=run_id,
+                scope=resolved_scope,
+                contributions=admitted_contributions,
+                degraded_planes=degraded,
+                budgets=self.config["budgets"],
+                cml_manifest=cml_manifest,
+            )
+        except Exception as exc:
+            self.store.mark_run_invalid(run_id, str(exc))
+            raise
         if failures:
             pack["provider_failures"] = failures
         self.store.finish_run(
@@ -222,9 +226,10 @@ class MemoryRuntime:
         scope: RuntimeScope | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         resolved_scope = self._scope(scope)
-        if outcome_trust not in {"caller_asserted", "host_attested"}:
+        if outcome_trust != "caller_asserted":
             raise ValueError(
-                "outcome_trust must be 'caller_asserted' or 'host_attested'"
+                "record_outcome only accepts caller_asserted outcomes; "
+                "use record_attested_outcome for signed host evidence"
             )
         if metrics is not None and not isinstance(metrics, dict):
             raise ValueError("outcome metrics must be an object")
@@ -286,7 +291,7 @@ class MemoryRuntime:
             outcome_trust=outcome_trust,
         )
         proposals: list[dict] = []
-        if created:
+        if created and bool(self.config.get("learning_enabled", True)):
             for provider in self.providers.values():
                 proposals.extend(provider.record_outcome(report))
             self.memory.log_action(
@@ -324,6 +329,72 @@ class MemoryRuntime:
                 for item in proposals
                 if item.get("kind") == "procedure_improvement"
             ],
+            "idempotency_key": key,
+        }
+
+    def record_attested_outcome(
+        self,
+        attestation: dict[str, Any],
+        *,
+        verifier: Any,
+        scope: RuntimeScope | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from aetnamem.impact.attestation import verify_outcome_attestation
+
+        if not verify_outcome_attestation(attestation, verifier):
+            raise ValueError("host outcome attestation signature is invalid")
+        run_id = str(attestation["run_id"])
+        run = self.store.run(run_id)
+        if run is None:
+            raise ValueError(f"unknown runtime run: {run_id}")
+        resolved_scope = self._scope(scope)
+        self._assert_outcome_scope(run, resolved_scope)
+        manifest = self.store.manifest_for_run(run_id)
+        if manifest is None or attestation.get("manifest_sha256") != manifest.get(
+            "manifest_sha256"
+        ):
+            raise ValueError("host outcome attestation does not bind the prepared manifest")
+        metrics = dict(attestation.get("metrics") or {})
+        key = str(attestation["receipt_sha256"])
+        stored, created = self.store.record_outcome(
+            run_id=run_id,
+            success=bool(attestation["success"]),
+            summary=str(attestation.get("verifier_detail") or ""),
+            result_digest=str(attestation.get("output_sha256") or "") or None,
+            feedback=None,
+            receipt_digests=[key],
+            idempotency_key=key,
+            manifest_sha256=str(attestation["manifest_sha256"]),
+            metrics=metrics,
+            outcome_trust="host_attested",
+        )
+        if created:
+            self.memory.log_action(
+                resolved_scope.subject_id,
+                "runtime.record_attested_outcome",
+                {
+                    "run_id": run_id,
+                    "outcome_id": stored.get("id"),
+                    "success": bool(attestation["success"]),
+                    "manifest_sha256": attestation["manifest_sha256"],
+                    "attestation_sha256": key,
+                    "signing_key_id": attestation["signature"]["key_id"],
+                },
+                session_id=resolved_scope.session_id,
+                turn_id=resolved_scope.turn_id,
+            )
+        return {
+            "format": "aetnamem-runtime-outcome-v1",
+            "run_id": run_id,
+            "outcome_id": stored.get("id"),
+            "created": created,
+            "success": bool(stored.get("success", attestation["success"])),
+            "manifest_sha256": stored.get("manifest_sha256"),
+            "metrics": stored.get("metrics", metrics),
+            "outcome_trust": "host_attested",
+            "proposals": [],
+            "lesson_proposals": [],
+            "procedure_proposals": [],
             "idempotency_key": key,
         }
 

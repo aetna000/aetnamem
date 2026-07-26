@@ -1,7 +1,8 @@
 # Integration guide: CLI and MCP
 
-Repository version boundary: Python `v0.5.2` and OpenClaw npm `v0.3.1` are
-public releases. CML measurement modes remain experimental and default off.
+Repository version boundary: Python `v0.6.0` and OpenClaw npm `v0.3.1` are
+compatible public releases. Memory Impact/CML measurement modes remain
+experimental and default off.
 See [current capability status](current-status.md).
 
 aetnamem has compatibility surfaces around `Memory` plus the opt-in
@@ -41,7 +42,9 @@ configuration, and output contracts.
 is enabled, it must include the `manifest_sha256` returned by
 `memory_prepare_turn`. Authentication and host verification must be supplied by
 a separate trusted integration; merely calling the MCP tool is not
-host-attested evidence.
+host-attested evidence. The `aetnamem impact` controller is that integration
+for registered experiments: it accepts only a signed verifier receipt and
+keeps the experimental agent on the zero-tool `impact-restricted` profile.
 
 ---
 

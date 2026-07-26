@@ -24,7 +24,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.5.2"
+    SERVER_VERSION = "0.6.0"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -46,11 +46,15 @@ class MCPServer:
         default_subject: str = "default",
         checkpoints_path: str | None = None,
         runtime: Any | None = None,
+        tool_profile: str = "full",
     ) -> None:
+        if tool_profile not in {"full", "impact-restricted"}:
+            raise ValueError("MCP tool_profile must be full or impact-restricted")
         self.memory = memory
         self.default_subject = default_subject
         self.checkpoints_path = checkpoints_path
         self.runtime = runtime
+        self.tool_profile = tool_profile
 
     # ------------------------------------------------------------- transport
 
@@ -142,7 +146,9 @@ class MCPServer:
             "memory_graph_history": self._tool_graph_history,
             "memory_log_action": self._tool_log_action,
         }
-        if self.runtime is not None:
+        if self.tool_profile == "impact-restricted":
+            handlers = {}
+        if self.runtime is not None and self.tool_profile == "full":
             handlers.update(
                 {
                     "memory_prepare_turn": self._tool_runtime_prepare,
@@ -362,6 +368,8 @@ class MCPServer:
         )
 
     def _tool_definitions(self) -> list[dict[str, Any]]:
+        if self.tool_profile == "impact-restricted":
+            return []
         tools = [
             _tool(
                 "memory_remember",

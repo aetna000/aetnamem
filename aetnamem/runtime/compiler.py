@@ -22,7 +22,8 @@ def compile_context(
         if semantic is not None
         else None
     )
-    if not isinstance(legacy, dict):
+    has_legacy_semantic_pack = isinstance(legacy, dict)
+    if not has_legacy_semantic_pack:
         legacy = {
             "format": "aetnamem-context-pack-v1",
             "stable_context": "",
@@ -39,8 +40,23 @@ def compile_context(
             "reference_mode": "compact",
         }
 
-    stable_parts = [str(legacy.get("stable_context") or "")]
-    dynamic_parts = [str(legacy.get("dynamic_context") or "")]
+    stable_parts: list[tuple[str, str]] = [
+        ("semantic", str(legacy.get("stable_context") or ""))
+    ]
+    dynamic_parts: list[tuple[str, str]] = [
+        ("semantic", str(legacy.get("dynamic_context") or ""))
+    ]
+    if (
+        semantic is not None
+        and semantic.content
+        and not has_legacy_semantic_pack
+    ):
+        target = (
+            stable_parts
+            if semantic.placement == "stable_system_prefix"
+            else dynamic_parts
+        )
+        target.append(("semantic", semantic.content))
     for plane in PLANE_NAMES:
         if plane == "semantic":
             continue
@@ -48,15 +64,38 @@ def compile_context(
         if contribution is None or not contribution.content:
             continue
         if contribution.placement == "stable_system_prefix":
-            stable_parts.append(contribution.content)
+            stable_parts.append((plane, contribution.content))
         else:
-            dynamic_parts.append(contribution.content)
+            dynamic_parts.append((plane, contribution.content))
 
     total_budget = max(0, int(budgets.get("total_chars", 5000)))
-    stable = "\n\n".join(part for part in stable_parts if part)
-    stable = stable[:total_budget]
+    stable, stable_exposure = _compile_segments(
+        stable_parts, budget=total_budget, placement="stable_system_prefix"
+    )
     dynamic_budget = max(0, total_budget - len(stable))
-    dynamic = "\n\n".join(part for part in dynamic_parts if part)[:dynamic_budget]
+    dynamic, dynamic_exposure = _compile_segments(
+        dynamic_parts, budget=dynamic_budget, placement="current_turn_tail"
+    )
+    exposure = stable_exposure + dynamic_exposure
+    if cml_manifest is not None and cml_manifest.get("require_full_exposure"):
+        expected = {
+            item.plane for item in contributions if item.content.strip()
+        }
+        observed = {item["plane"] for item in exposure}
+        missing = sorted(expected - observed)
+        if missing:
+            raise ValueError(
+                "benchmark compiler did not expose assigned planes: "
+                + ", ".join(missing)
+            )
+        truncated = sorted(
+            {item["plane"] for item in exposure if not item["fully_exposed"]}
+        )
+        if truncated:
+            raise ValueError(
+                "benchmark context budget truncated assigned planes: "
+                + ", ".join(truncated)
+            )
 
     manifest = {
         "run_id": run_id,
@@ -73,6 +112,7 @@ def compile_context(
         ],
         "degraded_planes": sorted(degraded_planes),
         "budgets": budgets,
+        "exposure": exposure,
     }
     if cml_manifest is not None:
         manifest["cml"] = cml_manifest
@@ -102,3 +142,34 @@ def compile_context(
         result["cml"] = cml_manifest
     result["manifest_sha256"] = sha256_hex(canonical_json(manifest))
     return result
+
+
+def _compile_segments(
+    segments: list[tuple[str, str]], *, budget: int, placement: str
+) -> tuple[str, list[dict[str, Any]]]:
+    output = ""
+    evidence: list[dict[str, Any]] = []
+    for plane, content in segments:
+        if not content:
+            continue
+        separator = "\n\n" if output else ""
+        remaining = max(0, budget - len(output))
+        separator_part = separator[:remaining]
+        content_remaining = max(0, remaining - len(separator_part))
+        exposed = content[:content_remaining]
+        start = len(output) + len(separator_part)
+        output += separator_part + exposed
+        evidence.append(
+            {
+                "plane": plane,
+                "placement": placement,
+                "source_sha256": sha256_hex(content),
+                "source_chars": len(content),
+                "exposed_sha256": sha256_hex(exposed),
+                "exposed_chars": len(exposed),
+                "start": start,
+                "end": start + len(exposed),
+                "fully_exposed": len(exposed) == len(content),
+            }
+        )
+    return output, evidence

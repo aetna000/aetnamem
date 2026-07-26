@@ -434,6 +434,12 @@ def main() -> None:
     ):
         command_parser = runtime_commands.add_parser(name, help=help_text)
         command_parser.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
+        if name == "mcp":
+            command_parser.add_argument(
+                "--impact-restricted",
+                action="store_true",
+                help="Expose no memory or outcome tools to the experimental agent",
+            )
 
     runtime_prepare = runtime_commands.add_parser(
         "prepare", help="Compile four memory planes for one agent turn"
@@ -479,6 +485,59 @@ def main() -> None:
     runtime_forget_selector = runtime_forget.add_mutually_exclusive_group(required=True)
     runtime_forget_selector.add_argument("--contains", default=None)
     runtime_forget_selector.add_argument("--utterance", default=None)
+
+    impact_parser = subparsers.add_parser(
+        "impact", help="Run registered Memory Impact experiments"
+    )
+    impact_commands = impact_parser.add_subparsers(
+        dest="impact_command", required=True
+    )
+    impact_init = impact_commands.add_parser(
+        "init", help="Create a reproducible 16-arm Memory Impact Lab"
+    )
+    impact_init.add_argument("path", nargs="?", default="bench/causal_memory")
+
+    impact_run = impact_commands.add_parser(
+        "run", help="Run a gated synthetic, Grok training, or held-out stage"
+    )
+    impact_run.add_argument("--protocol", required=True)
+    impact_run.add_argument(
+        "--stage",
+        choices=("synthetic", "grok-smoke", "grok-train", "grok-held-out"),
+        default="synthetic",
+    )
+    impact_run.add_argument("--simulations", type=int, default=500)
+    impact_run.add_argument("--blocks", type=int, default=80)
+    impact_run.add_argument(
+        "--max-new-runs",
+        type=int,
+        default=None,
+        help="Stop after this many newly completed model runs",
+    )
+    impact_run.add_argument("--signing-key", default=None)
+    impact_run.add_argument(
+        "--confirm-paid-run",
+        action="store_true",
+        help="Required for stages that invoke the configured model",
+    )
+
+    impact_verify = impact_commands.add_parser(
+        "verify", help="Verify assignments, artifacts, and signed host outcomes"
+    )
+    impact_verify.add_argument("results")
+    impact_verify.add_argument("--public-key", required=True)
+    impact_verify.add_argument(
+        "--seed-file",
+        default=None,
+        help="After experiment close, verify every HMAC assignment token",
+    )
+
+    impact_report = impact_commands.add_parser(
+        "report", help="Build a human-readable Memory Impact HTML report"
+    )
+    impact_report.add_argument("results")
+    impact_report.add_argument("--public-key", required=True)
+    impact_report.add_argument("--output", required=True)
 
     actions_parser = subparsers.add_parser(
         "actions", help="Stage, approve, execute, and verify guarded actions"
@@ -599,6 +658,10 @@ def main() -> None:
 
     if args.command == "runtime":
         _run_runtime(args)
+        return
+
+    if args.command == "impact":
+        _run_impact(args)
         return
 
     if args.command == "index":
@@ -1116,11 +1179,250 @@ def _run_runtime(args: argparse.Namespace) -> None:
                 runtime.memory,
                 default_subject=runtime.default_scope.subject_id,
                 runtime=runtime,
+                tool_profile=(
+                    "impact-restricted"
+                    if args.impact_restricted
+                    else "full"
+                ),
             ).serve()
             return
         raise ValueError(f"unknown runtime command: {args.runtime_command}")
     finally:
         runtime.close()
+
+
+def _run_impact(args: argparse.Namespace) -> None:
+    from aetnamem.impact.allocation import BalancedFactorialAllocator
+    from aetnamem.impact.controller import ImpactController, run_paid_smoke_check
+    from aetnamem.impact.lab import init_lab, load_signer
+    from aetnamem.impact.metrology import inspect_cli, write_metrology
+    from aetnamem.impact.policy import (
+        evaluate_held_out,
+        freeze_policy,
+        write_policy,
+    )
+    from aetnamem.impact.protocol import load_protocol
+    from aetnamem.impact.report import write_report
+    from aetnamem.impact.synthetic import run_calibration, write_calibration
+    from aetnamem.impact.tasks import load_task
+    from aetnamem.impact.verify import (
+        load_result_rows,
+        verify_experiment,
+    )
+
+    if args.impact_command == "init":
+        _print(init_lab(args.path))
+        return
+    if args.impact_command == "verify":
+        revealed_seed = (
+            Path(args.seed_file).read_text(encoding="utf-8").strip()
+            if args.seed_file
+            else None
+        )
+        result = verify_experiment(
+            args.results,
+            public_key_path=args.public_key,
+            revealed_seed=revealed_seed,
+        )
+        _print(result)
+        if not result["valid"]:
+            raise SystemExit(1)
+        return
+    if args.impact_command == "report":
+        verification = verify_experiment(
+            args.results, public_key_path=args.public_key
+        )
+        rows = load_result_rows(args.results)
+        calibration_path = Path(args.results) / "synthetic-calibration.json"
+        calibration = (
+            json.loads(calibration_path.read_text(encoding="utf-8"))
+            if calibration_path.is_file()
+            else None
+        )
+        write_report(args.output, rows, verification, calibration)
+        _print(
+            {
+                "created": str(Path(args.output).resolve()),
+                "runs": len(rows),
+                "verified": verification["valid"],
+            }
+        )
+        return
+    if args.impact_command != "run":
+        raise ValueError(f"unknown impact command: {args.impact_command}")
+
+    protocol_path = Path(args.protocol).resolve()
+    protocol = load_protocol(protocol_path)
+    results = (protocol_path.parent / protocol.results_dir).resolve()
+    results.mkdir(parents=True, exist_ok=True)
+    if args.stage == "synthetic":
+        result = run_calibration(
+            simulations=args.simulations,
+            blocks=args.blocks,
+        )
+        output = results / "synthetic-calibration.json"
+        write_calibration(output, result)
+        _print({**result, "output": str(output)})
+        if not result["passed"]:
+            raise SystemExit(1)
+        return
+    if not args.confirm_paid_run:
+        raise ValueError(
+            "Grok stages may incur provider cost; rerun with --confirm-paid-run"
+        )
+    if args.max_new_runs is not None and args.max_new_runs <= 0:
+        raise ValueError("--max-new-runs must be positive")
+    smoke_path = results / "paid-smoke.json"
+    if args.stage == "grok-smoke":
+        smoke = run_paid_smoke_check(protocol, output_path=smoke_path)
+        _print(smoke)
+        if not smoke["passed"]:
+            raise SystemExit(1)
+        return
+    if not smoke_path.is_file():
+        raise ValueError(
+            "paid Grok smoke gate has not passed; run stage grok-smoke first"
+        )
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    if (
+        not smoke.get("passed")
+        or smoke.get("protocol_sha256") != protocol.digest
+    ):
+        raise ValueError("paid Grok smoke gate is invalid for this protocol")
+
+    tasks = [
+        load_task(protocol_path.parent / relative)
+        for relative in protocol.task_files
+    ]
+    registered_tasks = results / "registered-tasks"
+    registered_tasks.mkdir(exist_ok=True)
+    for task in tasks:
+        destination = registered_tasks / f"{task.task_id}.json"
+        serialized = json.dumps(task.raw, indent=2, sort_keys=True) + "\n"
+        if destination.exists() and destination.read_text(encoding="utf-8") != serialized:
+            raise ValueError(f"registered task changed after scheduling: {task.task_id}")
+        destination.write_text(serialized, encoding="utf-8")
+    allocator = BalancedFactorialAllocator(
+        experiment_id=protocol.experiment_id,
+        seed=str(protocol.raw["randomization"]["seed"]),
+    )
+    assignments = allocator.schedule(
+        [task.task_id for task in tasks], repetitions=protocol.repetitions
+    )
+    signing_key = Path(
+        args.signing_key or protocol_path.parent / ".impact-host-key.pem"
+    ).resolve()
+    signer = load_signer(signing_key, key_id="memory-impact-host")
+    assignments_path = results / "assignments.json"
+    registration_path = results / "registration.json"
+    serialized_assignments = [item.to_dict() for item in assignments]
+    if assignments_path.exists():
+        if json.loads(assignments_path.read_text(encoding="utf-8")) != serialized_assignments:
+            raise ValueError("existing assignment schedule differs from protocol")
+    else:
+        assignments_path.write_text(
+            json.dumps(serialized_assignments, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    schedule_sha256 = assignments[0].schedule_sha256
+    registration = {
+        **protocol.public_registration(),
+        "schedule_sha256": schedule_sha256,
+        "signing_key_id": signer.key_id,
+    }
+    if registration_path.exists():
+        if json.loads(registration_path.read_text(encoding="utf-8")) != registration:
+            raise ValueError("existing experiment registration differs from protocol")
+    else:
+        registration_path.write_text(
+            json.dumps(registration, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    metrology = inspect_cli(
+        str(protocol.raw["model"]["command"]),
+        model=str(protocol.raw["model"]["name"]),
+        arguments=[
+            *[str(value) for value in protocol.raw["model"]["arguments"]],
+            "--max-turns",
+            "--session-id",
+            "--single",
+        ],
+        cwd=protocol_path.parent,
+    )
+    write_metrology(results / "metrology.json", metrology)
+    if not metrology["available"]:
+        raise ValueError("configured Grok CLI is not available")
+    if not metrology["model_advertised"]:
+        raise ValueError(
+            "configured model is not advertised by the authenticated Grok CLI"
+        )
+    missing_controls = [
+        name for name, present in metrology["controls"].items() if not present
+    ]
+    if missing_controls:
+        raise ValueError(
+            "Grok CLI does not advertise registered isolation controls: "
+            + ", ".join(missing_controls)
+        )
+
+    rows = load_result_rows(results)
+    if args.stage == "grok-held-out":
+        if any(row.get("task_split") == "held-out" for row in rows):
+            raise ValueError("held-out outcomes already exist; refusing to refit policy")
+        policy = freeze_policy(
+            rows,
+            max_mean_context_chars=float(
+                protocol.raw["budgets"]["max_context_chars"]
+            ),
+        )
+        write_policy(results / "frozen-policy.json", policy)
+        selected_split = "held-out"
+    else:
+        policy = None
+        selected_split = None
+
+    controller = ImpactController(
+        protocol,
+        output_root=results,
+        signer=signer,
+        signature_verifier=signer.verifier(),
+        metrology=metrology,
+    )
+    tasks_by_id = {task.task_id: task for task in tasks}
+    selected_tasks = {
+        task.task_id
+        for task in tasks
+        if (
+            task.split == "held-out"
+            if selected_split == "held-out"
+            else task.split in {"train", "validation"}
+        )
+    }
+    completed = {row["run_id"] for row in rows}
+    created = 0
+    for assignment in assignments:
+        if args.max_new_runs is not None and created >= args.max_new_runs:
+            break
+        if assignment.task_id not in selected_tasks or assignment.run_id in completed:
+            continue
+        controller.run_assignment(tasks_by_id[assignment.task_id], assignment)
+        created += 1
+    response: dict[str, Any] = {
+        "stage": args.stage,
+        "created_runs": created,
+        "results": str(results),
+        "schedule_sha256": schedule_sha256,
+        "max_new_runs": args.max_new_runs,
+    }
+    if policy is not None:
+        final_rows = load_result_rows(results)
+        held_out = evaluate_held_out(final_rows, policy)
+        (results / "held-out-evaluation.json").write_text(
+            json.dumps(held_out, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        response["held_out"] = held_out
+    _print(response)
 
 
 def _run_actions(args: argparse.Namespace) -> None:

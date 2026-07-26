@@ -7,11 +7,11 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-25**:
+Status as of **2026-07-26**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 17-tool MCP | Public release (`v0.5.2`) | Existing compatibility surface remains supported; two media tools were added without changing the 15 earlier contracts |
+| Python `Memory`, CLI, and 17-tool MCP | Public release (`v0.6.0`) | Existing compatibility surface remains supported; Memory Impact is an additive CLI/runtime package |
 | Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
 | MCP media tools | Public (`v0.5.2`) | `memory_observe` and `memory_forget_artifact` add governed multimodal observations |
 | Four-memory runtime | Public, opt-in (`v0.5.2`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
@@ -21,14 +21,15 @@ Status as of **2026-07-25**:
 | Semantic index deletion | Public, opt-in (`v0.5.1`) | Vector-aware v2 deletion receipt, strict absence verification, and dirty-epoch rebuild signal |
 | CML `off` mode | Public default | Legacy runtime-pack v1 behavior remains unchanged |
 | CML `shadow` mode | Experimental | Records deterministic Bernoulli assignments but shows all candidate contributions |
-| CML `experiment` mode | Experimental, benchmark-only | May withhold explicitly eligible planes; pinned and ineligible planes remain present |
-| CML intervention ledger | Public experimental surface | Stores candidate hashes, assigned/applied state, propensities, arm IDs, stratum, seed commitment, and policy identity before context compilation |
-| CML outcome binding | Public experimental surface | CML outcomes must cite the committed context-manifest digest; structured metrics and trust labels are stored |
+| CML `experiment` mode | Experimental, benchmark-only | Bernoulli mode remains compatible; registered balanced-factorial mode applies one precommitted arm and fails closed on token or exposure mismatch |
+| CML intervention ledger | Public experimental surface | Stores candidate hashes, assigned/applied state, propensities, arm IDs, stratum, seed commitment, policy identity and balanced schedule binding before context compilation |
+| CML outcome binding | Public experimental surface | Caller assertions remain labeled; `host_attested` now requires a valid signed Memory Impact receipt bound to the committed manifest |
 | Generic runtime MCP outcome trust | Caller asserted | MCP transport alone does not authenticate the host or prove task success |
-| Causal estimators and confidence intervals | Planned | No causal-effect report is shipped yet |
-| Synthetic planted-effect benchmark | Planned | The identification thesis has not yet passed its falsification gate |
-| Grok CLI reference study | Planned | Existing Grok demos show integration behavior, not causal improvement |
-| Held-out outcome-per-cost policy | Planned | No production policy should claim learned causal optimization yet |
+| Memory Impact restricted MCP profile | Implemented (`v0.6.0`) | Experimental agent receives no AetnaMem memory or outcome tools; context and verification remain host-controlled |
+| Factorial estimators and confidence intervals | Implemented experimental framework (`v0.6.0`) | Reports ITT plane effects, pairwise interactions, 16 arm rates, cost, tokens, latency and missing runs |
+| Synthetic planted-effect benchmark | Implemented executable gate (`v0.6.0`) | Repeated calibration checks error, direction, interval coverage, null false positives and a confounded observational comparison |
+| Grok CLI reference study | 100-run exploratory recovery pilot complete | Controller, paid edit smoke gate, task schema, metrology, cloning, receipts and report pipeline are implemented. After a 256-call instrumentation-failure study, a corrected capped pilot produced 100 verified receipts, 57 successes and six complete balanced blocks at USD 8.3339928 plus a USD 0.016532 smoke. The all-four arm was 6/6 versus no-memory 1/6, but 284 registered runs remain missing, no held-out policy was run, and no causal product claim is supported |
+| Held-out outcome-per-cost policy | Implemented gate; result pending | Policy is frozen from training receipts before held-out runs; no production adaptive behavior or winning claim ships |
 | Remote memory-plane transport | Planned | The reference runtime is embedded and SQLite-backed |
 
 ## Safety defaults
@@ -48,11 +49,12 @@ Status as of **2026-07-25**:
 
 ## Claims boundary
 
-Implemented instrumentation is not evidence of improvement. AetnaMem can now
-commit an intervention before compilation and join a reported outcome to that
-manifest. It cannot yet claim that CML improves success, cost, latency, or
-safety until the planned synthetic-identification and held-out real-agent
-experiments pass.
+Implemented experimental machinery is not evidence of improvement. AetnaMem
+can precommit balanced interventions, prove exact exposure, accept signed host
+outcomes, calibrate its estimator and freeze a policy before held-out
+evaluation. It cannot claim that memory improves Grok success, cost, latency,
+or safety until a registered paid trial, held-out evaluation and replication
+pass.
 
 The existing MemoryStackBench and OpenClaw token/cost results remain useful
 for their stated scopes. They are not CML causal results.
@@ -66,7 +68,8 @@ for their stated scopes. They are not CML causal results.
 | Multimodal observation boundary | [`multimodal-observations.md`](multimodal-observations.md) |
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
-| Current release notes | [`releases/v0.5.2.md`](releases/v0.5.2.md) |
+| Memory Impact experiment guide | [`memory-impact.md`](memory-impact.md) |
+| Current release notes | [`releases/v0.6.0.md`](releases/v0.6.0.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

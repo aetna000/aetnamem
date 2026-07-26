@@ -360,6 +360,25 @@ def test_base_mcp_catalog_and_runtime_tools_are_opt_in(tmp_path: Path) -> None:
             "memory_prepare_turn",
             "memory_record_outcome",
         ]
+        restricted = MCPServer(
+            runtime.memory,
+            default_subject="alice",
+            runtime=runtime,
+            tool_profile="impact-restricted",
+        )
+        restricted_tools = restricted.handle(
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/list"}
+        )
+        assert restricted_tools["result"]["tools"] == []
+        bypass = restricted.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "memory_recall", "arguments": {"query": "x"}},
+            }
+        )
+        assert bypass["error"]["code"] == -32602
     finally:
         memory.close()
         runtime.close()
@@ -404,7 +423,7 @@ def test_release_versions_are_consistent() -> None:
     project_version = re.search(
         r"(?m)^version = \"([^\"]+)\"$", project_text
     )
-    assert project_version and project_version.group(1) == "0.5.2"
+    assert project_version and project_version.group(1) == "0.6.0"
     package = json.loads((root / "integrations/openclaw/package.json").read_text())
     lock = json.loads((root / "integrations/openclaw/package-lock.json").read_text())
     manifest = json.loads(

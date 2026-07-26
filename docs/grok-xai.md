@@ -1,6 +1,7 @@
 # Grok/xAI integration
 
-Status: **implemented tool-calling integration; CML Grok study still planned**
+Status: **implemented tool-calling integration; corrected 100-run exploratory
+Memory Impact pilot complete; no general causal claim**
 
 `aetnamem` works with Grok through xAI tool calling today: Grok chooses a
 memory tool, your app executes it locally against `aetnamem`, and the result
@@ -28,11 +29,48 @@ This is intentionally not a separate Grok memory backend. It is Grok using
 `aetnamem` as an auditable external tool layer.
 
 The playground and memory game demonstrate integration behavior. They are not
-evidence that memory causally improved Grok. The experimental CML foundation
-and the planned frozen Grok CLI study are separated in the
-[current status](current-status.md) and [`plan.md`](../plan.md).
+evidence that memory causally improved Grok. Version 0.6.0 implements the
+separate registered Memory Impact controller, balanced task suite, hidden host
+verification and held-out policy gate. A corrected paid pilot completed 100
+registered calls with 57 verified successes and six complete balanced blocks.
+The all-four arm was 6/6 and no-memory was 1/6. The schedule was deliberately
+capped, no held-out policy was tested, and this does not prove general agent
+improvement. See the [Memory Impact guide](memory-impact.md),
+[100-run pilot evidence summary](../bench/causal_memory/reports/grok-4.5-100-run-pilot-2026-07-26.md),
+[current status](current-status.md), and [`plan.md`](../plan.md).
 
-## Local playground
+## Configure Grok CLI in four steps
+
+Install AetnaMem and create a balanced local four-memory configuration:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+aetnamem setup --yes --preset starter --subject you \
+  --agent grok-primary --skill-path ~/.grok/skills
+```
+
+Connect that runtime to Grok as a local MCP server:
+
+```bash
+grok mcp add --scope user aetnamem -- \
+  aetnamem runtime mcp --config ~/.aetnamem/runtime.json
+grok mcp doctor
+```
+
+The `starter` preset enables bounded working, semantic, episodic and procedural
+contributions. It keeps experimental withholding off. Ask Grok to call
+`memory_prepare_turn` before tasks that depend on preferences, prior attempts,
+current progress or skills, and to call `memory_record_outcome` after the host
+has determined success or failure. The outcome supplied through ordinary MCP
+is honestly labeled `caller_asserted`; only a separately trusted verifier can
+create `host_attested` evidence.
+
+This setup can improve the context available to Grok; it is not a performance
+guarantee. Use `private` for a smaller context budget, `team` for a trusted
+multi-agent host, or the registered `aetnamem impact` workflow when you want
+to measure improvement rather than assume it.
+
+## xAI API playground
 
 From a checkout:
 
@@ -106,5 +144,3 @@ tool like:
 Use `allowed_tools` deliberately. For a first public demo, expose only
 `memory_recall`, `memory_forget`, `memory_audit`, and `memory_verify`; add
 write tools after auth, rate limits, and audit anchoring are in place.
-
-
