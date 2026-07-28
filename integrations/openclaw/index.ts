@@ -29,7 +29,7 @@ import { runSetup } from "./src/setup.js";
 
 const TAG = "[memory-aetnamem]";
 const INJECT_RE =
-  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory)>\s*/g;
+  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch)>\s*/g;
 const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface PluginConfig {
@@ -54,6 +54,10 @@ interface PluginConfig {
     runtimeConfig: string;
     fallback: "legacy" | "none";
   };
+  safeSwitch: {
+    enabled: boolean;
+    statePath: string;
+  };
 }
 
 function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
@@ -71,13 +75,21 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
         ? ("none" as const)
         : ("legacy" as const),
   };
+  const safeSwitch = {
+    enabled: cfg.safeSwitch?.enabled === true,
+    statePath: expandHome(
+      String(cfg.safeSwitch?.statePath ?? "~/.aetnamem/safe-switch.json"),
+    ),
+  };
   return {
     command: String(cfg.command ?? "aetnamem"),
-    commandArgs: Array.isArray(cfg.commandArgs)
-      ? cfg.commandArgs.map(String)
-      : orchestration.enabled
-        ? ["runtime", "mcp", "--config", orchestration.runtimeConfig]
-        : ["mcp", "--db", dbPath, "--subject", subject],
+    commandArgs: safeSwitch.enabled
+      ? ["trial", "mcp", "--state", safeSwitch.statePath]
+      : Array.isArray(cfg.commandArgs)
+        ? cfg.commandArgs.map(String)
+        : orchestration.enabled
+          ? ["runtime", "mcp", "--config", orchestration.runtimeConfig]
+          : ["mcp", "--db", dbPath, "--subject", subject],
     dbPath,
     subject,
     recall: {
@@ -102,6 +114,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
     },
     tools: { enabled: cfg.tools?.enabled !== false },
     orchestration,
+    safeSwitch,
   };
 }
 
@@ -146,7 +159,13 @@ function register(api: OpenClawPluginApi): void {
   // without the injected memory block.
   const pendingPrompts = new Map<
     string,
-    { text: string; ts: number; runId?: string; manifestSha256?: string }
+    {
+      text: string;
+      ts: number;
+      runId?: string;
+      manifestSha256?: string;
+      exposureId?: string;
+    }
   >();
 
   api.registerCli?.(
@@ -223,6 +242,40 @@ function register(api: OpenClawPluginApi): void {
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
+
+    if (cfg.safeSwitch.enabled) {
+      try {
+        const prepared = (await client.callTool(
+          "trial_prepare",
+          { query: userText, session_id: sessionKey },
+          cfg.recall.timeoutMs,
+        )) as {
+          inject?: boolean;
+          context?: string;
+          exposure_id?: string;
+          mode?: string;
+        };
+        pendingPrompts.set(sessionKey, {
+          text: userText,
+          ts: Date.now(),
+          exposureId: prepared.exposure_id,
+        });
+        if (prepared.inject && prepared.context) {
+          api.logger.info(
+            `${TAG} Safe Switch ${prepared.mode ?? "active"} context exposed`,
+          );
+          return { appendContext: prepared.context };
+        }
+        return;
+      } catch (error) {
+        api.logger.warn(
+          `${TAG} Safe Switch failed closed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
 
     if (cfg.orchestration.enabled) {
       try {
@@ -335,6 +388,27 @@ function register(api: OpenClawPluginApi): void {
     const userText = cached?.text?.replace(INJECT_RE, "").trim();
 
     try {
+      if (cfg.safeSwitch.enabled) {
+        if (cached?.exposureId) {
+          await client.callTool(
+            "trial_exposure_shown",
+            { exposure_id: cached.exposureId },
+            cfg.recall.timeoutMs,
+          );
+        }
+        if (event.success !== false && userText) {
+          await client.callTool(
+            "trial_capture",
+            {
+              message: userText,
+              session_id: sessionKey,
+              authenticated_user: true,
+            },
+            cfg.recall.timeoutMs,
+          );
+        }
+        return;
+      }
       if (cfg.capture.enabled && event.success !== false && userText) {
         await client.callTool("memory_capture", {
           role: "user",
@@ -399,7 +473,8 @@ function register(api: OpenClawPluginApi): void {
       text.includes("<user_persona>") ||
       text.includes("<working_memory>") ||
       text.includes("<episodic_memory>") ||
-      text.includes("<procedural_memory>");
+      text.includes("<procedural_memory>") ||
+      text.includes("<aetnamem_safe_switch>");
     if (typeof message.content === "string") {
       if (!hasInjection(message.content)) return;
       const cleaned = message.content.replace(INJECT_RE, "").trim();
@@ -418,7 +493,7 @@ function register(api: OpenClawPluginApi): void {
   });
 
   // ---- agent-callable tools ----------------------------------------------
-  if (cfg.tools.enabled) {
+  if (cfg.tools.enabled && !cfg.safeSwitch.enabled) {
     api.registerTool(
       {
         name: "aetnamem_search",
@@ -630,7 +705,7 @@ function register(api: OpenClawPluginApi): void {
   api.logger.info(
     `${TAG} registered (db=${cfg.dbPath}, subject=${cfg.subject}, ` +
       `recall=${cfg.recall.enabled}, capture=${cfg.capture.enabled}, ` +
-      `fourMemory=${cfg.orchestration.enabled})`,
+      `fourMemory=${cfg.orchestration.enabled}, safeSwitch=${cfg.safeSwitch.enabled})`,
   );
 }
 

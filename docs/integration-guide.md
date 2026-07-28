@@ -1,8 +1,8 @@
 # Integration guide: CLI and MCP
 
-Repository version boundary: Python `v0.6.0` and OpenClaw npm `v0.3.1` are
-compatible public releases. Memory Impact/CML measurement modes remain
-experimental and default off.
+Repository version boundary: Python `v0.6.1` and OpenClaw npm `v0.4.0` are
+compatible public releases. Safe Switch is an opt-in beta; Memory Impact/CML
+measurement modes remain research surfaces and default off.
 See [current capability status](current-status.md).
 
 aetnamem has compatibility surfaces around `Memory` plus the opt-in
@@ -17,6 +17,7 @@ four-memory runtime. Pick by what your host can do:
 | memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
 | four-memory Python runtime (`from aetnamem.runtime import MemoryRuntime`) | your host wants one coordinator for all four memory types | v0.5 |
 | runtime MCP server (`aetnamem runtime mcp`) | your MCP host wants the complete prepare/outcome loop | v0.5 |
+| Safe Switch (`aetnamem trial`) | a local OpenClaw/Hermes user wants capture and preview before context injection | v0.6.1 beta |
 
 Collaborative decisions are an opt-in Python SDK and add nothing to the
 default memory MCP catalog. Authentication, the HTTP server, and the user

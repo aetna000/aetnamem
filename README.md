@@ -5,20 +5,21 @@
 <h1 align="center">aetnamem</h1>
 
 <p align="center">
-  <strong>AetnaMem remembers whether remembering actually helped.</strong><br>
-  Four governed memory planes, one agent connection, and an experimental evidence loop.
+  <strong>Try governed memory beside your agent. Switch only after you inspect it.</strong><br>
+  Reversible memory trials for OpenClaw and Hermes, backed by auditable evidence.
 </p>
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-315A7D?style=flat-square">
+  <img alt="Version 0.6.1" src="https://img.shields.io/badge/version-0.6.1-315A7D?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="#give-openclaw-four-kinds-of-memory">OpenClaw quick start</a> &middot;
+  <a href="#try-aetnamem-without-replacing-your-current-memory">Safe Switch</a> &middot;
+  <a href="./docs/safe-switch.md">Safe Switch guide</a> &middot;
   <a href="./docs/current-status.md">Current status</a> &middot;
   <a href="./docs/multimodal-observations.md">Multimodal observations</a> &middot;
   <a href="./docs/memory-impact.md">Memory Impact Lab</a> &middot;
@@ -33,32 +34,84 @@
   <a href="./TODO.md">Roadmap</a>
 </p>
 
-AetnaMem is a local-first memory runtime and evidence layer for agents. Instead of making an
-OpenClaw user configure four databases or four tools, AetnaMem coordinates all
-four kinds of memory behind one connection and gives the agent one bounded
-context pack. Its experimental Causal Memory Ledger (CML) records which
-eligible memory contributions were assigned, which were actually shown, and
-which outcome was later reported. That is the foundation for testing whether
-memory earned its context cost rather than assuming that retrieval was useful.
+AetnaMem is a local-first memory and evidence layer for agents. Version
+**0.6.1** adds **Safe Switch (beta)**: install it beside an existing OpenClaw
+or Hermes setup, collect candidate memories without changing the model's
+context, inspect exactly what AetnaMem would recall, try a limited canary, and
+turn it off through one local state file.
 
-The current release is **Python v0.6.0** with the compatible
-**OpenClaw plugin v0.3.1**. Version 0.6.0 adds the default-off
-**Memory Impact Lab**: balanced 16-arm allocation, exact exposure evidence,
-isolated SQLite/workspace clones, signed host outcomes, planted-effect
-calibration, factorial estimates and reports, plus a frozen held-out policy
-gate. The generic Python, CLI, MCP and OpenClaw memory surfaces remain
-compatible. This release ships the reproducible experiment—not a claim that
-memory has already improved Grok. A 2026-07-26 starter attempt stopped before
-held-out execution; its postmortem exposed a headless editing configuration
-failure, which is now guarded by a one-call paid smoke stage. A fresh paid
-100-run recovery pilot produced 57 verified successes and promising
-exploratory arm differences, but only six balanced blocks and no held-out
-evaluation. A complete paid trial, held-out result and second-model replication
-must still be executed and verified. See
-[current capability status](./docs/current-status.md) before relying on a
-development feature.
+The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
+and normal OpenClaw integration remain compatible. The matching OpenClaw
+plugin is **0.4.0**.
 
-## Prove whether memory helped
+## Try AetnaMem without replacing your current memory
+
+For OpenClaw:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+aetnamem trial start --host auto
+aetnamem trial dashboard
+```
+
+`--host auto` means “detect exactly one supported agent executable on this
+machine.” It fails and asks you to choose if both OpenClaw and Hermes are
+installed; it never guesses. The beginner flow has no `--subject`: candidate
+memory is scoped internally as `local-user`. Applications with real tenant
+identity should continue using the explicit Python/MCP subject boundary.
+
+The trial moves through visible modes:
+
+| Mode | What AetnaMem does | Does it change the agent's context? |
+|---|---|---|
+| `capture` | Extracts candidate facts from authenticated user turns into a separate trial database | **No** |
+| `preview` | Shows what it would recall; only user-approved candidates are eligible | **No** |
+| `canary` | Supplies approved context for a fixed number of turns | **Yes, limited** |
+| `active` | Supplies approved context on eligible turns | **Yes** |
+| `off` | Stops capture and injection through the local control file | **No** |
+
+Important: capture stores normalized candidate facts and a source digest, not
+the raw user message. It does not expose memory tools to the agent. A missing,
+corrupt, or tampered trial state fails closed to `off`.
+
+```bash
+aetnamem trial status
+aetnamem trial candidates
+aetnamem trial approve tc_...
+aetnamem trial preview
+aetnamem trial canary --turns 10  # asks you to type the detected host name
+aetnamem trial off       # immediate stop; host keeps running
+aetnamem trial rollback  # stop, then restore the saved host plugin config
+```
+
+`off` affects future AetnaMem capture and context injection. `rollback` also
+restores the host configuration snapshot. Neither command deletes trial
+evidence, reverses past agent outputs, or deletes provider logs.
+
+The dashboard labels what is measured. Candidate counts, preview contents,
+context size, exposure counts, config digests, and chain verification are
+local evidence. They do **not** prove that answers improved. The checked-in
+OpenClaw benchmark is reference evidence, not a measurement of your
+installation. A paid paired-replay comparison remains a separate explicit
+operation; AetnaMem never spends provider money merely because it was
+installed.
+
+Read the [Safe Switch guide](./docs/safe-switch.md) for host-specific details
+and exact rollback boundaries.
+
+## What is product, beta, and research?
+
+| Maturity | Capabilities | How to treat them |
+|---|---|---|
+| **Released core** | Python/CLI/MCP memory, provenance and quarantine, correction, deletion receipts, audit search/trace | Supported public interfaces; still follow the documented host and identity boundaries |
+| **Beta, opt-in** | Safe Switch, four-memory orchestration, semantic investigator sidecar, multimodal text observations, graph recall, Guarded Actions | Useful and tested, but adopt deliberately and verify in your environment |
+| **Research** | Causal Memory Ledger / Memory Impact, 16-arm studies, learned memory-selection policy, EtD workflows | Reproducible machinery and exploratory evidence; not a general performance, clinical, or regulatory claim |
+
+This distinction is deliberate: “implemented” is not the same as “proven to
+improve every agent.”
+
+## Research: prove whether memory helped
 
 Create a complete local lab without changing normal agent behavior:
 
@@ -830,7 +883,7 @@ aetnamem graph-merges ./memories.db user-1 --status pending
 aetnamem graph-inspect ./memories.db user-1
 ```
 
-## What v0.5 is and is not
+## What the released core is and is not
 
 Semantic extraction is deterministic (generic sentence patterns: "my X is Y",
 "use Y as my X", "remember that …", "I avoid …") so that policy failures are
@@ -853,6 +906,11 @@ benchmark scenario.
 
 ## Documentation
 
+- **[0.6.1 release notes](./docs/releases/v0.6.1.md)** — Safe Switch beta for
+  observable capture, human-reviewed previews, bounded canary, fail-closed
+  modes, host snapshot/rollback, and OpenClaw/Hermes adapters.
+- **[Safe Switch guide](./docs/safe-switch.md)** — exact commands, mode
+  boundaries, host behavior, evidence meaning, and rollback limits.
 - **[0.6.0 release notes](./docs/releases/v0.6.0.md)** — reproducible Memory
   Impact Lab, balanced factorial allocation, signed host verification,
   synthetic calibration, reports and frozen held-out policy gate.

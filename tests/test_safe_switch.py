@@ -1,0 +1,276 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import threading
+from urllib.error import HTTPError
+from urllib.request import (
+    HTTPCookieProcessor,
+    Request,
+    build_opener,
+)
+from http.cookiejar import CookieJar
+
+import pytest
+
+from aetnamem.trial import TrialManager, TrialMode
+from aetnamem.trial.server import TrialMCPServer
+
+
+def _manager(tmp_path: Path) -> TrialManager:
+    return TrialManager.start(
+        host="openclaw",
+        state_path=tmp_path / "state.json",
+        trial_root=tmp_path / "trials",
+    )
+
+
+def test_capture_preview_canary_and_active_are_separate_gates(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+
+    captured = manager.capture(
+        "Remember that my preferred editor is Neovim.",
+        session_id="session-1",
+        authenticated_user=True,
+    )
+    assert captured["captured"] == 1
+    assert captured["raw_message_stored"] is False
+
+    # Capture mode can neither preview nor inject.
+    assert manager.prepare("Which editor?")["inject"] is False
+    candidate_id = captured["candidate_ids"][0]
+    manager.review([candidate_id], approve=True)
+    manager.transition(TrialMode.PREVIEW)
+
+    preview = manager.prepare("Which editor do I prefer?")
+    assert preview["inject"] is False
+    assert "Neovim" in preview["preview_context"]
+    assert preview["context"] == ""
+
+    manager.transition(TrialMode.CANARY, canary_turns=1)
+    canary = manager.prepare("Which editor do I prefer?")
+    assert canary["inject"] is True
+    assert canary["context"] == canary["preview_context"]
+    assert manager.confirm_exposure(canary["exposure_id"]) is True
+
+    capped = manager.prepare("Which editor do I prefer?")
+    assert capped["inject"] is False
+    assert capped["reason"] == "canary exposure limit reached"
+
+    active = manager.transition(TrialMode.ACTIVE)
+    assert active.mode is TrialMode.ACTIVE
+    assert manager.prepare("Which editor do I prefer?")["inject"] is True
+
+
+def test_capture_rejects_non_user_and_does_not_store_raw_prompt(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    raw = "Remember that my favorite color is ultraviolet."
+    rejected = manager.capture(
+        raw,
+        session_id="tool-session",
+        authenticated_user=False,
+    )
+    assert rejected["captured"] == 0
+
+    captured = manager.capture(
+        raw,
+        session_id="user-session",
+        authenticated_user=True,
+    )
+    assert captured["captured"] == 1
+    state = manager.state()
+    database_bytes = (Path(state.trial_dir) / "evidence.db").read_bytes()
+    assert raw.encode() not in database_bytes
+    assert b"ultraviolet" in database_bytes
+
+
+def test_corrupt_state_fails_closed(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    state_path.write_text('{"mode":"active"}', encoding="utf-8")
+    manager = TrialManager(state_path)
+    status = manager.status()
+    assert status["mode"] == "off"
+    assert status["changes_model_context"] is False
+    assert status["warning"]
+    assert manager.prepare("anything")["inject"] is False
+
+
+def test_transition_chain_detects_tampering(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    state = manager.state()
+    store = manager._store(state)
+    try:
+        store._conn.execute(
+            "UPDATE transitions SET actor = 'tampered' WHERE trial_id = ?",
+            (state.trial_id,),
+        )
+        store._conn.commit()
+    finally:
+        store.close()
+    status = manager.status()
+    assert status["evidence"]["transition_chain"]["valid"] is False
+    assert status["readiness"]["ready_for_preview"] is False
+
+
+def test_private_mcp_exposes_no_approval_or_mode_change_tools(
+    tmp_path: Path,
+) -> None:
+    server = TrialMCPServer(_manager(tmp_path))
+    response = server.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    )
+    names = {
+        item["name"] for item in response["result"]["tools"]  # type: ignore[index]
+    }
+    assert names == {
+        "trial_capture",
+        "trial_prepare",
+        "trial_exposure_shown",
+        "trial_status",
+    }
+    assert not any("approve" in name or "mode" in name for name in names)
+
+
+def test_state_digest_tampering_turns_integration_off(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    value = json.loads(manager.state_path.read_text(encoding="utf-8"))
+    value["mode"] = "active"
+    manager.state_path.write_text(json.dumps(value), encoding="utf-8")
+    state, warning = manager.effective_state()
+    assert state.mode is TrialMode.OFF
+    assert warning == "trial state digest mismatch"
+
+
+def test_openclaw_configuration_is_snapshotted_and_restored(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from aetnamem.trial.hosts import configure_host, restore_host
+
+    manager = _manager(tmp_path)
+    state = manager.state()
+    entry: dict[str, object] | None = {
+        "enabled": False,
+        "config": {"existing": "kept"},
+    }
+
+    def fake_run(arguments, **kwargs):
+        del kwargs
+        nonlocal entry
+        assert arguments[0] == "/fake/openclaw"
+        if arguments[1:3] == ["plugins", "inspect"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps(
+                    {
+                        "plugin": {
+                            "id": "memory-aetnamem",
+                            "version": "0.4.0",
+                        }
+                    }
+                ),
+                "",
+            )
+        operation = arguments[2]
+        key = arguments[3]
+        if operation == "get":
+            if key == "plugins.entries.memory-aetnamem":
+                if entry is None:
+                    return subprocess.CompletedProcess(arguments, 1, "", "missing")
+                return subprocess.CompletedProcess(
+                    arguments, 0, json.dumps(entry), ""
+                )
+            if key.endswith(".config.safeSwitch"):
+                value = (
+                    entry.get("config", {}).get("safeSwitch")  # type: ignore[union-attr]
+                    if entry
+                    else None
+                )
+                return subprocess.CompletedProcess(
+                    arguments, 0, json.dumps(value), ""
+                )
+        if operation == "set":
+            value = json.loads(arguments[4])
+            if key == "plugins.entries.memory-aetnamem":
+                entry = value
+            else:
+                assert entry is not None
+                suffix = key.removeprefix("plugins.entries.memory-aetnamem.")
+                if suffix == "enabled":
+                    entry["enabled"] = value
+                elif suffix == "hooks.allowConversationAccess":
+                    entry.setdefault("hooks", {})["allowConversationAccess"] = value  # type: ignore[index]
+                elif suffix == "config.command":
+                    entry.setdefault("config", {})["command"] = value  # type: ignore[index]
+                elif suffix == "config.safeSwitch":
+                    entry.setdefault("config", {})["safeSwitch"] = value  # type: ignore[index]
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+        if operation == "unset":
+            entry = None
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr("aetnamem.trial.hosts.shutil.which", lambda _: "/fake/openclaw")
+    monkeypatch.setattr("aetnamem.trial.hosts.subprocess.run", fake_run)
+
+    configured = configure_host(state, manager.state_path)
+    assert configured["configured"] is True
+    assert entry is not None
+    assert entry["config"]["existing"] == "kept"  # type: ignore[index]
+    assert entry["config"]["safeSwitch"]["enabled"] is True  # type: ignore[index]
+
+    restored = restore_host(state)
+    assert restored["verified"] is True
+    assert entry == {"enabled": False, "config": {"existing": "kept"}}
+
+
+def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
+    tmp_path: Path,
+) -> None:
+    from aetnamem.trial.web import TrialDashboardServer
+
+    manager = _manager(tmp_path)
+    server = TrialDashboardServer(
+        ("127.0.0.1", 0), manager, html="<html>safe</html>"
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    try:
+        response = opener.open(f"{base}/auth?code={server.login_code}")
+        assert response.read() == b"<html>safe</html>"
+        # Redirect hides the original Set-Cookie header, but the jar proves
+        # the cookie was accepted and the protected page became readable.
+        assert opener.open(f"{base}/api/status").status == 200
+        session = json.loads(opener.open(f"{base}/api/session").read())
+
+        unprotected = Request(
+            f"{base}/api/mode",
+            data=json.dumps({"mode": "off"}).encode(),
+            headers={"Content-Type": "application/json", "Origin": base},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as error:
+            opener.open(unprotected)
+        assert error.value.code == 403
+
+        protected = Request(
+            f"{base}/api/mode",
+            data=json.dumps({"mode": "off"}).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Origin": base,
+                "X-CSRF-Token": session["csrf_token"],
+            },
+            method="POST",
+        )
+        result = json.loads(opener.open(protected).read())
+        assert result["mode"] == "off"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -27,6 +28,14 @@ function fakeApi(config) {
   };
   plugin.register(api);
   return { hooks, tools, services, logs };
+}
+
+function trialCli(...args) {
+  const result = spawnSync("aetnamem", ["trial", ...args], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 
 
@@ -207,8 +216,57 @@ try {
   await fourEnd({ success: true, messages: [] }, { sessionKey: "four-2" });
   for (const service of fourMemory.services) await service.stop?.();
 
+  const trialState = path.join(dataDir, "safe-switch.json");
+  const trialRoot = path.join(dataDir, "trials");
+  trialCli(
+    "start",
+    "--host",
+    "openclaw",
+    "--state",
+    trialState,
+    "--trial-root",
+    trialRoot,
+    "--no-configure",
+  );
+  const safeSwitch = fakeApi({
+    ...base,
+    commandArgs: ["mcp", "--db", path.join(dataDir, "must-not-be-used.db")],
+    safeSwitch: { enabled: true, statePath: trialState },
+    tools: { enabled: true },
+  });
+  assert.equal(safeSwitch.tools.size, 0);
+  const safeBefore = safeSwitch.hooks.get("before_prompt_build");
+  const safeEnd = safeSwitch.hooks.get("agent_end");
+  const captureOnly = await safeBefore(
+    { prompt: "Remember that my preferred terminal is Ghostty." },
+    { sessionKey: "trial-1" },
+  );
+  assert.equal(captureOnly, undefined);
+  await safeEnd({ success: true, messages: [] }, { sessionKey: "trial-1" });
+  const candidates = trialCli("candidates", "--state", trialState);
+  assert.equal(candidates.length, 1);
+  trialCli("approve", candidates[0].id, "--state", trialState);
+  trialCli("preview", "--state", trialState);
+  const previewOnly = await safeBefore(
+    { prompt: "Which terminal do I prefer?" },
+    { sessionKey: "trial-2" },
+  );
+  assert.equal(previewOnly, undefined);
+  trialCli("canary", "--turns", "1", "--state", trialState, "--yes");
+  const canary = await safeBefore(
+    { prompt: "Which terminal do I prefer?" },
+    { sessionKey: "trial-3" },
+  );
+  assert.ok(canary.appendContext.includes("Ghostty"));
+  await safeEnd({ success: true, messages: [] }, { sessionKey: "trial-3" });
+  assert.equal(
+    trialCli("status", "--state", trialState).evidence.shown_canary_exposures,
+    1,
+  );
+  for (const service of safeSwitch.services) await service.stop?.();
+
   console.log(
-    "hooks: legacy compatibility and opt-in four-memory orchestration verified",
+    "hooks: legacy, four-memory, and fail-closed Safe Switch paths verified",
   );
 } finally {
   for (const service of runtime.services) await service.stop?.();

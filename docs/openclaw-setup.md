@@ -1,7 +1,8 @@
 # Wiring aetnamem into OpenClaw via MCP
 
-This page covers the public legacy surface and the opt-in Python `v0.6.0` /
-npm `v0.3.1` four-memory runtime. See
+This page covers the public legacy surface and the opt-in Python `v0.6.1` /
+npm `v0.4.0` four-memory runtime. New users who want to observe before
+enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
 
 Visual walkthrough for giving an OpenClaw assistant persistent, auditable

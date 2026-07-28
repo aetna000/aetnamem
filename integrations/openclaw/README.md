@@ -2,9 +2,10 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes npm `0.3.1`, compatible with Python `v0.5.2` through
-`v0.6.0`. Memory Impact is host-side Python experiment infrastructure and does
-not change this plugin's hooks or tool contracts. See
+This README describes npm `0.4.0`, compatible with Python `v0.6.1`.
+It adds an opt-in Safe Switch path while preserving the existing hooks and
+tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
+research infrastructure. See
 the repository's [current capability status](../../docs/current-status.md) for
 the precise implemented, experimental, and planned boundary.
 
@@ -40,13 +41,35 @@ runtime tools fall back to the legacy hooks by default.
 Recall failures/timeouts never block a turn — the agent just proceeds
 without injection.
 
-The two media tools ship in npm `0.3.1`. They do not inspect OpenClaw media
+With `safeSwitch.enabled`, the plugin instead uses the private trial protocol.
+Capture and preview never return model context; canary and active return only
+human-approved candidates. Agent-callable AetnaMem tools are not registered in
+this mode. A missing or tampered state fails closed to no injection.
+
+The two media tools introduced in npm `0.3.1` remain available in the normal
+integration. They do not inspect OpenClaw media
 hooks or store media bytes. OpenClaw supplies an exact-byte SHA-256, secretless
 host reference, and extractor identity after analysis; AetnaMem preserves
 that evidence and quarantines the text. See the repository
 [multimodal observation guide](../../docs/multimodal-observations.md).
 
 ## Install
+
+To observe first without changing model context:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+aetnamem trial start --host openclaw
+aetnamem trial dashboard
+```
+
+`trial start` refuses plugin versions older than 0.4.0, snapshots the existing
+AetnaMem plugin entry, writes the fail-closed Safe Switch configuration before
+enabling hooks, and verifies what OpenClaw retained. It does not rewrite
+`MEMORY.md`.
+
+For the direct four-memory setup without a trial:
 
 ```bash
 python3 -m pip install --upgrade aetnamem

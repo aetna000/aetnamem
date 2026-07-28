@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -98,6 +98,22 @@
             "enum": ["legacy", "none"],
             "default": "legacy",
             "description": "Use legacy semantic recall when runtime tools are unavailable"
+          }
+        }
+      },
+      "safeSwitch": {
+        "type": "object",
+        "description": "Opt-in reversible trial. Capture and preview do not change model context; canary and active are controlled by the digest-bound local state file.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Route hooks through the private Safe Switch protocol; agent-callable memory tools are disabled during the trial."
+          },
+          "statePath": {
+            "type": "string",
+            "default": "~/.aetnamem/safe-switch.json",
+            "description": "Digest-bound control file written by `aetnamem trial`."
           }
         }
       }

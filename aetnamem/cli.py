@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 
 from aetnamem.memory import Memory
@@ -539,6 +540,88 @@ def main() -> None:
     impact_report.add_argument("--public-key", required=True)
     impact_report.add_argument("--output", required=True)
 
+    trial_parser = subparsers.add_parser(
+        "trial", help="Try AetnaMem beside OpenClaw or Hermes before switching"
+    )
+    trial_commands = trial_parser.add_subparsers(
+        dest="trial_command", required=True
+    )
+    trial_start = trial_commands.add_parser(
+        "start", help="Start candidate-only capture; agent behavior is unchanged"
+    )
+    trial_start.add_argument(
+        "--host",
+        choices=("auto", "openclaw", "hermes"),
+        default="auto",
+        help="auto detects exactly one installed supported agent",
+    )
+    trial_start.add_argument(
+        "--state",
+        default=None,
+        help="Advanced: override the local trial control-file path",
+    )
+    trial_start.add_argument(
+        "--trial-root",
+        default=None,
+        help="Advanced: override the private trial evidence directory",
+    )
+    trial_start.add_argument(
+        "--no-configure",
+        action="store_true",
+        help="Testing only: create trial state without installing the host hook",
+    )
+
+    for name, help_text in (
+        ("status", "Show mode, safety boundary, evidence, and readiness"),
+        ("candidates", "List candidate memories awaiting your review"),
+        ("preview", "Build previews beside the agent without changing its context"),
+        ("activate", "Switch all eligible turns after the canary gate passes"),
+        ("rollback", "Turn injection and capture off; preserve evidence for review"),
+        ("off", "Emergency stop: fail closed without deleting trial evidence"),
+        ("mcp", "Serve the private host-integration protocol over stdio"),
+        ("dashboard", "Open the local Safe Switch review dashboard"),
+    ):
+        command_parser = trial_commands.add_parser(name, help=help_text)
+        command_parser.add_argument("--state", default=None)
+        if name == "preview":
+            command_parser.add_argument(
+                "--query",
+                default=None,
+                help="Optional local test query; live hosts preview automatically",
+            )
+        if name == "dashboard":
+            command_parser.add_argument("--port", type=int, default=8766)
+            command_parser.add_argument("--no-open", action="store_true")
+        if name in {"activate", "rollback"}:
+            command_parser.add_argument(
+                "--yes", action="store_true", help="Confirm non-interactively"
+            )
+
+    trial_canary = trial_commands.add_parser(
+        "canary", help="Allow a limited number of approved-memory context exposures"
+    )
+    trial_canary.add_argument("--turns", type=int, required=True)
+    trial_canary.add_argument("--state", default=None)
+    trial_canary.add_argument(
+        "--yes", action="store_true", help="Confirm non-interactively"
+    )
+
+    for name, approve, help_text in (
+        ("approve", True, "Approve candidate memories for preview and canary"),
+        ("reject", False, "Reject candidate memories so they cannot be used"),
+    ):
+        command_parser = trial_commands.add_parser(name, help=help_text)
+        command_parser.add_argument("candidate_ids", nargs="+")
+        command_parser.add_argument("--state", default=None)
+        command_parser.set_defaults(trial_approve=approve)
+
+    trial_capture = trial_commands.add_parser(
+        "capture-test", help="Test candidate extraction without running an agent"
+    )
+    trial_capture.add_argument("message")
+    trial_capture.add_argument("--session", default=None)
+    trial_capture.add_argument("--state", default=None)
+
     actions_parser = subparsers.add_parser(
         "actions", help="Stage, approve, execute, and verify guarded actions"
     )
@@ -662,6 +745,10 @@ def main() -> None:
 
     if args.command == "impact":
         _run_impact(args)
+        return
+
+    if args.command == "trial":
+        _run_trial(args)
         return
 
     if args.command == "index":
@@ -1560,6 +1647,170 @@ def _approval_secret(
             )
         return None
     return value
+
+
+def _run_trial(args: argparse.Namespace) -> None:
+    from aetnamem.trial import TrialManager, TrialMode
+    from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
+    from aetnamem.trial.server import TrialMCPServer
+
+    state_path = args.state or str(DEFAULT_STATE_PATH)
+    if args.trial_command == "start":
+        host = _detect_trial_host() if args.host == "auto" else args.host
+        manager = TrialManager.start(
+            host=host,
+            state_path=state_path,
+            trial_root=args.trial_root or str(DEFAULT_TRIAL_ROOT),
+        )
+        integration: dict[str, object]
+        if args.no_configure:
+            integration = {
+                "configured": False,
+                "warning": "host hook was not configured; no live turns will be observed",
+            }
+        else:
+            from aetnamem.trial.hosts import configure_host
+
+            try:
+                integration = configure_host(manager.state(), state_path)
+            except Exception:
+                manager.transition(TrialMode.OFF, actor="setup-failure")
+                raise
+        status = manager.status()
+        status["integration"] = integration
+        status["next"] = (
+            "Keep using your agent normally. Candidate facts are captured, "
+            "but model context is unchanged."
+            if integration.get("configured")
+            else "Configure the host hook before expecting live trial evidence."
+        )
+        _print(status)
+        return
+
+    manager = TrialManager(state_path)
+    if args.trial_command == "status":
+        _print(manager.status())
+    elif args.trial_command == "candidates":
+        _print(manager.candidates(include_reviewed=True))
+    elif args.trial_command in {"approve", "reject"}:
+        _print(
+            manager.review(
+                list(args.candidate_ids), approve=bool(args.trial_approve)
+            )
+        )
+    elif args.trial_command == "preview":
+        state = manager.state()
+        if state.mode is TrialMode.CAPTURE:
+            manager.transition(TrialMode.PREVIEW)
+        elif state.mode is not TrialMode.PREVIEW:
+            raise ValueError(
+                f"preview requires capture or preview mode, not {state.mode.value}"
+            )
+        _print(
+            manager.prepare(args.query)
+            if args.query is not None
+            else manager.status()
+        )
+    elif args.trial_command == "canary":
+        _confirm_trial_host(manager, non_interactive=args.yes)
+        _print(
+            manager.transition(
+                TrialMode.CANARY, canary_turns=args.turns
+            ).public_status()
+        )
+    elif args.trial_command == "activate":
+        _confirm_trial_host(manager, non_interactive=args.yes)
+        _print(manager.transition(TrialMode.ACTIVE).public_status())
+    elif args.trial_command == "off":
+        state = manager.state()
+        if state.mode is not TrialMode.OFF:
+            state = manager.transition(TrialMode.OFF)
+        result = state.public_status()
+        result["rollback_boundary"] = (
+            "Future AetnaMem capture and context injection are off. Trial evidence "
+            "is preserved. Past agent outputs and provider logs are not undone."
+        )
+        _print(result)
+    elif args.trial_command == "rollback":
+        from aetnamem.trial.hosts import restore_host
+
+        _confirm_trial_host(manager, non_interactive=args.yes)
+        state = manager.state()
+        if state.mode is not TrialMode.OFF:
+            state = manager.transition(TrialMode.OFF, actor="rollback")
+        restored = restore_host(state)
+        result = state.public_status()
+        result["host_restore"] = restored
+        result["rollback_boundary"] = (
+            "The saved host plugin configuration was restored and future "
+            "AetnaMem injection is off. Trial evidence is preserved. Past "
+            "agent outputs and provider logs are not undone."
+        )
+        _print(result)
+    elif args.trial_command == "capture-test":
+        _print(
+            manager.capture(
+                args.message,
+                session_id=args.session,
+                authenticated_user=True,
+            )
+        )
+    elif args.trial_command == "mcp":
+        TrialMCPServer(manager).serve()
+    elif args.trial_command == "dashboard":
+        import webbrowser
+
+        from aetnamem.trial.web import TrialDashboardServer, dashboard_html
+
+        server = TrialDashboardServer(
+            ("127.0.0.1", args.port), manager, html=dashboard_html()
+        )
+        url = f"http://127.0.0.1:{args.port}/auth?code={server.login_code}"
+        print(f"Safe Switch dashboard: http://127.0.0.1:{args.port}/")
+        print("The dashboard is loopback-only. Press Ctrl-C to stop.")
+        if not args.no_open:
+            webbrowser.open(url)
+        else:
+            print(f"One-time sign-in URL: {url}")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+    else:  # pragma: no cover - argparse prevents this
+        raise ValueError(f"unknown trial command: {args.trial_command}")
+
+
+def _detect_trial_host() -> str:
+    detected = [
+        name for name in ("openclaw", "hermes") if shutil.which(name) is not None
+    ]
+    if len(detected) == 1:
+        return detected[0]
+    if not detected:
+        raise ValueError(
+            "--host auto found neither openclaw nor hermes on PATH; "
+            "pass --host openclaw or --host hermes"
+        )
+    raise ValueError(
+        "--host auto found both openclaw and hermes; choose one explicitly"
+    )
+
+
+def _confirm_trial_host(
+    manager: object, *, non_interactive: bool
+) -> None:
+    state = manager.state()  # type: ignore[attr-defined]
+    if non_interactive:
+        return
+    if not sys.stdin.isatty():
+        raise ValueError(
+            f"confirmation required; rerun with --yes after reviewing host {state.host}"
+        )
+    entered = input(f"Type the host name `{state.host}` to confirm: ").strip()
+    if entered != state.host:
+        raise ValueError("host confirmation did not match")
 
 
 if __name__ == "__main__":

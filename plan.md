@@ -1,295 +1,390 @@
-## Verdict
+The closest honest pitch for AetnaMem 6.0 is:
 
-Yes—this is a strong strategy and probably AetnaMem’s most defensible research direction.
+> Give OpenClaw memory without trusting it blindly.
 
-## AetnaMem 0.6.0 implementation status
+1. Install AetnaMem and the OpenClaw plugin.
 
-This plan is now the canonical Memory Impact program. Implementation and
-scientific evidence are deliberately tracked separately:
+   ```bash
+   pip install aetnamem
+   openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+   ```
 
-| Phase | 0.6.0 implementation | Evidence gate |
-|---|---|---|
-| 0. Metrology | Grok executable/version/digest, model, isolation flags and telemetry trust are recorded | Confirm provider telemetry and authentication before a paid run |
-| 1. Ledger hardening | Balanced 16-arm schedule, immutable run IDs, HMAC assignment tokens, exact exposure evidence, invalid-run state, learning isolation and restricted MCP profile | Runtime and tamper tests must pass |
-| 2. Synthetic identification | Repeated planted-effect generator, registered contrasts, confidence intervals, null and confounding gates | `aetnamem impact run --stage synthetic` must exit successfully |
-| 3. Trusted controller | Per-run SQLite/workspace clones, hidden verifier, signed receipt, manifest-bound `host_attested` outcome and one-call paid edit smoke gate | Fake-agent end-to-end test, paid smoke, then independent receipt verification |
-| 4. Grok factorial | Registered task schema, paid-run confirmation, train/validation scheduling and 16-arm reports | A corrected 100-run pilot yielded six complete blocks and exploratory signals; the full schedule and confirmatory evidence remain incomplete |
-| 5. Held-out policy | Pessimistic within-budget selector, hash-frozen policy and held-out comparator report | Policy must freeze before any held-out receipt and win under the registered rule |
-| 6. Replication | Protocol and evidence export are model-neutral | A second model, host or independent implementation must reproduce the scoped result |
+2. Keep your current model provider and existing `MEMORY.md`. AetnaMem does not require you to switch models or immediately remove your current memory.
 
-The user-facing name is **Memory Impact**. “Causal Memory Ledger” remains the
-technical name for the intervention evidence. Normal deployments remain
-default-off and no adaptive production selection is enabled in 0.6.0.
+3. Start AetnaMem in capture-only mode. It observes new trusted user facts and builds a private local memory database, but does not inject that memory into OpenClaw’s answers yet.
 
-The implementation guide is [`docs/memory-impact.md`](docs/memory-impact.md);
-the reference artifact layout is
-[`bench/causal_memory/`](bench/causal_memory/). A passing synthetic gate proves
-estimator calibration, not that Grok benefits from memory. The repository must
-continue to state external Grok, held-out and replication results as pending
-until signed result artifacts exist.
+4. Review what it collected. Search in ordinary language, inspect where memories came from, and export an audit report:
 
-A randomized 16-arm factorial experiment is established causal methodology, not marketing theatre. AetnaMem’s potentially unique contribution is the surrounding control plane: committing the intervention before execution, proving what context was actually exposed, connecting it to an independently verified outcome, and preserving an auditable evidence chain. Full factorial and randomized-block designs are well-established experimental methods. [NIST factorial design guidance](https://www.itl.nist.gov/div898/handbook/pri/section3/pri3.htm), [NIST randomized blocking guidance](https://www.itl.nist.gov/div898/handbook/pri/section3/pri332.htm).
+   ```bash
+   aetnamem list ~/.aetnamem/memories.db you
 
-I would proceed, but tighten several parts before spending money on Grok.
+   aetnamem trace ~/.aetnamem/memories.db \
+     "travel preferences" --subject you \
+     --output travel-memory-report.html
+   ```
 
-## What the experiment can prove
+5. When the captured memory looks correct, enable bounded recall. AetnaMem starts giving OpenClaw only a small set of relevant memories instead of loading every durable fact into every prompt. Your existing `MEMORY.md` can remain in place during this trial.
 
-Separate the project into three claims:
+6. Run representative tasks both ways. AetnaMem records what memory was available, what was actually shown, and what happened afterward. For a controlled study, Memory Impact can compare memory combinations using an external verifier rather than letting the agent grade itself.
 
-1. **Measurement validity:** the ledger and estimator recover known effects in synthetic experiments.
-2. **Agent effect:** randomized memory-plane exposure changes Grok’s verified results on registered task families.
-3. **Product value:** a frozen selection policy improves unseen tasks under the same budget.
+7. Once results look healthy, remove only the duplicated durable facts from the always-loaded `MEMORY.md`. Keep essential identity, safety, and operating instructions pinned.
 
-Passing the first does not prove memory helps Grok. Passing the second does not prove the learned policy generalizes. All three are required for the strongest product claim.
+8. Continue auditing:
 
-The defensible final statement would be:
+   ```bash
+   aetnamem verify ~/.aetnamem/memories.db
+   ```
 
-> Under a registered protocol, AetnaMem measured the causal effect of offering four memory-plane bundles to Grok, and a frozen memory-selection policy improved verified outcomes on held-out tasks under a fixed budget.
+   If a memory should be removed, AetnaMem produces a deletion receipt and checks its local records and derived indexes.
 
-Do not claim that AetnaMem identified the causal value of an individual memory or that the result applies universally to all agents.
+> Congratulations. Your OpenClaw now has bounded, searchable and auditable memory—without changing its model provider or making an irreversible migration.
 
-## Five important corrections
+What this safely promises
 
-### 1. Define the treatment precisely
+- Your current provider does not change.
+- `MEMORY.md` is not automatically overwritten.
+- Memory is stored locally.
+- You can inspect memories before relying on them.
+- You can search without knowing an internal ID.
+- You can trace memory admission and recall.
+- You can logically delete memory with a verifiable receipt.
+- You can enable recall gradually.
 
-The treatment is not an abstract “semantic memory” concept. It is:
+What it must not promise yet
 
-> Offering a particular compiled semantic-memory contribution, with its content, length, position and policy, to the agent.
+We cannot currently say:
 
-That distinction matters because prompt length and placement can themselves affect performance.
+> “Run it for 24 hours and AetnaMem automatically tells you it is safe to switch.”
 
-For a deeper follow-up, add token-matched sham context. That separates the effect of useful information from merely adding prompt material.
+Version 6.0 contains the experimental machinery for controlled comparisons, but it does not yet turn arbitrary live OpenClaw traffic into automatic evaluations or send a production-readiness notification. Capture-only mode is supported through plugin settings, but it is not yet presented as one polished onboarding switch.
 
-### 2. Use intention-to-treat as the primary analysis
+The stronger product to build
 
-Measure the effect of assigning a plane to the context, regardless of whether Grok appears to use it.
+The excellent equivalent of the Inference Gateway pitch would be:
 
-Trying to determine whether Grok “read” a memory introduces a post-treatment variable and weakens the causal interpretation. Usage can be reported as exploratory evidence, but assignment must remain primary.
+1. Run `aetnamem openclaw trial`.
+2. Keep your provider, `MEMORY.md`, and production behaviour unchanged.
+3. AetnaMem captures candidate memory in shadow mode without injecting it.
+4. It creates verified replay tasks from approved interactions.
+5. It runs isolated comparisons: native memory versus bounded AetnaMem memory.
+6. It reports answer success, prompt tokens, cost, latency and unsafe regressions.
+7. You receive: “AetnaMem recall is safe to enable,” or an honest explanation of why it is not.
+8. Run `aetnamem openclaw enable`.
 
-For working memory, for example:
+That is the missing product layer connecting the strongest pieces already in 6.0: governed memory, audit tracing, shadow interventions, host verification and Memory Impact.
 
-\[
-Effect_W = average\bigl(success(1,S,E,P)-success(0,S,E,P)\bigr)
-\]
+The headline should therefore be:
 
-averaged across all eight combinations of the other planes.
+> **Try better OpenClaw memory without risking your current setup. AetnaMem watches first, proves what it remembers, and only takes over when you decide.**
 
-### 3. Make verified success the primary endpoint
+That is much more sellable than leading with “four memory planes” or “Causal Memory Ledger.” Those are mechanisms. The product promise is a safe, inspectable memory migration.
 
-“Successful tasks per dollar” is excellent for product evaluation, but ratios can behave badly statistically.
+
+---
+
+Yes—this is the first genuinely coherent product direction. I would call it **AetnaMem Safe Switch** and interpret “6.1” as repository version **v0.6.1**.
+
+> Implementation update, 2026-07-28: phases 1–2 are implemented and tested;
+> the OpenClaw/Hermes adapters, secured dashboard API, canary and rollback
+> foundations are implemented in beta. Claude's visual dashboard, paid paired
+> replay, final-input exposure proof, config-drift/health gates, post-switch
+> value reporting and real-host clean-install tests remain release blockers.
+> See [Safe Switch](docs/safe-switch.md) and
+> [current status](docs/current-status.md) for shipped truth.
+
+The release promise should be:
+
+> Run AetnaMem beside your current OpenClaw or Hermes memory. See what it would remember and recall, test both configurations safely, then enable AetnaMem only when the evidence supports it—with one-command rollback.
+
+## The user experience
+
+These are proposed new commands:
+
+```bash
+pip install --upgrade aetnamem
+aetnamem trial start --host auto --subject you
+```
+
+That single command would:
+
+1. Detect OpenClaw or Hermes.
+2. Record the host, model, current memory and configuration digests.
+3. Save a rollback snapshot.
+4. Install AetnaMem in capture-only mode.
+5. Open `http://127.0.0.1:8766`.
+6. Leave the current provider, model and native memory in control.
+
+The dashboard initially says:
+
+```text
+OBSERVING — NOT INFLUENCING YOUR AGENT
+
+AetnaMem is collecting quarantined memory candidates locally.
+It is not injecting context, exposing memory tools, or making extra model calls.
+Your current memory and provider remain in control.
+```
+
+The user journey then becomes:
+
+1. **Observe** new memory candidates without changing answers.
+2. **Explore** captured memories, provenance, conflicts and quarantine status.
+3. **Preview** exactly what AetnaMem would have recalled for previous turns.
+4. **Approve** the memories allowed into the evaluation.
+5. **Compare** the current configuration against AetnaMem using isolated, paid replays.
+6. Receive a quantitative readiness report.
+7. Click **Start limited canary** or run:
+
+   ```bash
+   aetnamem trial enable --canary-turns 20
+   ```
+
+8. If the canary remains healthy, click **Make AetnaMem active**.
+9. Roll back at any time:
+
+   ```bash
+   aetnamem trial rollback
+   ```
+
+## Modes must have exact meanings
+
+| Mode | Stores trial data | Changes agent prompt | Makes extra model calls |
+|---|---:|---:|---:|
+| Off | No | No | No |
+| Capture | Yes | No | No |
+| Preview | Yes | No | No |
+| Isolated comparison | Yes | No live effect | Yes, with approval |
+| Canary | Yes | Selected fresh sessions | No |
+| Active | Yes | Yes, bounded context | No |
+
+We should use **preview**, not “shadow,” in this product. Memory Impact already uses “shadow” for an experimental concept with different semantics.
+
+Capture also needs a new path. The current OpenClaw capture route can preserve complete user utterances and activate extracted user facts. The trial must instead:
+
+- Use a separate trial database.
+- Save minimized candidate evidence by default.
+- Keep every candidate inactive until review.
+- Exclude group chats, unauthenticated users, tool output and web content by default.
+- Never let the agent promote trial candidates.
+
+## How AetnaMem proves value
+
+Passive observation can prove that capture and retrieval work. It cannot prove that an answer would have been better.
+
+The defensible comparison is:
+
+1. The user approves replayable tasks.
+2. AetnaMem freezes the current model, tools, memory snapshots and budgets.
+3. Each task runs in two isolated copies:
+
+   - Current/native memory
+   - Frozen AetnaMem configuration
+
+4. Arm order is randomized.
+5. External actions are disabled or sandboxed.
+6. A host verifier or blinded user—not the agent—grades the result.
+7. Existing Memory Impact code signs and verifies the receipts.
+
+Version 6.0 already has most of this experimental infrastructure in [controller.py](aetnamem/impact/controller.py).
+
+### The readiness card
+
+```text
+READY FOR LIMITED CANARY
+
+Host: OpenClaw 2026.x
+Model/config: 8f2…91c
+Matched held-out tasks: 42
+
+                         Current     AetnaMem
+Verified success          35/42       37/42
+Complete prompt tokens    112,480      91,940   −18.3%
+Provider cost               $0.54       $0.49   −9.3%
+Median latency               6.2s        6.0s
+
+Target memories retrieved              18/19
+Irrelevant recalls                      1/18
+Known stale memories shown                 0
+Critical unsafe actions                    0
+Audit chain                         VERIFIED
+Deletion drill                      VERIFIED
+Rollback                            TESTED
+
+Conclusion:
+AetnaMem was non-inferior on verified success and used less
+complete prompt context for this model, memory snapshot and task sample.
+```
+
+Every metric should carry one of three labels:
+
+- **Verified:** provider telemetry or host-verifier evidence.
+- **Estimated:** tokenizer or price-based projection.
+- **Observed:** descriptive before/after data, not causal proof.
+
+Possible conclusions:
+
+- **Not ready**
+- **More evidence needed**
+- **Compatible; financial value unproven**
+- **Ready for limited canary**
+- **Ready to migrate duplicated native facts**
+
+A reasonable default gate is:
+
+- Zero critical unsafe actions.
+- Zero unreviewed or known-stale memories recalled.
+- Audit and deletion drill pass.
+- Rollback test passes.
+- At least 30 matched cases, including memory-dependent and negative-control tasks.
+- One-sided 95% lower bound for AetnaMem success minus current success above −5 percentage points.
+- At least 90% target-memory retrieval.
+- No more than 5% irrelevant recall on negative controls.
+- Either verified token/cost reduction or verified quality improvement within a registered cost tolerance.
+
+Twenty-four hours can be a collection milestone, but it cannot by itself prove readiness.
+
+## Dashboard
+
+The local dashboard should have six focused sections:
+
+1. **Overview**
+
+   Host, model, current mode, captured turns, data location and readiness state.
+
+2. **Memory**
+
+   Active, candidate, quarantined, conflicting, superseded and forgotten memories with provenance.
+
+3. **Recall Preview**
+
+   For each observed query: memories AetnaMem would have selected, ranking reason, context size and manifest digest. It must clearly say “not shown to the agent.”
+
+4. **Comparison**
+
+   Baseline versus AetnaMem success, complete prompt tokens, cache reads, cost, latency, retrieval accuracy and safety.
+
+5. **Switch**
+
+   Exact configuration diff, snapshot digest, backup location, canary controls, activation and rollback.
+
+6. **Value**
+
+   After activation: actual exposed memories, context supplied, verified evaluation advantage, live token/cost trends, corrections, quarantines, deletion receipts and audit health.
+
+## Implementation architecture
+
+Add a host-neutral trial package:
+
+```text
+aetnamem/trial/
+├── models.py
+├── store.py
+├── manager.py
+├── state.py
+├── capture.py
+├── preview.py
+├── replay.py
+├── readiness.py
+├── report.py
+└── hosts/
+    ├── base.py
+    ├── openclaw.py
+    └── hermes.py
+```
 
 Use:
 
-> Host-verified task success under an identical hard token, cost and time cap.
-
-Then report:
-
-- Total successes ÷ total actual cost
-- Tokens and latency
-- Tool failures and repeated failures
-- Unsafe actions and false warnings
-- Cost of each plane and arm
-
-This also follows the broader recommendation that agent evaluations account for cost rather than comparing accuracy alone. [AI Agents That Matter](https://arxiv.org/abs/2407.01502).
-
-### 4. Prove what Grok actually received
-
-AetnaMem records the contribution and manifest, while the 0.6.0 compiler adds
-exact post-budget exposure evidence in
-[`compiler.py`](aetnamem/runtime/compiler.py).
-
-For benchmark mode, either:
-
-- Fail the run if the complete assigned context cannot fit, or
-- Record exact exposed spans and their final digests.
-
-Otherwise `1111` might say all four planes were assigned while part of one plane never reached Grok.
-
-### 5. Separate Grok from the verifier completely
-
-Grok must not:
-
-- Access hidden expected results
-- Write its own verified outcome
-- Call an unrestricted recall endpoint to bypass withholding
-- Access the signing credential
-- Reuse native Grok memory, web search or another conversation
-
-The normal MCP catalog exposes memory and outcome tools in
-[`server.py`](aetnamem/mcp/server.py). The 0.6.0 `impact-restricted` profile
-exposes none of them to the experimental agent.
-
-## Recommended implementation
-
-AetnaMem already has much of the experimental spine:
-
-- Contributions are persisted before compilation in
-  [`orchestrator.py`](aetnamem/runtime/orchestrator.py).
-- Candidate hashes, arm identifiers, policy hashes, propensities and seed commitments exist.
-- Off, shadow and benchmark modes already separate normal production from intervention.
-- Outcomes can be bound to a context manifest.
-
-Build the lab in this order.
-
-### Phase 0: Metrology spike
-
-Before a paid experiment, establish exactly what Grok CLI exposes:
-
-- Binary digest and version
-- Model identity
-- Token and cost telemetry
-- Exit status and retry behaviour
-- Conversation isolation
-- Tool permissions
-- Web, native memory and subagent disabling
-
-If cost or tokens are estimated rather than provider-verified, label them as estimates.
-
-### Phase 1: Harden the ledger
-
-Implement:
-
-- A balanced, randomized-without-replacement 16-arm schedule
-- Precommitted run IDs so a controller cannot retry IDs until it gets a preferred arm
-- A protocol registry and immutable schedule digest
-- Exact exposure receipts
-- Restricted benchmark MCP gateway
-- Signed host-verifier receipts
-- Explicit aborted, missing and invalid-run states
-- Learning disabled during experiments
-- Deterministic experimental candidate identities
-
-The independent Bernoulli allocator in
-[`interventions.py`](aetnamem/runtime/interventions.py) remains for
-backward-compatible shadow experiments. Balanced allocation is restricted to
-registered benchmarks.
-
-### Phase 2: Synthetic identification benchmark
-
-Run repeated complete simulated experiments using the real ledger, manifests and analysis exporter—not a separate CSV-only simulation.
-
-Include:
-
-- Planted main effects
-- Semantic × procedural interaction
-- Task difficulty
-- Heterogeneous effects
-- Null and harmful effects
-- Difficult tasks retrieving more memories
-- Missing outcomes
-- Failed runs and noncompliance
-
-Run roughly 1,000–2,000 simulated experiments at the intended sample size. Pre-register gates such as:
-
-- Mean absolute effect error below 2 percentage points
-- Correct direction in at least 90% of experiments for effects of 10 points or more
-- 95% interval coverage near 95%
-- Null false-positive rate near 5%
-- Zero manifest/outcome binding failures
-- Better error than the deliberately confounded observational estimator
-
-Do not require observational attribution to fail in every dataset. Instead, demonstrate defined conditions under which it becomes biased while randomized estimation remains calibrated.
-
-### Phase 3: Trusted controller
-
-Each experimental block should run as:
-
 ```text
-Registered task
-    → frozen database/workspace clone
-    → precommitted arm assignment
-    → AetnaMem context compilation
-    → restricted Grok process
-    → output/workspace/tool-receipt hashing
-    → hidden deterministic verifier
-    → signed outcome receipt
-    → AetnaMem audit export
+~/.aetnamem/trials/<trial-id>/
+├── state.json
+├── trial.db
+├── registration.json
+├── rollback.json
+├── approved-memory.json
+├── replays/
+└── report.html
 ```
 
-The signed receipt should bind:
+This avoids changing the primary memory schema and keeps trial removal reversible.
 
-- Experiment, block, task and run IDs
-- Arm and assignment probability
-- Memory snapshot and candidate digests
-- Final exposed-context digest
-- Grok binary and model identities
-- Output and workspace digests
-- Verifier source/version digest
-- Success, tokens, cost, latency and exit status
-- Safety events
-- Timestamp and signature
+### OpenClaw
 
-A signature proves who issued the receipt—not that the verifier was correct. Preserve the artifacts so a second verifier can independently reproduce the result.
+Extend the existing plugin in [index.ts](integrations/openclaw/index.ts):
 
-### Phase 4: Grok factorial study
+- One fail-closed mode gate covering recall, persona, orchestration and tools.
+- Capture/preview modes return no prompt content.
+- Use current OpenClaw observation hooks for model input, output, usage and run correlation. OpenClaw now exposes `llm_input`, `llm_output`, provider usage and run IDs through its plugin hooks. [OpenClaw hooks](https://docs.openclaw.ai/plugins/hooks)
+- Verify actual AetnaMem exposure against the final model input.
+- Preserve existing behaviour for upgraded configurations; only new trial installs default to capture mode.
+- Replace the current sequential setup writes in [setup.ts](integrations/openclaw/src/setup.ts) with snapshot, validation, atomic application, health check and rollback.
 
-For every task instance:
+### Hermes
 
-1. Produce all four candidate bundles before assignment.
-2. Verify those candidates are identical across arms.
-3. Create 16 isolated clones.
-4. Run every arm from `0000` through `1111` exactly once, in randomized order.
-5. Start a new Grok process and conversation for every run.
-6. Reveal the randomization seed only after the experiment closes.
+Today the repository has only MCP-based Hermes integration. Version 6.1 needs a real general Hermes plugin:
 
-Use task families for:
+```text
+integrations/hermes/
+├── plugin.yaml
+├── __init__.py
+├── README.md
+└── tests/
+```
 
-- Working-only
-- Semantic-only
-- Episodic-only
-- Procedural-only
-- Two-plane interactions
-- All-four coordination
-- Null/no-memory-best
-- Plausible but harmful memory
-- Conflicting or stale memory
-- Recovery from a previous failure
+Hermes supports `pre_llm_call` context injection and `post_llm_call` observation. A general plugin can coexist with built-in memory and an existing external provider, whereas a memory-provider plugin would occupy Hermes’s single external-provider slot. [Hermes plugin hooks](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/plugins.md), [Hermes memory providers](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/memory-providers.md)
 
-Use nonce facts, fake local APIs and hidden executable validators so Grok cannot solve tasks from public knowledge.
+In capture and preview modes, the Hermes pre-LLM hook returns nothing. In active mode, it returns the bounded AetnaMem context and fails open on timeout.
 
-The verifier and its fixtures must remain outside Grok’s visible workspace. This resembles the executable, artifact-based evaluation approach used in benchmarks such as [CORE-Bench](https://arxiv.org/abs/2409.11363).
+## Switching and rollback
 
-### Phase 5: Frozen held-out policy
+Activation is a privileged operation and must:
 
-Split by task-template family, not merely by individual run:
+1. Start on a fresh session.
+2. Display the exact change.
+3. Require reviewer confirmation.
+4. Compare the current configuration digest with the snapshotted digest.
+5. Apply only typed AetnaMem-owned settings.
+6. Restart or reload the host.
+7. Confirm the effective configuration.
+8. Run a health probe.
+9. Return immediately to `off` if verification fails.
 
-- Train: estimate effects and build the selector
-- Validation: choose thresholds and budget rules
-- Held-out: completely unseen templates and fresh snapshots
+The emergency `off` state should work through the state file even if a host restart fails. Full rollback then restores the validated configuration snapshot.
 
-Freeze and hash the policy before opening held-out results. Compare it against:
+AetnaMem must not automatically erase `MEMORY.md` or `USER.md`. After a successful canary, the dashboard can identify duplicated durable facts and offer a separately reviewed migration patch. Identity, safety and authorization instructions remain pinned in the host.
 
-- No supplemental memory
-- Semantic-only
-- All-four-always
-- Relevance-based retrieval
-- Outcome weighting without randomization
+## Implementation phases
 
-The policy may use only information available before execution. It should abstain to a fixed baseline when evidence is uncertain.
+| Phase | Deliverable | Gate before continuing |
+|---|---|---|
+| 1 | Mode contract, state machine, separate trial store | Missing/corrupt state always fails to off |
+| 2 | Candidate-only capture and recall preview | No trial candidate can enter live recall |
+| 3 | OpenClaw adapter | Capture/preview leave final prompt and tool schemas unchanged |
+| 4 | Hermes adapter | Same non-interference test passes |
+| 5 | Read-only dashboard | Memory, previews and audit evidence are correct |
+| 6 | Matched two-arm replay using Memory Impact | Signed receipts reproduce every headline number |
+| 7 | Readiness engine | Failed or inconclusive gates never recommend activation |
+| 8 | Canary, activation and CLI rollback | Restart failure, config drift and disk/DB failures recover safely |
+| 9 | Post-switch value dashboard | Verified, estimated and observed numbers never mix |
+| 10 | Security, compatibility and release QA | Both claimed hosts pass end-to-end clean-install and rollback tests |
 
-## How much data is needed?
+Before the dashboard can control host configuration, it also needs Host/Origin checks, CSP, CSRF protection, no-store headers, stored-XSS tests and stronger reviewer-session handling than the current localStorage tokens in [ui.py](aetnamem/service/ui.py).
 
-Do not choose 480 runs merely because it sounds substantial.
+## Release boundaries
 
-As a rough illustration, distinguishing 60% from 70% success can require about 700 independent observations before accounting for task clustering and multiple effects. A realistic confirmatory experiment could therefore require:
+Version 6.1 should remain:
 
-- 30–60 distinct task instances
-- 16 arms per instance
-- 2–3 model repetitions
+- Local and single-user.
+- Python package `aetnamem==0.6.1`.
+- Normal installation remains `pip install aetnamem`.
+- OpenClaw plugin becomes a feature release, likely `0.4.0`.
+- Generic Python, CLI and MCP contracts remain compatible.
+- No automatic live traffic duplication.
+- No side-effecting replay.
+- No automatic activation.
+- No automatic deletion of native memory.
+- No claim that all provider data remains local.
 
-That is approximately 960–2,880 Grok calls. A simulation-based power analysis should select the final number. More distinct tasks are usually more valuable than many repeated calls on one task.
+If the Hermes native adapter cannot pass the same end-to-end non-interference and rollback tests, the 6.1 release must say “OpenClaw Safe Switch; Hermes diagnostic preview,” rather than claiming false parity.
 
-## What counts as proof?
-
-Use a staged proof ladder:
-
-1. **Integrity:** assignment always precedes execution; exposure, outcomes and schedules replay; tampering and bypass attempts are detected.
-2. **Statistical validity:** planted effects, nulls and confidence intervals meet pre-registered calibration thresholds.
-3. **Internal agent validity:** randomized Grok results show a registered effect under identical budgets.
-4. **Held-out value:** the frozen selector’s lower confidence bound clears the success target—or success is non-inferior while cost is materially lower.
-5. **Safety:** the upper confidence bound for harmful actions remains below the registered margin.
-6. **Replication:** repeat on a second model, host environment or independent research implementation.
-
-A null Grok result would still validate the ledger and measurement machinery if stages 1–2 pass. It would simply falsify the product claim that the tested memory policy improves those tasks. That willingness to fail is precisely what gives the project scientific credibility.
-
-My recommendation is to name the product surface **Memory Impact**, retain **Causal Memory Ledger** as the technical mechanism, and keep adaptive production behaviour disabled until the complete held-out test succeeds.
+This plan is now being implemented incrementally. A checked item is not a
+product-performance claim; the current-status document and tests define the
+release boundary.

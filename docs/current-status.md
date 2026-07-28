@@ -7,15 +7,19 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-26**:
+Status as of **2026-07-28**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 17-tool MCP | Public release (`v0.6.0`) | Existing compatibility surface remains supported; Memory Impact is an additive CLI/runtime package |
+| Python `Memory`, CLI, and 17-tool MCP | Released core (`v0.6.1`) | Existing compatibility surface remains supported; Safe Switch and Memory Impact are additive |
+| Safe Switch control plane | Beta, opt-in (`v0.6.1`) | Separate candidate/evidence DB; digest-bound modes; approval, preview, bounded canary, off and rollback; preview/capture do not change context |
+| Safe Switch OpenClaw adapter | Beta (`npm v0.4.0`) | Private host protocol, no agent memory tools during trial, verified plugin-config snapshot/restore |
+| Safe Switch Hermes adapter | Beta (`v0.6.1`) | General lifecycle-hook plugin that coexists with the selected Hermes memory provider; restart required after installation |
+| Safe Switch dashboard API | Beta (`v0.6.1`) | Loopback-only service, one-time login, HttpOnly cookie, CSRF and origin controls; visual frontend follows the checked-in UX contract |
 | Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
 | MCP media tools | Public (`v0.5.2`) | `memory_observe` and `memory_forget_artifact` add governed multimodal observations |
 | Four-memory runtime | Public, opt-in (`v0.5.2`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
-| OpenClaw orchestration | Public, opt-in (`v0.3.1`) | Runtime hooks with capability detection and legacy fallback; media tools are explicit host calls |
+| OpenClaw orchestration | Public, opt-in (`v0.4.0`) | Runtime hooks with capability detection and legacy fallback; unchanged when Safe Switch is disabled |
 | Audit search and trace | Public (`v0.5.1`) | Lexical discovery, relationship expansion, text/JSON reports, and optional separate digest-only investigator access chain |
 | Semantic investigation search | Public, opt-in (`v0.5.1`) | Exact vector sidecar for `memories`/`search`/`trace`; generation-cached verification, batched canonical validation, strict dimensions, Ollama digest pinning, and hybrid RRF; agent recall unchanged |
 | Semantic index deletion | Public, opt-in (`v0.5.1`) | Vector-aware v2 deletion receipt, strict absence verification, and dirty-epoch rebuild signal |
@@ -69,7 +73,7 @@ for their stated scopes. They are not CML causal results.
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
 | Memory Impact experiment guide | [`memory-impact.md`](memory-impact.md) |
-| Current release notes | [`releases/v0.6.0.md`](releases/v0.6.0.md) |
+| Current release notes | [`releases/v0.6.1.md`](releases/v0.6.1.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

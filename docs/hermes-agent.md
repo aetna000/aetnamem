@@ -1,9 +1,37 @@
 # Hermes Agent integration
 
-AetnaMem integrates with Hermes through MCP today and through one
-provider-neutral context-pack contract when automatic pre-prompt injection is
-available. The memory engine does not import Hermes, OpenClaw, DeepSeek,
-Claude, Grok, or any model SDK.
+AetnaMem 0.6.1 supports two distinct Hermes paths:
+
+- generic MCP memory tools; and
+- a Safe Switch beta general plugin for capture, preview, canary and active
+  context.
+
+The memory engine does not import a model SDK.
+
+## Safe Switch beta
+
+Safe Switch is the shortest path for a local user who wants to inspect
+AetnaMem before it changes a Hermes prompt:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+aetnamem trial start --host hermes
+# Restart Hermes once so it discovers the installed general plugin.
+aetnamem trial dashboard
+```
+
+The installer writes `~/.hermes/plugins/aetnamem-safe-switch/` and saves any
+existing directory to the private trial backup first. The installed loader is
+standard-library-only and communicates with `aetnamem trial mcp` over stdio,
+so Hermes and AetnaMem may live in different Python environments.
+
+This is deliberately a **general plugin**, not a memory-provider plugin. It
+can coexist with the current Hermes memory provider. `pre_llm_call` returns no
+context in capture/preview and returns approved context only in canary/active;
+`post_llm_call` confirms exposures and captures the authenticated user turn.
+It registers no model-callable AetnaMem tool.
+
+See [Safe Switch](safe-switch.md) for mode, evidence and rollback boundaries.
 
 ## Tool-based setup
 
