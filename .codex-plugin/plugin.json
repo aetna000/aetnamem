@@ -1,0 +1,39 @@
+{
+  "name": "aetnamem",
+  "version": "0.1.0",
+  "description": "Governed agent-memory workflows backed by AetnaMem provenance, audit, and reversible trials.",
+  "author": {
+    "name": "aetna000",
+    "email": "aetna000@gmail.com",
+    "url": "https://github.com/aetna000"
+  },
+  "homepage": "https://github.com/aetna000/aetnamem",
+  "repository": "https://github.com/aetna000/aetnamem",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "agent-memory",
+    "audit",
+    "provenance",
+    "safe-switch",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AetnaMem",
+    "shortDescription": "Governed memory with provenance and audit.",
+    "longDescription": "AetnaMem adds focused skills for remembering with evidence, investigating why a memory exists, and trying memory beside OpenClaw or Hermes before switching.",
+    "developerName": "aetna000",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/aetna000/aetnamem",
+    "defaultPrompt": [
+      "Remember this preference with provenance.",
+      "Explain why the agent remembers this.",
+      "Start a reversible AetnaMem trial."
+    ],
+    "brandColor": "#315A7D"
+  }
+}

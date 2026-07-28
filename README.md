@@ -18,20 +18,13 @@
 </p>
 
 <p align="center">
-  <a href="#try-aetnamem-without-replacing-your-current-memory">Safe Switch</a> &middot;
+  <a href="#adopt-aetnamem-without-a-blind-switch">Start safely</a> &middot;
+  <a href="./docs/assets/demos/aetnamem-openclaw-safe-switch.mp4">Watch the OpenClaw demo</a> &middot;
+  <a href="#give-your-agent-governed-memory-skills">Agent skills</a> &middot;
   <a href="./docs/safe-switch.md">Safe Switch guide</a> &middot;
   <a href="./docs/current-status.md">Current status</a> &middot;
-  <a href="./docs/multimodal-observations.md">Multimodal observations</a> &middot;
-  <a href="./docs/memory-impact.md">Memory Impact Lab</a> &middot;
-  <a href="./docs/assets/demos/aetnamem-voice-memory-short.mp4">Voice-memory demo</a> &middot;
-  <a href="#the-four-memories-in-plain-language">Four memories</a> &middot;
-  <a href="#ready-made-configurations">Presets</a> &middot;
-  <a href="./docs/macos-desktop.md">macOS desktop</a> &middot;
-  <a href="./examples/flagship-demo/">Flagship demo</a> &middot;
-  <a href="./examples/grok-memory-game/">Grok memory game</a> &middot;
-  <a href="./paper/aetnamem-control-plane.pdf">Scientific report</a> &middot;
-  <a href="./docs/guarded-actions.md">Guarded actions</a> &middot;
-  <a href="./TODO.md">Roadmap</a>
+  <a href="#install--use">Python / MCP</a> &middot;
+  <a href="#research-and-experimental-work">Research</a>
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
@@ -44,7 +37,89 @@ The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
 plugin is **0.4.0**.
 
-## Try AetnaMem without replacing your current memory
+## Adopt AetnaMem without a blind switch
+
+Your current OpenClaw or Hermes memory stays in place while you evaluate
+AetnaMem:
+
+1. **Install beside the agent.** Nothing is cut over.
+2. **Capture authenticated user turns.** Candidate facts go to a separate
+   local trial database; model context is unchanged.
+3. **Review the candidates.** Approve useful facts and reject noisy ones.
+4. **Preview the exact context.** AetnaMem shows the bytes, size, selected
+   candidates, and manifest digest before the model sees anything.
+5. **Run a bounded canary.** Only the number of turns you authorize receive
+   approved memory.
+6. **Inspect your evidence.** Compare answers and costs for your task; AetnaMem
+   also reports candidate decisions, context size, exposures, configuration
+   digests, and transition-chain validity.
+7. **Activate or restore.** Switch on when your evidence is good enough, or
+   roll back the saved host configuration without deleting the trial record.
+
+Start the side-by-side trial:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+aetnamem trial start --host openclaw
+aetnamem trial status
+aetnamem trial candidates
+```
+
+Then approve a candidate, inspect the preview, and allow one canary turn:
+
+```bash
+aetnamem trial approve tc_...
+aetnamem trial preview
+aetnamem trial canary --turns 1
+
+# After evaluating your own result:
+aetnamem trial activate  # use approved AetnaMem context normally
+aetnamem trial rollback  # or restore the saved OpenClaw configuration
+```
+
+The [77-second real OpenClaw demonstration](./docs/assets/demos/aetnamem-openclaw-safe-switch.mp4)
+uses DeepSeek on an isolated agent. Its baseline answered “I do not know yet”;
+the one-turn AetnaMem canary answered “Kyoto” and used 12.9% fewer model tokens
+in that run. This is reproducible evidence for one demonstration task—not a
+promise that every workload improves by 12.9%.
+
+> **The product promise is the safe evaluation path:** see what AetnaMem
+> captures, inspect what it would show, try a limited canary, and switch only
+> when your own evidence supports the decision.
+
+## Give your agent governed-memory skills
+
+Install the AetnaMem engine, then install the repository's focused skills:
+
+```bash
+python3 -m pip install --upgrade aetnamem
+npx skills add aetna000/aetnamem
+```
+
+The skill library gives Codex, Claude, and other compatible agents three
+plain-language workflows:
+
+| Skill | Ask the agent |
+|---|---|
+| `use-governed-memory` | “Remember that reports must be Markdown, with provenance.” |
+| `audit-agent-memory` | “Why do you remember that? Export the verified trace.” |
+| `trial-agent-memory` | “Try AetnaMem beside OpenClaw without changing its context yet.” |
+
+The skills do not replace the evidence engine. They call public AetnaMem CLI
+operations; the engine remains responsible for admission policy, SQLite
+storage, provenance, audit-chain verification, correction, and deletion
+receipts. OpenClaw or Hermes hooks are still required for automatic capture of
+authenticated turns.
+
+> **Skills tell the agent how to use memory. AetnaMem proves what actually
+> happened.**
+
+The repository includes Codex and Claude plugin manifests as well as the
+provider-neutral skills. See the [Agent skills guide](./docs/agent-skills.md)
+for trust boundaries, example conversations, wrapper commands, and validation.
+
+## What happens during a Safe Switch trial
 
 For OpenClaw:
 
@@ -110,53 +185,6 @@ and exact rollback boundaries.
 
 This distinction is deliberate: “implemented” is not the same as “proven to
 improve every agent.”
-
-## Research: prove whether memory helped
-
-Create a complete local lab without changing normal agent behavior:
-
-```bash
-aetnamem impact init ./memory-impact-lab
-cd ./memory-impact-lab
-aetnamem impact run --protocol protocol.yaml --stage synthetic
-```
-
-Only after the synthetic estimator gate passes should a registered operator
-start the paid Grok stages. The one-call smoke gate must first prove that the
-registered Grok invocation can edit its isolated workspace:
-
-```bash
-aetnamem impact run --protocol protocol.yaml --stage grok-smoke \
-  --confirm-paid-run
-aetnamem impact run --protocol protocol.yaml --stage grok-train \
-  --confirm-paid-run
-aetnamem impact run --protocol protocol.yaml --stage grok-held-out \
-  --confirm-paid-run
-aetnamem impact verify results/ --public-key host-public-key.pem
-aetnamem impact report results/ --public-key host-public-key.pem \
-  --output reports/memory-impact.html
-```
-
-Every task is evaluated across the 16 combinations of working, semantic,
-episodic and procedural memory. Grok never grades itself: a hidden host
-verifier signs the outcome after the agent exits. See the
-[Memory Impact guide](./docs/memory-impact.md) and
-[reference lab](./bench/causal_memory/).
-
-To give Grok CLI the normal, default-off four-memory runtime:
-
-```bash
-python3 -m pip install --upgrade aetnamem
-aetnamem setup --yes --preset starter --subject you \
-  --agent grok-primary --skill-path ~/.grok/skills
-grok mcp add --scope user aetnamem -- \
-  aetnamem runtime mcp --config ~/.aetnamem/runtime.json
-grok mcp doctor
-```
-
-This makes governed memory available to Grok; it does not guarantee better
-performance. The [Grok/xAI guide](./docs/grok-xai.md) explains the four
-presets and how to measure the result with Memory Impact.
 
 ## Give OpenClaw four kinds of memory
 
@@ -906,92 +934,65 @@ benchmark scenario.
 
 ## Documentation
 
-- **[0.6.1 release notes](./docs/releases/v0.6.1.md)** — Safe Switch beta for
-  observable capture, human-reviewed previews, bounded canary, fail-closed
-  modes, host snapshot/rollback, and OpenClaw/Hermes adapters.
-- **[Safe Switch guide](./docs/safe-switch.md)** — exact commands, mode
-  boundaries, host behavior, evidence meaning, and rollback limits.
-- **[0.6.0 release notes](./docs/releases/v0.6.0.md)** — reproducible Memory
-  Impact Lab, balanced factorial allocation, signed host verification,
-  synthetic calibration, reports and frozen held-out policy gate.
-- **[Memory Impact guide](./docs/memory-impact.md)** — protocol, commands,
-  estimands, integrity checks and claims boundary.
-- **[0.5.2 release notes](./docs/releases/v0.5.2.md)** — governed multimodal
-  observations, exact-artifact provenance and deletion, OpenClaw 0.3.1, and
-  compatibility notes.
-- **[X article: multimodal memory with evidence](./docs/marketing/x-multimodal-memory-release.md)** —
-  a plain-language release story with a short voice-note demo.
-- **[Current capability status](./docs/current-status.md)** — canonical
-  implemented, experimental, public, and planned boundary.
-- **[0.5.1 release notes](./docs/releases/v0.5.1.md)** — semantic audit search,
-  chronological traces, model pinning, deletion safety, and investigator access evidence.
-- **[0.5.0 release notes](./docs/releases/v0.5.0.md)** — four-memory runtime,
-  ten-step setup, presets, runtime MCP, OpenClaw 0.3.0, deletion, and benchmark.
-- **[0.4.1 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.1.md)** — provider-neutral
-  cache-aware context packs, OpenClaw npm release, Hermes integration, measured
-  token/cost results, and claims boundaries.
-- **[0.4.0 release notes](https://github.com/aetna000/aetnamem/blob/main/docs/releases/v0.4.0.md)** — evidence-to-approved-change capabilities,
-  installation, validation, and claims boundary.
-- **[macOS desktop guide](https://github.com/aetna000/aetnamem/blob/main/docs/macos-desktop.md)** — local dashboard,
-  onboarding checks, provider setup, approval UI, safe workspace, Keychain
-  secrets, and encrypted at-rest database sealing.
-- **[Data storage and backup](https://github.com/aetna000/aetnamem/blob/main/docs/data-storage-and-backup.md)** — default
-  database/workspace paths on macOS, Linux, and Windows, plus safe backup,
-  key recovery, restore steps, and encryption boundaries.
-- **[Integration guide](https://github.com/aetna000/aetnamem/blob/main/docs/integration-guide.md)** — full CLI
-  reference (every command, flags, output shapes, exit codes) and MCP
-  server reference (transport, flags, tool catalog, host configs for
-  Claude Code / Claude Desktop / OpenClaw-style bridges, security
-  properties, troubleshooting).
-- **[OpenClaw setup](https://github.com/aetna000/aetnamem/blob/main/docs/openclaw-setup.md)** — visual (Mermaid)
-  walkthrough of wiring aetnamem into OpenClaw or any MCP host: setup flow,
-  runtime sequence, the quarantine gate, and the external audit loop.
-- **[Hermes Agent guide](https://github.com/aetna000/aetnamem/blob/main/docs/hermes-agent.md)** — MCP setup,
-  tool-based memory, automatic context-pack integration, caching expectations,
-  and multi-user boundaries.
-- **[Grok/xAI guide](https://github.com/aetna000/aetnamem/blob/main/docs/grok-xai.md)** — Grok/xAI function-calling
-  quickstart, local playground, and Remote MCP deployment notes.
-- **[Graph memory design](https://github.com/aetna000/aetnamem/blob/main/docs/graph-memory-design.md)** — implemented
-  Phase 0–4 graph index: entities and typed edges over governed records,
-  bounded seed+spread recall, reviewer-gated reversible merges, scheduled
-  consolidation, cold history partitions, and incremental audit verification.
-- **[Auditing guide](https://github.com/aetna000/aetnamem/blob/main/docs/auditing-guide.md)** — how to *use* the
-  auditability: checkpoint cadence and anchoring recipes, verifying after an
-  incident, handling erasure/access/rectification requests with receipts,
-  reviewing quarantine, logging agent actions onto the same chain, and what
-  to hand an external auditor.
-- **[Audit search and trace](https://github.com/aetna000/aetnamem/blob/main/docs/audit-search.md)** — browse a
-  user's memories, search evidence without knowing internal IDs, reconstruct
-  memory-to-action timelines, and save well-formatted text or JSON reports.
-- **[Semantic investigation search](https://github.com/aetna000/aetnamem/blob/main/docs/semantic-search.md)** — optional
-  Ollama, OpenAI-compatible, or local Sentence Transformers embeddings for
-  exact semantic and hybrid audit search, with canonical validation, index
-  verification, and vector-aware deletion receipts.
-- **[Audit-log specification](https://github.com/aetna000/aetnamem/blob/main/docs/audit-log-spec.md)** — the frozen wire
-  format: canonical serialization, hash preimages, chain/checkpoint/receipt
-  verification rules, and the threat-model table.
-- **[Guarded actions](https://github.com/aetna000/aetnamem/blob/main/docs/guarded-actions.md)** — action modes,
-  authority boundaries, state transitions, guarantees, and non-guarantees.
-- **[Collaborative decision workflow](https://github.com/aetna000/aetnamem/blob/main/docs/decision-workflow-spec.md)** — generic
-  cases, revisions, evidence lineage, ballots, adoption, authorization,
-  concurrency, receipts, and trust boundaries.
-- **[Evidence-to-Decision profile](https://github.com/aetna000/aetnamem/blob/main/docs/etd-profile.md)** — versioned EtD criteria,
-  artifact chain, report surface, and methodology boundary.
-- **[Decision host integration](https://github.com/aetna000/aetnamem/blob/main/docs/decision-host-integration.md)** — authenticated-host contract,
-  namespace derivation, SQLite/PostgreSQL deployment, signed identity,
-  retention, and approved-change bridge.
-- **[EtD pilot and methodology review](https://github.com/aetna000/aetnamem/blob/main/docs/etd-pilot-methodology-review.md)** — production entry criteria,
-  multi-user test protocol, acceptance evidence, and independent-review package.
-- **[Channels and governed outbound proposal](https://github.com/aetna000/aetnamem/blob/main/docs/channels-outbound-spec.md)** — provider-neutral
-  intake, optional business review, and evidence-bound external adapters;
-  proposed, not implemented.
-- **[Inference engineering memory proposal](https://github.com/aetna000/aetnamem/blob/main/docs/inference-engineering-spec.md)** — provider-neutral local and
-  Hugging Face inference, governed run evidence, strict comparison, engineering
-  decisions, deployment receipts, and incident reconstruction; proposed, not
-  implemented.
-- **[Roadmap](https://github.com/aetna000/aetnamem/blob/main/TODO.md)** — completed foundation work and remaining product,
-  provider, security, and interface tasks.
-- **[Architecture plan](https://github.com/aetna000/aetnamem/blob/main/plan.md)** — architecture plan and roadmap.
+### Adoption path
+
+- **[Safe Switch guide](./docs/safe-switch.md) — Beta:** exact trial commands,
+  host behavior, evidence meaning, activation, stop, and rollback boundaries.
+- **[Agent skills guide](./docs/agent-skills.md) — Beta:** conversational
+  governed-memory, audit, and Safe Switch workflows.
+- **[OpenClaw setup](./docs/openclaw-setup.md)** and
+  **[Hermes guide](./docs/hermes-agent.md):** host-specific installation and
+  identity boundaries.
+- **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
+  reference.
+- **[0.6.1 release notes](./docs/releases/v0.6.1.md):** package versions,
+  compatibility, validation, and known limits.
+
+### Released memory and audit surfaces
+
+- **[Current capability status](./docs/current-status.md):** the canonical
+  released, beta, research, and planned boundary.
+- **[Auditing guide](./docs/auditing-guide.md)** and
+  **[audit search/trace](./docs/audit-search.md):** investigate memory without
+  knowing an internal ID and export text or JSON evidence.
+- **[Multimodal observations](./docs/multimodal-observations.md):** governed
+  text observations with exact-artifact provenance; AetnaMem does not store or
+  understand media bytes.
+- **[Semantic investigator search](./docs/semantic-search.md) — opt-in:** local
+  or configured embeddings for human investigation; default agent recall
+  remains lexical.
+- **[Data storage and backup](./docs/data-storage-and-backup.md)** and
+  **[audit-log specification](./docs/audit-log-spec.md):** persistence,
+  recovery, replay, and verification boundaries.
+
+### Beta and advanced surfaces
+
+- **[Four-memory runtime](./docs/four-memory-runtime.md) — opt-in:** working,
+  semantic, episodic, and procedural context orchestration.
+- **[Graph memory](./docs/graph-memory-design.md) — opt-in:** derived,
+  rebuildable relationship index with path evidence.
+- **[Guarded Actions](./docs/guarded-actions.md) — Beta:** approval and action
+  evidence; not a universal MCP write interceptor.
+- **[macOS desktop](./docs/macos-desktop.md) — Beta:** local desktop workflow
+  with platform-specific Keychain-backed sealing.
+
+## Research and experimental work
+
+These components are checked in so their methods and evidence can be inspected.
+They are not part of the Safe Switch adoption claim:
+
+- **[Memory Impact Lab](./docs/memory-impact.md) — Research:** balanced
+  interventions, signed host verification, estimators, and a held-out policy
+  gate. The 100-run Grok pilot is exploratory and incomplete; no general
+  causal performance claim ships.
+- **[Collaborative decisions / EtD](./docs/decision-workflow-spec.md) —
+  Research:** a generic evidence-to-decision workflow, not a clinical or
+  regulatory product claim.
+- **[Governed outbound channels](./docs/channels-outbound-spec.md) and
+  [inference engineering memory](./docs/inference-engineering-spec.md) —
+  Proposal:** specifications, not implemented product surfaces.
+- **[Architecture plan](./plan.md) and [roadmap](./TODO.md):** future work,
+  not release documentation.
 
 ## Benchmark
 

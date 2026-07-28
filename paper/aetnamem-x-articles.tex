@@ -61,12 +61,13 @@
 
 \begin{abstract}
 This collection contains twenty standalone, high-level articles prepared for
-publication on X. It translates the architecture and measured claims of the
-\system{} governed-memory white paper into accessible language without
-removing the technical boundaries. The series explains why durable AI memory
-is more than search, how provenance and trust shape recall, why the graph is a
-rebuildable index, what recall forensics means, how approval limits external
-effects, and where the current encryption and scale evidence stops.
+publication on X. It translates the architecture, released behavior, and
+measured claims of \system{} through version 0.6.1 into accessible language
+without removing the technical boundaries. The series explains why durable AI
+memory is more than search, how four memory planes become one governed context
+pack, how multimodal observations retain provenance, how an auditor can trace
+memory influence, and how Memory Impact tests whether remembering changed a
+verified outcome.
 \end{abstract}
 
 \noindent\textbf{Source paper:}
@@ -75,8 +76,9 @@ Retrieval, and Approval-Bound Effects in aetnamem}. Author: aetna000.com.
 
 \noindent\textbf{Editorial note:} Each article is designed to stand alone.
 Technical measurements are used only where they clarify the idea. Statements
-about implementation refer to the version and content-addressed evaluation
-snapshot documented by the source paper, not to every future release.
+about current implementation refer to the public version 0.6.1 repository and
+its content-addressed evidence summaries. Experimental machinery and an
+exploratory pilot are identified separately from completed product claims.
 
 \tableofcontents
 \clearpage
@@ -338,292 +340,288 @@ investigator opts into embeddings, the additional replay boundary is explicit
 and the returned record must still pass canonical verification.}
 
 \clearpage
-\section{Bounded Recall on a Laptop}
+\section{How AetnaMem Keeps Recall Fast and Governed}
 \articlelabel{8}
-\coreidea{Memory growth should not force every query to score every stored
-record.}
+\coreidea{FTS5 gives Aetnamem a fast lexical shortlist; lifecycle policy and
+deterministic ranking still decide what an agent may see.}
 
-A naive memory implementation compares each query with every record. That
-becomes slower and produces larger evidence logs as the database grows.
+FTS5 means SQLite Full-Text Search version 5. It is the local catalogue that
+finds records containing query terms and phrases without asking a model to
+compare the query with every stored record.
 
-\system{} first asks SQLite FTS5 for a bounded set of active lexical matches.
-It fills unused capacity with recent active records, then ranks only that
-candidate set. The documented default candidate cap is 200, with a hard
-per-call ceiling of 2,000.
+For ordinary agent recall, \system{} asks FTS5 for active lexical matches,
+fills unused capacity with recent active records, and ranks only that bounded
+candidate set. The default candidate cap is 200 and the storage layer enforces
+a hard per-call ceiling of 2,000.
 
-The ranking combines text relevance, source-trust weight, and recency using a
-versioned deterministic formula. These values are retrieval utilities, not
-probabilities that a fact is true. Lifecycle eligibility occurs before
-ranking, so a highly relevant quarantined record remains excluded.
+The next step is just as important as the shortlist. Lifecycle eligibility is
+applied before ranking. Quarantined, superseded, and tombstoned records do not
+become ordinary recall merely because their words match well. The deterministic
+ranking combines lexical relevance, source-trust weight, and recency. Those
+scores are retrieval utilities, not probabilities that a statement is true.
 
-Bounded work also matters for audit evidence. The retrieval event stores a
-query digest, returned identifiers, algorithm parameters, and a bounded
-candidate ledger rather than copying an unbounded list into the audit trail.
+The retrieval event stores a query digest, returned identifiers, algorithm
+parameters, and a bounded candidate ledger. This keeps routine work and audit
+evidence bounded together.
 
-In the paper's 10,002-record laptop probe, direct recall kept its 200-record
-candidate cap. This demonstrates the mechanism at that size, not a guaranteed
-maximum for every machine or workload.
+FTS5 has a real limitation: ``reduce API spending'' may not match ``lower
+inference cost.'' Version 0.5.1 added optional semantic and hybrid search for
+human investigation, but the default agent path remains lexical and local.
 
-\boundary{Candidate caps improve predictable work but can exclude relevant
-records. Retrieval quality, FTS selectivity, database size, cache pressure,
-and hardware still need representative measurement.}
+\boundary{A candidate cap can exclude a relevant record, and FTS5 can miss
+synonyms, misspellings, or multilingual paraphrases. Bounded work is an
+operational guarantee, not universal retrieval quality.}
 
 \clearpage
-\section{The Graph Is a Map, Not the Truth}
+\section{Audit Search Without Knowing a Memory ID}
 \articlelabel{9}
-\coreidea{A knowledge graph is safer when it can be discarded and rebuilt
-from canonical records.}
+\coreidea{An investigator should be able to begin with an ordinary clue and
+reconstruct the memory story.}
 
-Graphs are useful because they make relationships explicit. They are also
-dangerous when an extraction error becomes accepted as permanent truth.
+Strong evidence is not very useful when only a database specialist can find
+it. \system{} therefore exposes three investigation commands:
+\texttt{memories} lists what is retained, \texttt{search} finds matching
+memory and evidence, and \texttt{trace} follows influence through time.
 
-\system{} treats its entity-relation graph as a derived index. Every edge
-points to a canonical record, and every record points to its source episode.
-If an extractor improves or the graph becomes damaged, the system can rebuild
-the map from the retained filing cabinet.
+An auditor can start with ``preferred airport,'' a session, a date interval,
+a tool name, a failed outcome, or a memory plane. Search scopes include
+memories, media observations, source episodes, retrievals, audit events,
+four-memory runtime runs, and guarded actions. The result can be printed as
+readable text or exported as structured JSON.
 
-Lifecycle rules propagate into the graph. An edge derived from quarantined
-content is quarantined. A correction supersedes the corresponding
-single-valued edge. Forgetting removes or tombstones related graph objects.
-Only active entities, aliases, and edges participate in normal traversal.
+Trace expands matching items through their recorded relationships. A typical
+story can show admission, quarantine or promotion, retrieval candidacy,
+returned memory, compiled context, an agent or tool action, and a recorded
+outcome. If plaintext was purged, the trace keeps identifiers and commitments
+without pretending it can recover the deleted words.
 
-Entity merges are proposal-only. Exact same-kind candidates can be shown to a
-reviewer, but the system does not let a language model decide that two people
-or projects are identical. Approved merges use reversible pointers rather
-than rewriting source records.
+Investigator searches are read-only by default. An operator can opt into a
+separate digest-only access chain that records who searched, the query and
+filter digests, the result-ID digest, count, and semantic epoch. Keeping that
+chain separate prevents an investigation from altering the agent evidence
+being investigated.
 
-This architecture limits the damage caused by a bad map. It does not pretend
-the map is harmless; a wrong active record can still produce a wrong edge.
-The difference is that the lineage remains visible and the derived structure
-is not load-bearing for canonical history.
-
-\boundary{A rebuild works only from retained canonical evidence. It cannot
-restore source content that was deliberately deleted or lost without a
-backup.}
+\boundary{A subject identifier scopes stored data; it is not authentication.
+Audit search can expose sensitive retained context and must sit behind a
+trusted access-control layer in a multi-user deployment.}
 
 \clearpage
-\section{Multi-Hop Recall That Can Explain Itself}
+\section{Four Kinds of Memory, Four Different Jobs}
 \articlelabel{10}
-\coreidea{Some memory questions require joining facts, not merely finding a
-similar sentence.}
+\coreidea{Working, semantic, episodic, and procedural memory should cooperate
+without being collapsed into one undifferentiated text store.}
 
-Consider two accepted memories: ``my boss is Sarah'' and ``Sarah's preferred
-airport is SEA.'' A question about the user's boss and flights may share words
-with the first statement but not with the answer statement.
+Working memory describes the task now: the goal, progress, constraints, and
+unfinished state. \system{} stores explicit snapshots keyed by subject,
+agent, session, and task. Hidden model reasoning is not a supported input.
 
-The derived graph connects these records through entities and typed
-relations. Retrieval starts with a small number of lexical seeds, then spreads
-through a bounded frontier for a limited depth. The default design uses no
-learned graph weights; trust, relation priors, recency, and hop decay are
-versioned deterministic inputs.
+Semantic memory contains durable governed facts and preferences. It uses the
+canonical record, trust, lifecycle, provenance, recall, graph, correction, and
+deletion machinery described earlier in this series.
 
-The useful output is not only ``SEA.'' It is the path that explains why the
-record was nominated: the query reached the boss relation, that relation
-identified Sarah, and Sarah's accepted airport relation led to SEA. Every
-edge cites its source record.
+Episodic memory records what happened: task outcomes and reviewed lessons from
+past attempts. A failure can create a quarantined lesson proposal, but it does
+not silently teach every later run.
 
-Graph candidates and direct lexical candidates are combined with a
-rank-fusion method rather than pretending their scores have the same meaning.
-The graph remains optional, and direct record recall remains available when
-an item cannot be represented as an edge.
+Procedural memory contains how to perform work. \system{} selects versioned,
+content-addressed \texttt{SKILL.md} files and records which procedure informed
+a run. A failed outcome may propose that a procedure needs review; it never
+rewrites and activates the skill automatically.
 
-In the paper's specific 10,002-record probe, direct top-10 recall missed the
-older airport record, while graph recall returned it at rank 2 after visiting
-two edges. This validates the constructed mechanism, not general question
-answering quality.
+These planes have different update rules because they answer different
+questions. The runtime gathers their contributions behind one interface,
+applies one context budget, and preserves a manifest showing exactly what was
+compiled.
 
-\boundary{Path explanation proves how a result was reached, not that every
-relation on the path is factually correct.}
+\boundary{Calling four inputs ``memory'' does not make them correct or useful.
+Each plane still needs trustworthy source labeling, review policy, and
+task-specific evaluation.}
 
 \clearpage
-\section{Recall Forensics: Explaining a Past Answer}
+\section{One Context Pack Instead of Four Memory Tools}
 \articlelabel{11}
-\coreidea{A memory system should be able to reconstruct why a specific result
-appeared at a specific time.}
+\coreidea{The agent should receive one bounded context pack, while Aetnamem
+handles memory-plane orchestration and evidence.}
 
-Traditional retrieval evaluation asks whether the system found something
-relevant. Recall forensics asks a deployment question: if a surprising memory
-appeared last Tuesday, what durable evidence explains its ranking, source,
-lifecycle state, and integrity?
+On each turn, the runtime collects contributions from every enabled plane,
+enforces per-plane and total character budgets, records contribution hashes,
+and returns one \texttt{aetnamem-runtime-pack-v1}. Stable material can be
+placed in a system prefix while dynamic state stays close to the current turn.
 
-The \system{} paper defines five checks. Attribution recomputes ranking inputs
-and ordering. Provenance follows the result back to admission, episode, and
-origin. Lifecycle replay checks whether the item was active at that turn.
-Decision replay reconstructs the logged selection. Integrity testing mutates
-selected evidence fields to see whether verification notices.
+Users do not need to design this configuration from scratch. A ten-step setup
+wizard and four presets provide understandable starting points:
+\texttt{starter} for one person and agent, \texttt{private} for a smaller
+context, \texttt{team} for a trusted multi-agent host, and \texttt{benchmark}
+for controlled evaluation. Presets become ordinary JSON rather than hidden
+service behavior.
 
-In the content-addressed evaluation snapshot, an independent standard-library
-auditor recomputed 14 of 14 ranking decisions and reconstructed all 68 returned
-result pairs. It detected all 75 selected single-row mutations. Eleven stable
-turns were re-executed exactly.
+The generic integration remains MCP. Running \texttt{aetnamem runtime mcp}
+keeps the original fifteen memory contracts and adds
+\texttt{memory\_prepare\_turn} and \texttt{memory\_record\_outcome}. Existing
+clients can keep using the original catalogue; orchestration is opt-in.
 
-Three earlier turns were deliberately excluded from exact engine
-re-execution because a later correction or deletion changed their canonical
-inputs. That exclusion is part of the result: preserving deleted plaintext
-only to make an audit demo look complete would violate the deletion contract.
+OpenClaw plugin 0.3.1 discovers the orchestration tool and can fall back to its
+legacy hooks when an older server does not expose it. Grok CLI can connect to
+the same local MCP runtime. The Python engine, CLI, and MCP remain generic
+rather than becoming a Grok-only backend.
 
-Recall forensics is not the same as proving an answer true. It proves what the
-measured evidence can reconstruct about why the system returned it.
-
-\boundary{The evaluated workload is synthetic and bounded. Its mutation
-coverage does not prove detection of every possible coherent database
-rewrite.}
+\boundary{An outcome submitted through ordinary CLI or MCP is
+\texttt{caller\_asserted}. Transporting the value does not prove that a trusted
+host verified task success.}
 
 \clearpage
-\section{A Hash Chain Is Useful, but It Needs an Anchor}
+\section{Multimodal Memory Without Storing Media Bytes}
 \articlelabel{12}
-\coreidea{Tamper evidence stored beside the data cannot, by itself, prove that
-the entire database was not replaced.}
+\coreidea{Aetnamem governs what an agent observed in media; it does not need
+to become an image, audio, or video store.}
 
-\system{} appends important transitions to a per-subject SHA-256 hash chain.
-Each event commits to the previous event hash. An edit, insertion, or interior
-deletion breaks verification from the chain start.
+A multimodal host or model can inspect a photograph, recording, video, or
+document. It sends \system{} a typed text observation plus an evidence
+envelope: modality, exact-byte SHA-256 digest, secretless host reference,
+segment, extractor provider, model and version, and optional model digest and
+confidence.
 
-This is valuable, but it has a limit. An attacker with complete database
-control could truncate the tail or rewrite the entire chain and calculate new
-hashes. If the verifier trusts only the modified file, there is no independent
-reference for the old head.
+\system{} stores a first-class artifact row and a quarantined observation
+record. The observation does not need to match the ordinary fact-extraction
+grammar. A person or trusted host can inspect and promote it through the same
+governed lifecycle as other memory.
 
-The answer is an external checkpoint. A checkpoint records the event count,
-sequence, and current hash, then moves that commitment to an independent
-location such as append-only object storage or a timestamping service.
+Confidence stays evidence. A value such as 0.86 from one extractor is not
+assumed comparable with 0.86 from another, and it cannot promote the record or
+authorize an action.
 
-The paper's mutation experiment demonstrates the distinction directly. Tail
-truncation was detected in zero of five trials using the chain alone and in
-five of five when checked against an anchored head.
+The media bytes remain under host control. \system{} does not caption,
+transcribe, OCR, embed, fetch, retain, or delete them. Semantic investigation
+can embed the canonical text observation; provenance travels with the result,
+but no media embedding is created.
 
-An incremental verification cache can make routine checks faster by verifying
-only the new suffix. That cache is an optimization, not a trust anchor, because
-an attacker who replaces the database may also replace a local cache.
+Generic CLI and MCP callers are forced to the honest
+\texttt{caller\_asserted} digest-assurance tier.
+\texttt{verified\_by\_aetnamem} is currently rejected because no released path
+lets the engine hash the original byte stream itself.
 
-\boundary{A hash chain provides tamper evidence relative to a trusted point.
-It does not provide replication, availability after disk loss, trusted wall
-clock time, or automatic recovery.}
+\boundary{A text observation is evidence of what an extractor reported, not
+proof that the report correctly describes the media. The original artifact
+and its access controls remain the host's responsibility.}
 
 \clearpage
-\section{Confidence Is Not Trust}
+\section{Forget the Exact Artifact, and Say Exactly What That Means}
 \articlelabel{13}
-\coreidea{One number should not decide whether information is relevant,
-trusted, true, or authorized.}
+\coreidea{Multimodal deletion becomes auditable when artifact identity is an
+indexed relation rather than metadata buried in JSON.}
 
-AI systems often use the word ``confidence'' as if it described one property.
-In practice, several different questions are being mixed together.
+Every observation links to an artifact identified by subject and the SHA-256
+of one exact byte stream. A forget-by-artifact request can therefore find all
+derived observations without guessing from captions or scanning opaque
+metadata.
 
-\system{} separates extraction confidence, source trust, record retrieval
-score, graph activation, entity-merge confidence, and external-action outcome.
-Each value has a limited job.
+The deletion transaction purges observation and episode payloads, graph
+derivatives, and registered semantic vectors before tombstoning provenance
+metadata. It verifies absence before committing and returns an
+\texttt{aetnamem-artifact-deletion-receipt-v1} naming the covered objects.
 
-Extraction confidence records how strongly a deterministic parser recognized
-a supported sentence form. Trust records where the statement came from and
-whether it was reviewed. Retrieval scores order already eligible candidates.
-Graph scores measure the strength of a typed path. Merge confidence describes
-an identity proposal. Action outcomes report what was observed after an
-external operation.
+The receipt is deliberately narrow. It says the digest identifies an exact
+byte stream, reports whether derived AetnaMem objects were removed, and states
+that the host file was not deleted. A resized photograph, transcoded video, or
+re-encoded audio file has a different digest.
 
-A high retrieval score cannot activate quarantined content. A high merge score
-cannot merge two entities automatically. A confident memory cannot authorize
-a file change. An external timeout is not converted into ``60 percent
-successful''; it becomes uncertain because the outside state is unknown.
+Re-extraction has an explicit lineage rule. Artifact plus segment plus
+extractor identity defines a lineage. A rerun can supersede an older
+quarantined result from the same lineage, while observations from different
+extractors accumulate. Promoting a newer result supersedes an older active
+record from that lineage so recall does not show two accepted versions.
 
-This separation makes the system less convenient to summarize with one
-dashboard number, but much easier to reason about. Every value answers a
-specific question and has a defined authority boundary.
-
-\boundary{The current ranking and merge values are deterministic heuristics,
-not calibrated probabilities of truth or correctness.}
+\boundary{The receipt proves deletion of memories derived from digest X inside
+the governed store. It does not prove deletion of re-encoded copies, backups,
+provider logs, exports, or the host-controlled original.}
 
 \clearpage
-\section{Ambiguity Should Stay Visible}
+\section{The Graph Is a Rebuildable Map}
 \articlelabel{14}
-\coreidea{When the system cannot justify a conclusion, abstention or review is
-better than a hidden guess.}
+\coreidea{Relationships can recover useful multi-hop memory when every path
+still leads back to canonical evidence.}
 
-Language is ambiguous. Identities are ambiguous. External systems can fail in
-ambiguous ways. A memory architecture becomes fragile when it compresses all
-of these situations into a confident-looking answer.
+Suppose accepted memory says ``my boss is Sarah'' and ``Sarah prefers SEA.''
+A flight question may match the first statement but not the answer statement.
+A derived entity-relation graph can follow the boss relation to Sarah and then
+the airport relation to SEA.
 
-The current \system{} extractor is intentionally narrow. Unsupported phrasing
-creates a source episode but may create no semantic record. Questions are not
-treated as assertions. A caller can request a forced note, but that choice is
-explicit and recorded.
+The useful output is not only ``SEA.'' It is a bounded path showing which
+entities and typed edges were visited and which canonical records support
+them. Graph candidates and direct lexical candidates are combined without
+pretending that their scores have identical meanings.
 
-Unstructured conflicts may remain as multiple records rather than being
-silently merged. Entity-resolution candidates wait for a reviewer. Exact name
-or alias overlap can support a proposal, but it does not prove two entities
-are the same.
+The graph is a map, not canonical truth. Edges point to records, records point
+to source episodes, and lifecycle transitions propagate into derived
+structures. Quarantined edges cannot bridge trusted facts. Corrections
+supersede affected single-valued relations. Forgetting removes or tombstones
+the relevant graph objects.
 
-External ambiguity receives its own states. If an operation fails after
-dispatch, generic code may not know whether the provider completed it. The
-system records uncertainty or recovery required instead of retrying blindly
-and risking a duplicate effect.
+Entity merges remain proposal-only and approved merges use reversible
+pointers. If extraction logic improves or the graph is damaged, the map can be
+rebuilt from retained canonical records.
 
-This approach gives users more visible states to understand. That is a design
-cost, but it reflects reality. A single green check mark is not useful when
-the system cannot prove what happened.
+\boundary{A visible path explains how a result was nominated; it does not
+prove that every source statement or extracted relation on that path is
+factually correct.}
 
-\boundary{Abstention reduces silent corruption but can reduce convenience and
-recall coverage. The product must make review workflows understandable rather
-than leaving uncertainty as an unexplained error.}
+\clearpage
+\section{Trace the Influence, Then Verify the Chain}
+\articlelabel{15}
+\coreidea{Auditability means reconstructing how memory participated, not just
+showing that a row exists.}
+
+The \texttt{trace} command joins retained evidence into a chronological story:
+memory admission, candidate consideration, retrieval, compiled context,
+runtime intervention, action, and outcome. It can begin from free text or from
+a known subject, session, run, record, or event type.
+
+Important transitions also append to a per-subject SHA-256 hash chain. Each
+event commits to the previous event hash, so an edit, insertion, or interior
+deletion breaks local verification. Semantic investigator access can use its
+own digest-only chain, preserving separation from the behavior being audited.
+
+A local chain has an important limitation. An attacker controlling the whole
+database could truncate the tail or replace the chain and recompute it.
+\system{} therefore supports external checkpoints that move the event count,
+sequence, and head hash into another trust domain.
+
+Trace and chain verification answer different questions. Trace explains the
+recorded relationships. The chain checks local continuity relative to a
+trusted starting point or checkpoint. Neither proves that the original input
+was truthful or that an external action really happened.
+
+\boundary{Deleted plaintext stays deleted. An audit may retain identifiers,
+digests, lifecycle events, and receipts while correctly refusing to recreate
+purged content.}
 
 \clearpage
 \section{Information Is Not Authority}
-\articlelabel{15}
-\coreidea{Remembering a fact should not grant permission to act on it.}
-
-An assistant may remember that a report belongs in a certain folder. That
-memory can help prepare a proposal. It should not, by itself, authorize the
-assistant to overwrite a file.
-
-\system{} separates memory from external authority. Recalled records can
-inform an action plan, but enforced write operations require a trusted,
-host-attested authority reference. Untrusted records may contribute context
-without becoming permission.
-
-This distinction matters for prompt injection. A web page might tell an agent
-to edit a configuration file. Even if the content is stored for review, it
-cannot manufacture the user authority required by the guarded action engine.
-
-The agent-facing interface can stage tools and inspect state, but it cannot
-label its own proposal as a user instruction or create approval material. The
-reviewer-side interface creates authority from the user's actual task.
-
-This is one of the main reasons \system{} is more than a retrieval component.
-It connects memory evidence to an effect-control plane while keeping the two
-roles distinct.
-
-\boundary{The guarantee applies only when model-requested effects are routed
-through the registered broker. Direct shell, filesystem, database, or provider
-access can bypass the gate and must be restricted by deployment policy.}
-
-\clearpage
-\section{Approve the Exact Plan, Not the General Intention}
 \articlelabel{16}
-\coreidea{Approval should bind to the precise operation that was reviewed.}
+\coreidea{A remembered instruction can inform a plan, but only trusted
+authority can approve an external effect.}
 
-``Update my report'' is an intention, not a complete execution plan. The file
-may change after review. An adapter may be upgraded. A path may resolve
-differently. The proposed content may no longer match what the user saw.
+An assistant may remember that a report belongs in a particular folder. That
+memory can help prepare a proposal. It should not authorize the assistant to
+overwrite the file.
 
-\system{} prepares a canonical plan containing the operation, arguments,
-preview, preconditions, adapter manifest, dependencies, evidence references,
-and policy version. It calculates a digest over that complete plan.
+\system{} separates recalled evidence from external authority. Guarded actions
+prepare a canonical plan containing the operation, arguments, preview,
+preconditions, adapter manifest, dependencies, evidence references, and policy
+version. Approval binds to the digest of that exact plan for a limited period.
 
-Reviewer approval uses HMAC-SHA256 to bind the transaction identifier, plan
-digest, approver label, issue time, expiry time, and a random nonce. The
-approval applies to one exact plan for a limited period, not to future
-variations of the same idea.
+Before execution, the engine rechecks the plan and approval commitments,
+adapter identity, policy, and resource preconditions. The reference filesystem
+adapter stops if a file changed after review and reads the result back after a
+write to verify the expected digest.
 
-Before execution, the engine recomputes the plan and approval commitments,
-checks the audit chain, confirms the adapter did not change, and revalidates
-preconditions. Each operation is checked again immediately before its effect.
+This boundary also limits durable prompt injection. Quarantined web or tool
+content may be retained for review, but it cannot manufacture the user
+authority required to execute a protected operation.
 
-For the reference filesystem adapter, a changed file digest causes the plan to
-stop instead of stretching the old approval to cover new state. After a write,
-the adapter independently reads the result and verifies its expected digest.
-
-\boundary{An HMAC proves possession of a shared secret, not a person's legal
-identity. Multi-user or regulated deployment would require stronger identity,
-revocation, key custody, and policy administration.}
+\boundary{This protection applies only when model-requested effects are routed
+through the registered broker. Direct shell, filesystem, database, or provider
+access can bypass it and must be restricted by the host.}
 
 \clearpage
 \section{``Uncertain'' Is a Responsible Result}
@@ -659,110 +657,123 @@ offers neither idempotency records nor an authoritative way to inspect the
 resulting state.}
 
 \clearpage
-\section{What Aetnamem Encryption Protects Today}
+\section{Memory Impact: Did Remembering Actually Help?}
 \articlelabel{18}
-\coreidea{Encryption claims are meaningful only when they name the platform,
-files, process state, and remaining plaintext.}
+\coreidea{Retrieval is not impact; causal evidence requires controlled
+interventions and outcomes verified outside the agent.}
 
-The current \system{} release does not use SQLCipher and does not provide one
-uniform live-database encryption design across macOS, Windows, and Linux.
+If an agent succeeds after receiving a memory, it may have succeeded without
+it. Relevance scores, usage counts, and correlations cannot answer the
+cause-and-effect question by themselves.
 
-On macOS, the desktop launcher can seal an idle database using OpenSSL
-AES-256-CBC with PBKDF2 and an HMAC-SHA256 sidecar. The secret is held in the
-login Keychain. Before opening the database, the HMAC is checked; during use,
-SQLite operates on a plaintext database in a temporary directory.
+Version 0.6.0 introduces the default-off Memory Impact Lab. Its technical
+foundation is the Causal Memory Ledger: a record of candidate contribution
+hashes, assignment probabilities, assigned and applied memory arms,
+experimental stratum, policy identity, seed commitment, and final context
+manifest.
 
-The launcher checkpoints and reseals after mutations, subject to a short rate
-limit, and force-seals during a clean shutdown. This provides useful
-confidentiality when an attacker obtains only the idle sealed files without
-the Keychain secret.
+The registered design tests all sixteen combinations of working, semantic,
+episodic, and procedural memory. Within each task block, every arm from
+\texttt{0000} through \texttt{1111} appears once in randomized order. Exact
+exposure evidence fails closed if an assigned contribution is missing or
+truncated.
 
-It is not transparent database encryption. The live database and WAL are
-plaintext while the service runs. The ciphertext and HMAC sidecar are not
-published atomically. The same secret currently serves two cryptographic
-roles, and archive or workspace files need separate protection.
+Grok does not grade Grok. The controller clones the frozen SQLite snapshot and
+workspace, compiles context on the host, runs the agent in a restricted
+sandbox, and invokes a hidden verifier outside the agent workspace. A signed
+receipt binds the assignment, context, output, workspace, verifier digest,
+cost and outcome metrics.
 
-Windows and Linux currently store ordinary SQLite files. Their at-rest
-confidentiality depends on operating-system controls such as BitLocker or
-LUKS when those controls are enabled and managed correctly.
+Before any paid model study, the synthetic stage plants known plane effects
+and deliberate confounding. It checks estimator error, direction, interval
+coverage, null false positives, and whether randomized conclusions outperform
+naive observational attribution.
 
-\boundary{Encryption protects data against specific storage threats. It does
-not protect a database from every process running as the unlocked user, prove
-memory correctness, or replace tested backup and key-recovery procedures.}
+\boundary{The laboratory can measure a registered intervention; its existence
+does not prove that memory improved an agent. Adaptive production selection
+remains off until a frozen policy wins on held-out tasks and replicates.}
 
 \clearpage
-\section{Scale Claims Should Follow Evidence}
+\section{What the 100-Run Grok Pilot Actually Showed}
 \articlelabel{19}
-\coreidea{An architecture can be designed for growth without pretending that
-unmeasured capacity has already been proven.}
+\coreidea{A promising pilot is useful when its evidence and incompleteness are
+reported together.}
 
-\system{} uses three mechanisms to avoid obvious unbounded work in hot recall:
-candidate-capped direct ranking, bounded graph traversal, and optional cold
-partitions for inactive derived edges. Incremental audit verification avoids
-rehashing an already validated prefix on every routine check.
+The corrected paid Grok 4.5 recovery pilot deliberately stopped after 100
+registered calls. It produced 100 signed receipts, 57 host-verified successes,
+zero aborts or timeouts, and six complete balanced sixteen-arm blocks.
 
-These choices make larger memory stores plausible. They do not establish a
-supported maximum. SQLite file size, full-text selectivity, cache pressure,
-audit growth, backup duration, archive churn, concurrent writes, and hardware
-all affect real deployments.
+Across those six complete blocks, the all-four-memory arm succeeded in six of
+six tasks and the no-memory arm in one of six. Procedural memory had an
+exploratory success-effect estimate of \(+0.1875\), with a 95 percent interval
+from \(+0.049631\) to \(+0.325369\). The experiment recorded USD 8.3339928 in
+provider cost, plus USD 0.016532 for the corrected smoke test.
 
-The paper therefore reports what it measured. In one Apple M2 probe with
-10,002 records, direct recall had a median of 17.139 milliseconds and graph
-recall 24.799 milliseconds. Graph recall found the constructed two-hop target
-at rank 2; direct top-10 recall did not. The candidate cap remained 200.
+The evidence pipeline did what it was designed to do. Schedule integrity and
+the seed reveal verified. There were no failed, aborted, or extra receipts.
+Protocol, schedule, Grok executable, metrology, public key, verification JSON,
+and report digests are published in the repository's compact evidence summary.
 
-That experiment supports the intended bounded-recall and multi-hop mechanism
-for one synthetic scenario. It is not a million-record benchmark, a
-multilingual relevance evaluation, a sustained concurrency test, or evidence
-of state-of-the-art answer quality.
+The scientific result is intentionally narrower. The registered schedule
+contained 384 calls, so 284 remained missing after the cap. Only six balanced
+blocks were complete. The frozen-policy held-out phase did not run. The wide
+intervals for most plane effects reflect that limited evidence.
 
-Engineering credibility improves when design projections and validated
-results remain separate. The next useful evidence is not a larger adjective;
-it is a broader workload, reproducible measurements, and published failure
-conditions.
+The defensible conclusion is therefore not ``AetnaMem makes every Grok task
+better.'' It is that \system{} successfully controlled which memory Grok saw,
+measured externally verified outcomes, and preserved evidence for a larger
+confirmatory study.
 
-\boundary{Performance numbers vary by host and run. The more reproducible
-claims are the configured bounds, returned rank, graph path, and visited-edge
-count.}
+\boundary{The 6/6 versus 1/6 arm result is exploratory, not a deployment
+recommendation or general causal product claim. Completion, held-out benefit,
+and independent replication are still required.}
 
 \clearpage
-\section{The End Goal: Governed Memory Infrastructure}
+\section{The End Goal: An Evidence-Based Memory Control Plane}
 \articlelabel{20}
-\coreidea{The long-term value is a memory layer that remains useful as models,
-interfaces, and applications change.}
+\coreidea{Aetnamem should spend context where memory earns its place and keep
+the evidence needed to audit that decision.}
 
 \system{} is designed so that memory does not belong to one language model.
-The model can be local or remote and can change over time. Canonical records,
-trust transitions, graph lineage, audit evidence, and approvals remain outside
-the model.
+Grok, OpenClaw, Hermes, or another MCP client can use the same local engine.
+The model may change while canonical records, observation provenance, runtime
+manifests, interventions, outcomes, deletion receipts, and audit evidence stay
+outside it.
 
-This makes the system potentially useful in several roles: personal assistant
-memory, memory for agents using MCP or an SDK, governed intake from external
-channels, and decision memory around engineering workflows. The application
-may use recalled records to augment a prompt, but retrieval augmentation is
-only one integration point.
+The current product combines several roles:
 
-The more precise description is a \textbf{governed memory and effect-control
-plane}. It keeps accepted information durable, separates suspicious material,
-shows why a result surfaced, distinguishes information from authority, and
-records uncertainty when an external outcome cannot be proven.
+\begin{itemize}
+  \item a governed semantic record store with quarantine, correction, graph
+        lineage, and verifiable deletion;
+  \item a four-memory runtime that compiles working, semantic, episodic, and
+        procedural contributions under one budget;
+  \item a multimodal evidence layer that stores observations and artifact
+        provenance without storing media bytes;
+  \item an investigator surface for lexical, semantic, hybrid, and
+        chronological trace search;
+  \item a beta Safe Switch path that captures beside an existing OpenClaw or
+        Hermes agent, requires human review, previews exact context, limits the
+        first exposure, and can restore the saved host configuration;
+  \item an effect-control boundary that keeps remembered information separate
+        from external authority; and
+  \item an experimental laboratory that asks whether offering memory changed a
+        verified outcome enough to justify its context and cost.
+\end{itemize}
 
-The architecture does not depend on claims that every component is new. Full
-text search, graphs, provenance, hash chains, approvals, and compensating
-actions are established techniques. The systems contribution is their
-composition around inspectable memory transitions and approval-bound effects.
+The strongest positioning is therefore not merely ``four kinds of memory.''
+It is: \textbf{AetnaMem is an evidence-based memory control plane. It measures
+which memory policies improve an agent, preserves the proof, and aims to spend
+context only where memory earns its place.}
 
-The remaining work is concrete: stronger cross-platform encryption, broader
-retrieval-quality evaluation, larger scale tests, operating-system sandboxing,
-better adapters, and independent security review. Those improvements matter
-more than presenting the system as finished.
+That last sentence is a direction, not a completed universal claim. Version
+0.6.1 makes reversible adoption the beta product: observe, review, preview,
+canary, then activate or roll back. The Memory Impact laboratory remains
+research. Its measurement spine and exploratory Grok pilot do not yet prove
+general benefit. The next scientific gates are a complete powered schedule, a
+frozen held-out policy win under the same budget, and replication.
 
-The intended user experience is simple: remember what was accepted, show
-where it came from, keep unreviewed content separate, ask before changing the
-world, and admit when the evidence is incomplete.
-
-\boundary{\system{} is an evolving open-source system. Its potential should
-be judged against implemented behavior, reproducible evidence, and explicit
-limitations rather than unsupported claims of universal novelty.}
+\boundary{\system{} is evolving open-source infrastructure. Judge it by
+released behavior, signed and reproducible evidence, explicit failure states,
+and claims that become stronger only when the corresponding gates pass.}
 
 \end{document}

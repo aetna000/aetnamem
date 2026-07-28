@@ -1,0 +1,4 @@
+interface:
+  display_name: "Trial Agent Memory"
+  short_description: "Try AetnaMem safely beside an existing agent"
+  default_prompt: "Use $trial-agent-memory to start a reversible memory trial."

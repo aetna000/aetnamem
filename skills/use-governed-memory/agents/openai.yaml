@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Governed Memory"
+  short_description: "Remember, find, correct, and delete with evidence"
+  default_prompt: "Use $use-governed-memory to remember this with provenance."

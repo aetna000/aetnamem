@@ -7,7 +7,7 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-28**:
+Status as of **2026-07-29**:
 
 | Area | Status | What that means |
 |---|---|---|
@@ -15,7 +15,9 @@ Status as of **2026-07-28**:
 | Safe Switch control plane | Beta, opt-in (`v0.6.1`) | Separate candidate/evidence DB; digest-bound modes; approval, preview, bounded canary, off and rollback; preview/capture do not change context |
 | Safe Switch OpenClaw adapter | Beta (`npm v0.4.0`) | Private host protocol, no agent memory tools during trial, verified plugin-config snapshot/restore |
 | Safe Switch Hermes adapter | Beta (`v0.6.1`) | General lifecycle-hook plugin that coexists with the selected Hermes memory provider; restart required after installation |
-| Safe Switch dashboard API | Beta (`v0.6.1`) | Loopback-only service, one-time login, HttpOnly cookie, CSRF and origin controls; visual frontend follows the checked-in UX contract |
+| Safe Switch dashboard API | Beta (`v0.6.1`) | Loopback-only service, one-time login, HttpOnly cookie, CSRF and origin controls; the polished visual frontend remains future beta work |
+| Agent memory skills | Beta (`v0.6.1`) | Provider-neutral governed-memory, audit and trial workflows with deterministic CLI wrappers; skills are procedural guidance, while the engine and authenticated host remain the evidence boundary |
+| OpenClaw Safe Switch demonstration | Completed single-task integration check | Actual OpenClaw `2026.7.1-2` and DeepSeek baseline/canary, activation and verified rollback passed; the 12.9% token reduction is scoped to that one task |
 | Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
 | MCP media tools | Public (`v0.5.2`) | `memory_observe` and `memory_forget_artifact` add governed multimodal observations |
 | Four-memory runtime | Public, opt-in (`v0.5.2`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
