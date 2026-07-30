@@ -64,7 +64,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 0.6.1.1a4\n", "")
+            return CommandResult(0, "aetnamem 0.6.1.1a5\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:

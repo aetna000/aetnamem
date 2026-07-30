@@ -22,7 +22,7 @@ def test_dashboard_daemon_start_records_private_background_process(
     )
     monkeypatch.setattr(
         "aetnamem.dashboard_daemon._login_url",
-        lambda _path: "http://127.0.0.1:9123/auth?code=private",
+        lambda _path, **_kwargs: "http://127.0.0.1:9123/auth?code=private",
     )
     monkeypatch.setattr(
         "aetnamem.dashboard_daemon._alive",
@@ -58,3 +58,25 @@ def test_dashboard_daemon_remove_preserves_memory_data(
     assert result["removed"] is True
     assert result["data_preserved"] is True
     assert not state_path.exists()
+
+
+def test_login_url_ignores_consumed_codes_before_restart(tmp_path: Path) -> None:
+    from aetnamem.dashboard_daemon import _login_url
+
+    log_path = tmp_path / "dashboard.log"
+    log_path.write_text(
+        "Dashboard login: http://127.0.0.1:8766/auth?code=consumed\n",
+        encoding="utf-8",
+    )
+    restart_offset = log_path.stat().st_size
+
+    assert _login_url(log_path, after_bytes=restart_offset) is None
+
+    with log_path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "Dashboard login: http://127.0.0.1:8766/auth?code=fresh\n"
+        )
+
+    assert _login_url(
+        log_path, after_bytes=restart_offset
+    ) == "http://127.0.0.1:8766/auth?code=fresh"

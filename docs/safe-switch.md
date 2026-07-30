@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.6.1.1a4**
+Status: **experimental preview in AetnaMem 0.6.1.1a5**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.6.1.1a4
+python -m pip install --pre aetnamem==0.6.1.1a5
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -182,6 +182,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-native-frozen/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.6.1.1a4 does not
+Hermes keeps the earlier coexistence integration, but 0.6.1.1a5 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

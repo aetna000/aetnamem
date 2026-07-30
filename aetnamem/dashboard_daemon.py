@@ -79,6 +79,10 @@ def _start(
         )
     state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     log_path = state_path.parent / DEFAULT_DAEMON_LOG.name
+    # The log is append-only across restarts. Remember its current end so
+    # startup cannot mistake a previously consumed login URL for the new
+    # daemon's code.
+    log_offset = log_path.stat().st_size if log_path.exists() else 0
     command = [
         sys.executable,
         "-m",
@@ -120,7 +124,7 @@ def _start(
             raise ValueError(
                 f"AetnaMem dashboard daemon exited during startup: {detail}"
             )
-        login_url = _login_url(log_path)
+        login_url = _login_url(log_path, after_bytes=log_offset)
         if login_url:
             value["login_url"] = login_url
             _write(state_path, value)
@@ -192,9 +196,11 @@ def _read(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _login_url(path: Path) -> str | None:
+def _login_url(path: Path, *, after_bytes: int = 0) -> str | None:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        with path.open("rb") as stream:
+            stream.seek(max(0, int(after_bytes)))
+            lines = stream.read().decode("utf-8", errors="replace").splitlines()
     except FileNotFoundError:
         return None
     prefix = "Dashboard login: "
