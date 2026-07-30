@@ -425,7 +425,7 @@ def test_release_versions_are_consistent() -> None:
     root = Path(__file__).resolve().parents[1]
     project_text = (root / "pyproject.toml").read_text()
     project_version = re.search(r"(?m)^version = \"([^\"]+)\"$", project_text)
-    assert project_version and project_version.group(1) == "0.6.1.1a6"
+    assert project_version and project_version.group(1) == "0.7.0a1"
     package = json.loads((root / "integrations/openclaw/package.json").read_text())
     lock = json.loads((root / "integrations/openclaw/package-lock.json").read_text())
     manifest = json.loads(
@@ -435,5 +435,5 @@ def test_release_versions_are_consistent() -> None:
         package["version"]
         == lock["version"]
         == manifest["version"]
-        == "0.4.1-experimental.3"
+        == "0.5.0-experimental.1"
     )

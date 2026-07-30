@@ -68,6 +68,15 @@ background:var(--good-soft);color:var(--good);font-style:normal;font-weight:900}
 background:var(--warn-soft);color:var(--warn)}.check span{font-size:12px;color:var(--muted)}
 .notice{display:none;border:1px solid var(--bad);background:var(--bad-soft);color:var(--bad);
 border-radius:10px;padding:11px 13px;margin-bottom:16px}.notice.show{display:block}
+.progressbox{display:none;background:var(--card);border:1px solid var(--brand);
+border-radius:12px;padding:15px 17px;margin-bottom:16px;box-shadow:var(--shadow)}
+.progressbox.show{display:block}.progresshead{display:flex;justify-content:space-between;
+gap:16px;margin-bottom:8px}.progresshead b{font-size:14px}.progresshead span{font-size:12px;
+color:var(--muted)}.progressbar{height:8px;border-radius:99px;background:var(--brand-soft);
+overflow:hidden}.progressbar span{display:block;width:38%;height:100%;border-radius:99px;
+background:var(--brand);animation:working 1.15s ease-in-out infinite}
+@keyframes working{0%{transform:translateX(-110%)}100%{transform:translateX(365%)}}
+@media(prefers-reduced-motion:reduce){.progressbar span{animation-duration:2.5s}}
 .foot{font-size:11px;color:var(--muted);margin-top:4px}.loading{opacity:.55;pointer-events:none}
 button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 @media(max-width:780px){.wrap{padding:0 14px}.hero{grid-template-columns:1fr;padding:20px}
@@ -84,6 +93,14 @@ grid-template-columns:repeat(2,1fr)}header .small{display:none}}
 </div></header>
 <main class="wrap">
   <div class="notice" id="error" role="alert"></div>
+  <div class="progressbox" id="progress" role="status" aria-live="polite">
+    <div class="progresshead">
+      <b id="progressTitle">Working…</b>
+      <span class="mono" id="progressTime">0s</span>
+    </div>
+    <p class="sub" id="progressDetail">Please keep this page open.</p>
+    <div class="progressbar" aria-hidden="true"><span></span></div>
+  </div>
   <section class="hero" id="hero">
     <div>
       <div class="eyebrow" id="eyebrow">Memory provider</div>
@@ -142,12 +159,29 @@ grid-template-columns:repeat(2,1fr)}header .small{display:none}}
 <script>
 (function(){
 "use strict";
-var state=null,csrf="";
+var state=null,csrf="",progressTimer=null,progressStarted=0;
 var $=function(id){return document.getElementById(id)};
 function text(id,value){$(id).textContent=value==null?"—":String(value)}
 function number(value){return Number(value||0).toLocaleString()}
 function showError(error){text("error",error&&error.message?error.message:error);$("error").classList.add("show")}
 function clearError(){$("error").classList.remove("show")}
+function showProgress(title,detail){
+ text("progressTitle",title);text("progressDetail",detail);progressStarted=Date.now();
+ text("progressTime","0s");$("progress").classList.add("show");$("hero").classList.add("loading");
+ $("switchBtn").disabled=true;$("refreshBtn").disabled=true;
+ if(progressTimer)clearInterval(progressTimer);
+ progressTimer=setInterval(function(){text("progressTime",Math.floor((Date.now()-progressStarted)/1000)+"s")},1000)
+}
+function hideProgress(){
+ if(progressTimer)clearInterval(progressTimer);progressTimer=null;$("progress").classList.remove("show");
+ $("hero").classList.remove("loading");$("refreshBtn").disabled=false;
+ var readiness=state&&state.readiness?state.readiness:{};
+ $("switchBtn").disabled=active()?false:!readiness.ready_for_active
+}
+async function working(title,detail,operation){
+ clearError();showProgress(title,detail);
+ try{return await operation()}finally{hideProgress()}
+}
 async function get(path){var r=await fetch(path,{headers:{"Accept":"application/json"}});var v=await r.json();if(!r.ok)throw new Error(v.error||"Request failed");return v}
 async function post(path,body){var r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body||{})});var v=await r.json();if(!r.ok)throw new Error(v.error||"Request failed");return v}
 function element(name,className,value){var node=document.createElement(name);if(className)node.className=className;if(value!=null)node.textContent=value;return node}
@@ -215,18 +249,23 @@ async function search(){
   })
  }catch(error){showError(error)}
 }
-async function refresh(){try{clearError();$("hero").classList.add("loading");await post("/api/mirror/sync",{});await reload()}catch(error){showError(error)}finally{$("hero").classList.remove("loading")}}
+async function refresh(){
+ try{await working("Refreshing the memory mirror","Reading native files, rebuilding the search index, and verifying its audit evidence.",async function(){await post("/api/mirror/sync",{});await reload()})}
+ catch(error){showError(error)}
+}
 async function switchProvider(){
  if(!state)return;clearError();
  if(active()){
   if(!confirm("Restore the verified OpenClaw memory and stop AetnaMem memory takeover?"))return;
-  try{$("hero").classList.add("loading");await post("/api/rollback",{});await reload()}catch(error){showError(error)}finally{$("hero").classList.remove("loading")}
+  try{await working("Restoring OpenClaw memory","Restoring and verifying the frozen native files, then restarting OpenClaw. This can take a minute.",async function(){await post("/api/rollback",{});await reload()})}
+  catch(error){showError(error)}
   return
  }
  var expected=state.host||"openclaw";
  var entered=prompt("To activate AetnaMem, type '"+expected+"':");
  if(entered===null)return;
- try{$("hero").classList.add("loading");await post("/api/mode",{mode:"active",confirm_host:entered});await reload()}catch(error){showError(error)}finally{$("hero").classList.remove("loading")}
+ try{await working("Activating AetnaMem","Freezing native memory, checking compatibility, restarting OpenClaw, and verifying memory tools. This can take a minute.",async function(){await post("/api/mode",{mode:"active",confirm_host:entered});await reload()})}
+ catch(error){showError(error)}
 }
 $("searchBtn").onclick=search;$("query").addEventListener("keydown",function(event){if(event.key==="Enter")search()});
 $("refreshBtn").onclick=refresh;$("switchBtn").onclick=switchProvider;

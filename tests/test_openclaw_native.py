@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+from aetnamem import Memory
 from aetnamem.trial import TrialManager
 from aetnamem.trial.openclaw_native import (
     CUTOVER_NAME,
@@ -200,6 +201,10 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
     assert not (workspace / "memory").exists()
     assert configured["plugins.slots.memory"] == "none"
     assert (
+        configured["plugins.entries.memory-aetnamem.config.takeoverActive"]
+        is True
+    )
+    assert (
         configured["plugins.entries.memory-aetnamem.config.dbPath"]
         == mirror["mirror_db"]
     )
@@ -234,6 +239,110 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
         (Path(manager.state().trial_dir) / CUTOVER_NAME).read_text(encoding="utf-8")
     )
     assert cutover["status"] == "rolled_back"
+
+
+def test_rollback_preserves_post_switch_native_files_before_restore(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = _manager(tmp_path)
+    workspace = _workspace(tmp_path)
+    mirror = sync_mirror(manager.state(), workspace=workspace)
+    configured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native.shutil.which",
+        lambda name: "/fake/openclaw" if name == "openclaw" else None,
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native.sync_mirror",
+        lambda _state, **_kwargs: sync_mirror(_state, workspace=workspace),
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native._optional_json",
+        lambda arguments: (
+            {"enabled": True}
+            if "hooks.internal.entries.session-memory" in arguments
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native._set_json",
+        lambda _executable, key, value: configured.__setitem__(key, value),
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native._run",
+        lambda arguments, **_kwargs: subprocess.CompletedProcess(
+            arguments, 0, "", ""
+        ),
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native._json_command",
+        lambda arguments: (
+            {
+                "plugin": {
+                    "status": "loaded",
+                    "toolNames": ["memory_search", "memory_get"],
+                },
+                "typedHooks": [
+                    {"name": "before_prompt_build"},
+                    {"name": "agent_end"},
+                    {"name": "before_message_write"},
+                ],
+            }
+            if "plugins" in arguments
+            else {"rpc": {"ok": True}}
+        ),
+    )
+
+    activate_takeover(manager.state(), manager.state_path)
+    active_memory = Memory(mirror["mirror_db"])
+    try:
+        active_memory.remember(
+            manager.state().subject_id,
+            "Remember that the post-switch code word is saffron.",
+            source_type="user_message",
+            session_id="agent:main:active-test",
+        )
+    finally:
+        active_memory.close()
+    (workspace / "memory").mkdir()
+    (workspace / "memory" / "during-active.md").write_text(
+        "This appeared after takeover.\n",
+        encoding="utf-8",
+    )
+    (workspace / "MEMORY.md").write_text(
+        "# Recreated\n\n- Post-switch fact.\n",
+        encoding="utf-8",
+    )
+
+    restored = restore_takeover(manager.state())
+
+    assert "TypeScript" in (workspace / "MEMORY.md").read_text(encoding="utf-8")
+    assert (workspace / "memory" / "2026-07-30.md").is_file()
+    assert not (workspace / "memory" / "during-active.md").exists()
+    preserved = restored["post_switch_native_preserved"]
+    assert {row["relative_path"] for row in preserved} == {
+        "MEMORY.md",
+        "memory",
+    }
+    preservation_root = Path(
+        json.loads(
+            (Path(manager.state().trial_dir) / CUTOVER_NAME).read_text(
+                encoding="utf-8"
+            )
+        )["post_switch_native_preservation_root"]
+    )
+    assert "Post-switch fact" in (
+        preservation_root / "MEMORY.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        preservation_root / "memory" / "during-active.md"
+    ).read_text(encoding="utf-8") == "This appeared after takeover.\n"
+    active_export = restored["active_memory_export"]
+    assert active_export["record_count"] == 1
+    assert "saffron" in Path(active_export["path"]).read_text(encoding="utf-8")
+    assert Path(active_export["path"]).parent == workspace / "memory"
 
 
 def test_shadow_refuses_a_corrupted_pre_shadow_baseline(tmp_path: Path) -> None:

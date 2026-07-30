@@ -64,7 +64,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 0.6.1.1a6\n", "")
+            return CommandResult(0, "aetnamem 0.7.0a1\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:
@@ -159,11 +159,13 @@ def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
 
     monkeypatch.setattr("aetnamem.trial.hosts.configure_host", configure)
 
+    progress: list[tuple[int, int, str]] = []
     result = install_openclaw(
         state_path=tmp_path / "state.json",
         trial_root=tmp_path / "trials",
         runner=fake.run,
         engine_executable=str(engine),
+        progress=lambda step, total, label: progress.append((step, total, label)),
     )
 
     assert result["installed"] is True
@@ -175,6 +177,10 @@ def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
     assert fake.entry["config"]["command"] == str(engine.resolve())  # type: ignore[index]
     install = next(command for command in fake.commands if command[1:3] == ["plugins", "install"])
     assert install[3] == f"npm:openclaw-memory-aetnamem@{OPENCLAW_PLUGIN_VERSION}"
+    assert [step for step, _total, _label in progress] == list(range(1, 9))
+    assert all(total == 8 for _step, total, _label in progress)
+    assert "memory" in progress[4][2].casefold()
+    assert "mirror" in progress[-1][2].casefold()
 
 
 def test_installer_restores_prior_state_when_gateway_verification_fails(

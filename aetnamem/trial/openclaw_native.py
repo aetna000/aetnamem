@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
 from aetnamem.memory import Memory
@@ -35,6 +35,7 @@ NATIVE_MEMORY_ROOTS = (
     "skills",
 )
 SUPPLEMENTAL_MEMORY_ROOTS = ("MEMORY.md", "memory")
+ProgressReporter = Callable[[int, int, str], None]
 
 
 @dataclass(frozen=True)
@@ -362,7 +363,15 @@ def trace_mirror(
         memory.close()
 
 
-def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, Any]:
+def activate_takeover(
+    state: TrialState,
+    state_path: str | Path,
+    *,
+    progress: ProgressReporter | None = None,
+) -> dict[str, Any]:
+    report = progress or (lambda _step, _total, _label: None)
+    total_steps = 8
+    report(1, total_steps, "Verifying the OpenClaw memory mirror")
     if state.host != "openclaw":
         raise ValueError("native-memory takeover is currently implemented for OpenClaw")
     status = sync_mirror(state)
@@ -371,6 +380,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
     executable = shutil.which("openclaw")
     if executable is None:
         raise ValueError("OpenClaw is not on PATH")
+    report(2, total_steps, "Checking OpenClaw memory capabilities")
     capability_report = inspect_native_memory_capabilities(executable)
     if not capability_report["safe_to_switch"]:
         details = "; ".join(capability_report["blocking_reasons"])
@@ -432,7 +442,9 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
     try:
         # Quiesce the native writer before the final mirror and snapshot. The
         # gateway is restarted below on success and in the failure path.
+        report(3, total_steps, "Pausing OpenClaw memory writes")
         _run([executable, "gateway", "stop"])
+        report(4, total_steps, "Taking the final searchable memory snapshot")
         status = sync_mirror(state, workspace=workspace)
         if not status.get("synced") or int(status.get("record_count") or 0) < 1:
             raise ValueError("final OpenClaw memory mirror failed verification")
@@ -468,6 +480,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
             raise ValueError(
                 "OpenClaw native memory changed after the switch-time snapshot"
             )
+        report(5, total_steps, "Freezing native supplemental memory")
         for relative in SUPPLEMENTAL_MEMORY_ROOTS:
             source = workspace / relative
             if not source.exists():
@@ -479,10 +492,12 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
             else:
                 source.unlink()
 
+        report(6, total_steps, "Configuring AetnaMem as the memory provider")
         _run([executable, "hooks", "disable", "session-memory"], allow_missing=True)
         _set_json(executable, "plugins.slots.memory", "none")
         base = "plugins.entries.memory-aetnamem"
         _set_json(executable, f"{base}.config.safeSwitch", {"enabled": False})
+        _set_json(executable, f"{base}.config.takeoverActive", True)
         _set_json(executable, f"{base}.config.dbPath", status["mirror_db"])
         _set_json(executable, f"{base}.config.subject", state.subject_id)
         _set_json(executable, f"{base}.hooks.allowConversationAccess", True)
@@ -506,6 +521,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
             },
         )
         _set_json(executable, f"{base}.enabled", True)
+        report(7, total_steps, "Restarting OpenClaw")
         _run([executable, "gateway", "restart"])
         gateway = _json_command(
             [executable, "gateway", "status", "--require-rpc", "--json"]
@@ -550,6 +566,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
                 "AetnaMem OpenClaw runtime did not verify the standard "
                 "memory tools and capture/injection hooks"
             )
+        report(8, total_steps, "Verified memory tools and capture hooks")
         cutover.update(
             {
                 "status": "active",
@@ -575,7 +592,14 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         raise
 
 
-def restore_takeover(state: TrialState) -> dict[str, Any]:
+def restore_takeover(
+    state: TrialState,
+    *,
+    progress: ProgressReporter | None = None,
+) -> dict[str, Any]:
+    report = progress or (lambda _step, _total, _label: None)
+    total_steps = 4
+    report(1, total_steps, "Checking the frozen OpenClaw snapshot")
     cutover_path = Path(state.trial_dir) / CUTOVER_NAME
     cutover = _read_json(cutover_path)
     if not cutover:
@@ -583,15 +607,27 @@ def restore_takeover(state: TrialState) -> dict[str, Any]:
     executable = shutil.which("openclaw")
     if executable is None:
         raise ValueError("OpenClaw is not on PATH; native memory was not restored")
+    report(2, total_steps, "Preserving any post-switch native files")
     _restore_cutover(cutover, executable=executable)
+    report(3, total_steps, "Returning active-period memories to OpenClaw")
+    active_export = _export_active_memories_to_native(
+        cutover,
+        subject_id=state.subject_id,
+    )
+    cutover["active_memory_export"] = active_export
     cutover["status"] = "rolled_back"
     cutover["rolled_back_at"] = utc_now()
     _private_json(cutover_path, cutover)
+    report(4, total_steps, "OpenClaw native memory restored and verified")
     return {
         "restored": True,
         "takeover_present": True,
         "native_memory_restored": True,
         "manifest_sha256": cutover.get("manifest_sha256"),
+        "active_memory_export": active_export,
+        "post_switch_native_preserved": cutover.get(
+            "post_switch_native_preserved", []
+        ),
     }
 
 
@@ -732,6 +768,10 @@ def inspect_native_memory_capabilities(
 def _restore_cutover(cutover: dict[str, Any], *, executable: str) -> None:
     workspace = Path(str(cutover["workspace"]))
     archive = Path(str(cutover["archive"]))
+    preservation_root: Path | None = None
+    preserved: list[dict[str, Any]] = list(
+        cutover.get("post_switch_native_preserved") or []
+    )
     for relative in reversed(list(cutover.get("relocated") or [])):
         source = archive / relative
         destination = workspace / relative
@@ -741,12 +781,24 @@ def _restore_cutover(cutover: dict[str, Any], *, executable: str) -> None:
             expected = _tree_manifest(archive, (relative,))
             actual = _tree_manifest(workspace, (relative,))
             if actual != expected:
-                raise ValueError(
-                    "cannot restore native memory because a different path "
-                    f"already exists: {destination}"
+                if preservation_root is None:
+                    preservation_root = _new_preservation_root(archive.parent)
+                preserved_path = preservation_root / relative
+                preserved_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                shutil.move(str(destination), str(preserved_path))
+                preserved.append(
+                    {
+                        "relative_path": relative,
+                        "preserved_path": str(preserved_path),
+                        "entries": actual,
+                    }
                 )
-            continue
+            else:
+                continue
         _copy_native_path(source, destination)
+    if preservation_root is not None:
+        cutover["post_switch_native_preservation_root"] = str(preservation_root)
+        cutover["post_switch_native_preserved"] = preserved
     snapshot = cutover.get("native_snapshot")
     if isinstance(snapshot, dict):
         restored = _tree_manifest(workspace, SUPPLEMENTAL_MEMORY_ROOTS)
@@ -772,6 +824,118 @@ def _restore_cutover(cutover: dict[str, Any], *, executable: str) -> None:
     prior_plugin = cutover.get("prior_plugin_entry")
     if isinstance(prior_plugin, dict):
         _set_json(executable, "plugins.entries.memory-aetnamem", prior_plugin)
+
+
+def _new_preservation_root(trial_dir: Path) -> Path:
+    base = trial_dir / "openclaw-post-switch-preserved"
+    candidate = base
+    suffix = 1
+    while candidate.exists():
+        suffix += 1
+        candidate = trial_dir / f"{base.name}-{suffix}"
+    candidate.mkdir(mode=0o700)
+    return candidate
+
+
+def _export_active_memories_to_native(
+    cutover: dict[str, Any],
+    *,
+    subject_id: str,
+) -> dict[str, Any]:
+    """Return non-native memories to OpenClaw after its snapshot verifies.
+
+    The mirror starts as an exact import whose source sessions all use the
+    ``openclaw-native:`` prefix. Approved shadow candidates and authenticated
+    user memories captured after takeover do not. Those records must remain
+    available when OpenClaw becomes authoritative again.
+    """
+
+    previous = cutover.get("active_memory_export")
+    if isinstance(previous, dict):
+        previous_path = Path(str(previous.get("path") or ""))
+        expected_sha256 = str(previous.get("sha256") or "")
+        if (
+            previous_path.is_file()
+            and expected_sha256
+            and sha256_hex(previous_path.read_bytes()) == expected_sha256
+        ):
+            return previous
+
+    mirror_db = Path(str(cutover["mirror_db"]))
+    workspace = Path(str(cutover["workspace"]))
+    memory = Memory(mirror_db)
+    try:
+        records = [
+            row
+            for row in memory.list(subject_id)
+            if row.get("source_type") == "user_message"
+            and not str(row.get("source_session_id") or "").startswith(
+                "openclaw-native:"
+            )
+        ]
+        records.sort(key=lambda row: (str(row.get("created_at")), str(row["id"])))
+        if not records:
+            return {
+                "format": "aetnamem-openclaw-active-export-v1",
+                "record_count": 0,
+                "record_ids": [],
+                "path": None,
+                "sha256": None,
+            }
+
+        lines = [
+            "# Memories captured while AetnaMem was active",
+            "",
+            (
+                "These memories were returned by AetnaMem during verified "
+                "rollback."
+            ),
+            "",
+        ]
+        for row in records:
+            content = " ".join(str(row["content"]).split())
+            lines.append(f"- {content}")
+        data = ("\n".join(lines).rstrip() + "\n").encode("utf-8")
+        digest = sha256_hex(data)
+        export_dir = workspace / "memory"
+        export_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        export_path = export_dir / f"aetnamem-active-{digest[:12]}.md"
+        if export_path.exists():
+            if export_path.is_symlink() or export_path.read_bytes() != data:
+                raise ValueError(
+                    "cannot export active-period memories because the "
+                    f"deterministic path is occupied: {export_path}"
+                )
+        else:
+            temporary = export_path.with_name(f".{export_path.name}.tmp")
+            temporary.write_bytes(data)
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, export_path)
+        if sha256_hex(export_path.read_bytes()) != digest:
+            raise ValueError("active-period memory export failed hash verification")
+
+        receipt = {
+            "format": "aetnamem-openclaw-active-export-v1",
+            "record_count": len(records),
+            "record_ids": [str(row["id"]) for row in records],
+            "path": str(export_path),
+            "sha256": digest,
+        }
+        with memory.store.transaction(immediate=True):
+            memory.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="host.memory_exported_on_rollback",
+                actor="safe-switch-rollback",
+                payload={
+                    "trial_id": cutover.get("trial_id"),
+                    "record_ids": receipt["record_ids"],
+                    "export_path_sha256": sha256_hex(str(export_path)),
+                    "export_sha256": digest,
+                },
+            )
+        return receipt
+    finally:
+        memory.close()
 
 
 def _source_row(source: NativeSource) -> dict[str, Any]:

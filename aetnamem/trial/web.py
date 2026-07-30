@@ -170,11 +170,11 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 )
 
                 state = self.server.manager.state()
+                takeover = restore_takeover(state)
                 if state.mode is not TrialMode.OFF:
                     state = self.server.manager.transition(
                         TrialMode.OFF, actor="dashboard-rollback"
                     )
-                takeover = restore_takeover(state)
                 host = restore_host(state)
                 gateway = (
                     restart_and_verify_gateway()

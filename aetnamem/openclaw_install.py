@@ -14,7 +14,7 @@ from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "0.4.1-experimental.3"
+OPENCLAW_PLUGIN_VERSION = "0.5.0-experimental.1"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 
@@ -26,6 +26,7 @@ class CommandResult:
 
 
 Runner = Callable[[list[str]], CommandResult]
+ProgressReporter = Callable[[int, int, str], None]
 
 
 def install_openclaw(
@@ -34,6 +35,7 @@ def install_openclaw(
     trial_root: str | Path = DEFAULT_TRIAL_ROOT,
     runner: Runner | None = None,
     engine_executable: str | None = None,
+    progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
     """Install the matching bridge and enter fail-closed capture mode.
 
@@ -42,6 +44,9 @@ def install_openclaw(
     """
 
     run = runner or _run
+    report = progress or (lambda _step, _total, _label: None)
+    total_steps = 8
+    report(1, total_steps, "Checking AetnaMem and OpenClaw")
     engine = _resolve_engine(engine_executable)
     openclaw = shutil.which("openclaw")
     if openclaw is None:
@@ -53,6 +58,7 @@ def install_openclaw(
     engine_version = _verify_engine(engine, run)
     _require_success(run([openclaw, "--version"]), "OpenClaw version check")
 
+    report(2, total_steps, "Reading the current OpenClaw configuration")
     prior_plugin = _inspect_plugin(openclaw, run, optional=True)
     prior_version = _find_plugin_version(prior_plugin)
     prior_entry = _get_optional_json(
@@ -63,6 +69,7 @@ def install_openclaw(
     rollback_errors: list[str] = []
 
     try:
+        report(3, total_steps, "Installing the verified OpenClaw bridge")
         if prior_version != OPENCLAW_PLUGIN_VERSION:
             install_command = [
                 openclaw,
@@ -76,6 +83,7 @@ def install_openclaw(
             _require_success(run(install_command), "OpenClaw bridge installation")
             package_changed = True
 
+        report(4, total_steps, "Verifying the installed bridge")
         installed = _inspect_plugin(openclaw, run, optional=False)
         installed_version = _find_plugin_version(installed)
         if installed_version != OPENCLAW_PLUGIN_VERSION:
@@ -95,6 +103,7 @@ def install_openclaw(
         if prior_plugin is None:
             _set_json(openclaw, f"{_CONFIG_KEY}.enabled", False, run)
 
+        report(5, total_steps, "Copying and indexing existing OpenClaw memory")
         manager = TrialManager.start(
             host="openclaw",
             state_path=state_path,
@@ -107,10 +116,12 @@ def install_openclaw(
             state_path,
             aetnamem_executable=engine,
         )
+        report(6, total_steps, "Restarting the OpenClaw gateway")
         _require_success(
             run([openclaw, "gateway", "restart"]),
             "OpenClaw gateway restart",
         )
+        report(7, total_steps, "Verifying the gateway and plugin runtime")
         gateway = _get_json(
             [
                 openclaw,
@@ -144,6 +155,7 @@ def install_openclaw(
         if observed.get("command") != engine:
             raise ValueError("OpenClaw did not retain the exact AetnaMem executable path")
 
+        report(8, total_steps, "Verifying the memory mirror and audit evidence")
         status = manager.status()
         if status.get("mode") != "capture":
             raise ValueError("AetnaMem trial did not enter shadow capture mode")
@@ -177,6 +189,7 @@ def install_openclaw(
             "mirror_db": mirror.get("mirror_db"),
         }
     except Exception as exc:
+        report(total_steps, total_steps, "Installation failed; restoring prior state")
         if manager is not None:
             try:
                 manager.transition(TrialMode.OFF, actor="install-rollback")

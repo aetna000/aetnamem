@@ -154,7 +154,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "0.4.1-experimental.3",
+                            "version": "0.5.0-experimental.1",
                         }
                     }
                 ),
@@ -277,6 +277,9 @@ def test_dashboard_ships_the_visual_trial_ui_not_the_json_fallback() -> None:
     assert 'id="query"' in html
     assert "Activate AetnaMem" in html
     assert "Restore OpenClaw" in html
+    assert 'id="progress"' in html
+    assert "This can take a minute." in html
+    assert "Refreshing the memory mirror" in html
     assert 'get("/api/status")' in html
     assert 'JSON.stringify(v,null,2)' not in html
     assert "Canary" not in html
@@ -323,3 +326,29 @@ def test_trial_rollback_defaults_to_human_output_and_keeps_json_opt_in(
     _print_trial("rollback", result, json_output=True)
     machine = capsys.readouterr().out
     assert json.loads(machine)["host_restore"]["verified"] is True
+
+
+def test_active_trial_status_does_not_tell_user_to_activate_again(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from aetnamem.cli import _print_trial
+
+    _print_trial(
+        "status",
+        {
+            "host": "openclaw",
+            "mode": "active",
+            "changes_model_context": True,
+            "makes_extra_provider_calls": False,
+            "readiness": {
+                "ready_for_active": True,
+                "reasons": [],
+            },
+        },
+        json_output=False,
+    )
+
+    human = capsys.readouterr().out
+    assert "AetnaMem is active" in human
+    assert "trial rollback" in human
+    assert "Ready: inspect/search" not in human

@@ -1135,9 +1135,20 @@ def _run_openclaw(args: argparse.Namespace) -> None:
     from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
 
     try:
+        def show_progress(step: int, total: int, label: str) -> None:
+            width = 20
+            filled = min(width, max(0, round(width * step / max(1, total))))
+            bar = "#" * filled + "-" * (width - filled)
+            print(
+                f"[{bar}] {step}/{total}  {label}",
+                file=sys.stderr,
+                flush=True,
+            )
+
         result = install_openclaw(
             state_path=args.state or DEFAULT_STATE_PATH,
             trial_root=args.trial_root or DEFAULT_TRIAL_ROOT,
+            progress=None if args.json else show_progress,
         )
     except ValueError as exc:
         if args.json:
@@ -1326,6 +1337,19 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
             print("  AetnaMem plugin      disabled")
         else:
             print("  AetnaMem plugin      state unknown")
+        takeover_restore = restored.get("takeover")
+        takeover_restore = (
+            takeover_restore if isinstance(takeover_restore, dict) else {}
+        )
+        preserved = takeover_restore.get("post_switch_native_preserved")
+        if isinstance(preserved, list) and preserved:
+            print(f"  Post-switch files    preserved ({len(preserved)})")
+        active_export = takeover_restore.get("active_memory_export")
+        active_export = active_export if isinstance(active_export, dict) else {}
+        exported_count = int(active_export.get("record_count") or 0)
+        if exported_count:
+            print(f"  Active memories      returned to OpenClaw ({exported_count})")
+            print(f"  Native export        {active_export.get('path')}")
         print("  Trial evidence       preserved")
         if result.get("trial_id"):
             print(f"  Trial ID             {result['trial_id']}")
@@ -1366,6 +1390,11 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
                 "\nNext: start a new trial with "
                 "`aetnamem trial start --host openclaw`."
             )
+        elif result.get("mode") == "active":
+            print(
+                "\nAetnaMem is active. Use `aetnamem trial rollback` "
+                "to restore OpenClaw memory."
+            )
         elif isinstance(reasons, list) and reasons:
             print(f"\nNext: {reasons[0]}")
         elif readiness.get("ready_for_active"):
@@ -1385,9 +1414,7 @@ def _print_trial_status_rows(result: dict[str, object]) -> None:
     chain = chain if isinstance(chain, dict) else {}
     mirror = result.get("mirror")
     mirror = mirror if isinstance(mirror, dict) else {}
-    provider = "AetnaMem" if mode == TrialMode.ACTIVE.value else _display_host(
-        result.get("host")
-    )
+    provider = "AetnaMem" if mode == "active" else _display_host(result.get("host"))
     print(f"\n  Memory provider       {provider}")
     print(f"  Host                  {_display_host(result.get('host'))}")
     print(
@@ -2163,7 +2190,23 @@ def _run_trial(args: argparse.Namespace) -> None:
                 restore_takeover,
             )
 
-            takeover = activate_takeover(state, manager.state_path)
+            def activation_progress(step: int, total: int, label: str) -> None:
+                if args.json:
+                    return
+                width = 20
+                filled = min(width, max(0, round(width * step / max(1, total))))
+                bar = "#" * filled + "-" * (width - filled)
+                print(
+                    f"[{bar}] {step}/{total}  {label}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+            takeover = activate_takeover(
+                state,
+                manager.state_path,
+                progress=activation_progress,
+            )
             try:
                 state = manager.transition(TrialMode.ACTIVE)
             except Exception:
@@ -2193,9 +2236,24 @@ def _run_trial(args: argparse.Namespace) -> None:
 
         _confirm_trial_host(manager, non_interactive=args.yes)
         state = manager.state()
+        def rollback_progress(step: int, total: int, label: str) -> None:
+            if args.json:
+                return
+            width = 20
+            filled = min(width, max(0, round(width * step / max(1, total))))
+            bar = "#" * filled + "-" * (width - filled)
+            print(
+                f"[{bar}] {step}/{total}  {label}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        takeover_restore = restore_takeover(
+            state,
+            progress=rollback_progress,
+        )
         if state.mode is not TrialMode.OFF:
             state = manager.transition(TrialMode.OFF, actor="rollback")
-        takeover_restore = restore_takeover(state)
         restored = restore_host(state)
         gateway = (
             restart_and_verify_gateway()

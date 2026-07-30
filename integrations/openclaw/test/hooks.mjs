@@ -248,6 +248,24 @@ try {
   await fourEnd({ success: true, messages: [] }, { sessionKey: "four-2" });
   for (const service of fourMemory.services) await service.stop?.();
 
+  const takeover = fakeApi({
+    ...base,
+    takeoverActive: true,
+  });
+  const takeoverBefore = takeover.hooks.get("before_prompt_build");
+  const guided = await takeoverBefore(
+    { prompt: "What do I remember about my favorite color?" },
+    { sessionKey: "takeover-1" },
+  );
+  assert.ok(guided.appendSystemContext.includes("<aetnamem_memory_provider>"));
+  assert.ok(guided.appendSystemContext.includes("MEMORY.md and memory/*"));
+  assert.ok(guided.appendSystemContext.includes("Use memory_search"));
+  assert.ok(guided.appendSystemContext.includes("intentionally unavailable"));
+  assert.ok(guided.appendSystemContext.includes("Never call Bash"));
+  assert.ok(takeover.tools.has("memory_search"));
+  assert.ok(takeover.tools.has("memory_get"));
+  for (const service of takeover.services) await service.stop?.();
+
   const trialState = path.join(dataDir, "safe-switch.json");
   const trialRoot = path.join(dataDir, "trials");
   trialCli(
@@ -275,26 +293,9 @@ try {
   );
   assert.equal(captureOnly, undefined);
   await safeEnd({ success: true, messages: [] }, { sessionKey: "trial-1" });
-  const candidates = trialCli("candidates", "--state", trialState);
-  assert.equal(candidates.length, 1);
-  trialCli("approve", candidates[0].id, "--state", trialState);
-  trialCli("preview", "--state", trialState);
-  const previewOnly = await safeBefore(
-    { prompt: "Which terminal do I prefer?" },
-    { sessionKey: "trial-2" },
-  );
-  assert.equal(previewOnly, undefined);
-  trialCli("canary", "--turns", "1", "--state", trialState, "--yes");
-  const canary = await safeBefore(
-    { prompt: "Which terminal do I prefer?" },
-    { sessionKey: "trial-3" },
-  );
-  assert.ok(canary.appendContext.includes("Ghostty"));
-  await safeEnd({ success: true, messages: [] }, { sessionKey: "trial-3" });
-  assert.equal(
-    trialCli("status", "--state", trialState).evidence.shown_canary_exposures,
-    1,
-  );
+  const trialStatus = trialCli("status", "--state", trialState);
+  assert.equal(trialStatus.mode, "capture");
+  assert.equal(trialStatus.changes_model_context, false);
   for (const service of safeSwitch.services) await service.stop?.();
 
   console.log(

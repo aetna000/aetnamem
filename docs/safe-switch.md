@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.6.1.1a6**
+Status: **experimental preview in AetnaMem 0.7.0a1**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.6.1.1a6
+python -m pip install --pre aetnamem==0.7.0a1
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -31,7 +31,7 @@ aetnamem dashboard
 ```
 
 The installer pins the exact engine executable, installs npm
-`0.4.1-experimental.3` internally, takes and verifies a complete byte-for-byte
+`0.5.0-experimental.1` internally, takes and verifies a complete byte-for-byte
 baseline of the existing native memory, builds the searchable mirror, restarts
 and probes the gateway, and enters shadow mode. If any step fails, it restores
 the prior plugin configuration. Users do not install the npm package directly.
@@ -165,7 +165,11 @@ than the allowance, the dashboard says that no reduction is expected.
 - The simple trial uses internal subject `local-user`. A `subject_id` is a
   storage partition supplied by the host, not authenticated identity.
 - `rollback` means restore the saved host configuration and frozen native
-  memory. It does not delete the evidence database.
+  memory. It does not delete the evidence database. Trusted memories captured
+  while AetnaMem was active are returned in a hash-verified Markdown file
+  under `memory/`. Native paths unexpectedly recreated during takeover are
+  moved into the trial evidence directory before the frozen originals are
+  restored.
 
 Default evidence files:
 
@@ -180,8 +184,9 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-cutover.json
 ~/.aetnamem/trials/trial_*/openclaw-native-snapshot.json
 ~/.aetnamem/trials/trial_*/openclaw-native-frozen/
+~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.6.1.1a6 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a1 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

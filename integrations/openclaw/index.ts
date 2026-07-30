@@ -28,8 +28,16 @@ import type {
 import { runSetup } from "./src/setup.js";
 
 const TAG = "[memory-aetnamem]";
+const TAKEOVER_GUIDANCE =
+  "<aetnamem_memory_provider>\n" +
+  "AetnaMem is the active durable-memory provider. " +
+  "The native MEMORY.md and memory/* paths are intentionally unavailable during takeover. " +
+  "Never call Bash, filesystem, read, write, or search tools for those paths. " +
+  "Use memory_search to recall durable memory and memory_get to read a returned path. " +
+  "Authenticated user statements are captured automatically; do not duplicate them into native memory files.\n" +
+  "</aetnamem_memory_provider>";
 const INJECT_RE =
-  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch)>\s*/g;
+  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>\s*/g;
 const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface PluginConfig {
@@ -37,6 +45,7 @@ interface PluginConfig {
   commandArgs: string[];
   dbPath: string;
   subject: string;
+  takeoverActive: boolean;
   recall: {
     enabled: boolean;
     maxRecords: number;
@@ -92,6 +101,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
           : ["mcp", "--db", dbPath, "--subject", subject],
     dbPath,
     subject,
+    takeoverActive: cfg.takeoverActive === true,
     recall: {
       enabled: cfg.recall?.enabled !== false,
       maxRecords: Number(cfg.recall?.maxRecords ?? 3),
@@ -247,6 +257,7 @@ function register(api: OpenClawPluginApi): void {
     const userText = event.prompt;
     if (!userText) return;
     const sessionKey = ctx.sessionKey ?? ctx.sessionId ?? "default-session";
+    const takeoverGuidance = cfg.takeoverActive ? TAKEOVER_GUIDANCE : "";
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
 
@@ -321,7 +332,8 @@ function register(api: OpenClawPluginApi): void {
               : ""),
         );
         const result: { appendSystemContext?: string; appendContext?: string } = {};
-        if (pack.stable_context) result.appendSystemContext = pack.stable_context;
+        const stableParts = [takeoverGuidance, pack.stable_context].filter(Boolean);
+        if (stableParts.length) result.appendSystemContext = stableParts.join("\n\n");
         if (pack.dynamic_context) result.appendContext = pack.dynamic_context;
         if (Object.keys(result).length) return result;
         return;
@@ -335,7 +347,10 @@ function register(api: OpenClawPluginApi): void {
       }
     }
 
-    if (!cfg.recall.enabled && !cfg.persona.enabled) return;
+    if (!cfg.recall.enabled && !cfg.persona.enabled) {
+      if (takeoverGuidance) return { appendSystemContext: takeoverGuidance };
+      return;
+    }
 
     let persona = "";
     let recall = "";
@@ -377,13 +392,20 @@ function register(api: OpenClawPluginApi): void {
     }
     if (cfg.cacheAware.enabled) {
       const result: { appendSystemContext?: string; appendContext?: string } = {};
-      if (persona) result.appendSystemContext = persona;
+      const systemParts = [takeoverGuidance, persona].filter(Boolean);
+      if (systemParts.length) result.appendSystemContext = systemParts.join("\n\n");
       if (recall) result.appendContext = recall;
       if (Object.keys(result).length) return result;
       return;
     }
     const parts = [persona, recall].filter(Boolean);
-    if (parts.length) return { prependContext: parts.join("\n\n") + "\n\n" };
+    const result: {
+      prependContext?: string;
+      appendSystemContext?: string;
+    } = {};
+    if (parts.length) result.prependContext = parts.join("\n\n") + "\n\n";
+    if (takeoverGuidance) result.appendSystemContext = takeoverGuidance;
+    if (Object.keys(result).length) return result;
   });
 
   // ---- auto-capture: user turn through the pipeline, assistant as digest -
@@ -481,7 +503,8 @@ function register(api: OpenClawPluginApi): void {
       text.includes("<working_memory>") ||
       text.includes("<episodic_memory>") ||
       text.includes("<procedural_memory>") ||
-      text.includes("<aetnamem_safe_switch>");
+      text.includes("<aetnamem_safe_switch>") ||
+      text.includes("<aetnamem_memory_provider>");
     if (typeof message.content === "string") {
       if (!hasInjection(message.content)) return;
       const cleaned = message.content.replace(INJECT_RE, "").trim();
