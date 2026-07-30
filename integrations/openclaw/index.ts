@@ -139,6 +139,13 @@ function messageText(content: unknown): string {
   return "";
 }
 
+function recordIdFromPath(value: string): string | null {
+  const prefix = "aetnamem://record/";
+  if (!value.startsWith(prefix)) return null;
+  const recordId = value.slice(prefix.length).trim();
+  return recordId || null;
+}
+
 function register(api: OpenClawPluginApi): void {
   const cfg = parseConfig(api.pluginConfig);
   const client = new AetnamemClient({
@@ -494,6 +501,199 @@ function register(api: OpenClawPluginApi): void {
 
   // ---- agent-callable tools ----------------------------------------------
   if (cfg.tools.enabled && !cfg.safeSwitch.enabled) {
+    // Preserve OpenClaw's standard memory contract after native memory-core
+    // is disabled. Existing agent prompts and workflows can keep using the
+    // same tool names; only the governed storage/retrieval implementation
+    // changes underneath them.
+    api.registerTool(
+      {
+        name: "memory_search",
+        label: "Memory Search",
+        description:
+          "Search governed AetnaMem long-term memory. Compatible with OpenClaw's " +
+          "standard memory_search contract. The active takeover supports the " +
+          "memory corpus; session and wiki corpora must be migrated explicitly.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            maxResults: { type: "integer", minimum: 1 },
+            minScore: { type: "number" },
+            corpus: {
+              type: "string",
+              enum: ["memory", "wiki", "all", "sessions"],
+            },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+        async execute(toolCallId, params) {
+          const corpus = String(params.corpus ?? "memory");
+          if (corpus === "wiki" || corpus === "sessions") {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  results: [],
+                  disabled: true,
+                  error:
+                    `${corpus} corpus is not enabled in this AetnaMem takeover`,
+                }),
+              }],
+              details: { count: 0, corpus, disabled: true },
+            };
+          }
+          const sessionId = `openclaw-memory-search:${toolCallId}`;
+          const maxResults = Math.min(
+            Math.max(Number(params.maxResults) || 6, 1),
+            20,
+          );
+          const records = (await client.callTool("memory_recall", {
+            query: String(params.query ?? ""),
+            session_id: sessionId,
+            limit: maxResults,
+            min_score:
+              params.minScore === undefined
+                ? cfg.recall.minScore
+                : Number(params.minScore),
+            include_scores: true,
+          })) as Array<{
+            id: string;
+            content: string;
+            score?: number;
+            created_at?: string;
+            source_type?: string;
+          }>;
+          const results = records.map((record) => ({
+            path: `aetnamem://record/${record.id}`,
+            startLine: 1,
+            endLine: Math.max(record.content.split("\n").length, 1),
+            score: Number(record.score ?? 0),
+            snippet: record.content,
+            source: "aetnamem",
+            corpus: "memory",
+            id: record.id,
+            sourceType: record.source_type,
+            updatedAt: record.created_at,
+            citation: `aetnamem:${record.id}`,
+          }));
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                results,
+                provider: "aetnamem",
+                model: "deterministic-record-rank-v1",
+                citations: "auto",
+                mode: "governed",
+              }),
+            }],
+            details: { count: results.length, corpus, sessionId },
+          };
+        },
+      },
+      { name: "memory_search" },
+    );
+
+    api.registerTool(
+      {
+        name: "memory_get",
+        label: "Memory Get",
+        description:
+          "Read one exact governed AetnaMem record returned by memory_search. " +
+          "The read is bounded and added to the AetnaMem audit trail.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            from: { type: "integer", minimum: 1 },
+            lines: { type: "integer", minimum: 1 },
+            corpus: { type: "string", enum: ["memory", "wiki", "all"] },
+          },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        async execute(toolCallId, params) {
+          const lookup = String(params.path ?? "");
+          const recordId = recordIdFromPath(lookup);
+          if (!recordId) {
+            const sessionId = `openclaw-memory-get:${toolCallId}`;
+            const sourceResult = (await client.callTool("memory_get_source", {
+              path: lookup,
+              session_id: sessionId,
+            })) as {
+              path?: string;
+              text?: string;
+              source?: Record<string, unknown>;
+            } | null;
+            if (sourceResult?.text !== undefined) {
+              const allLines = sourceResult.text.split("\n");
+              const from = Math.max(Number(params.from) || 1, 1);
+              const requested = Math.min(
+                Math.max(Number(params.lines) || 50, 1),
+                200,
+              );
+              const selected = allLines.slice(from - 1, from - 1 + requested);
+              const payload = {
+                path: lookup,
+                text: selected.join("\n"),
+                from,
+                lines: selected.length,
+                totalLines: allLines.length,
+                truncated: from - 1 + selected.length < allLines.length,
+                source: "aetnamem-frozen-openclaw",
+                provenance: sourceResult.source ?? {},
+              };
+              return {
+                content: [{ type: "text", text: JSON.stringify(payload) }],
+                details: { found: true, sessionId },
+              };
+            }
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  path: lookup,
+                  text: "",
+                  disabled: true,
+                  error:
+                    "No governed record or frozen OpenClaw memory file matched this path",
+                }),
+              }],
+              details: { found: false },
+            };
+          }
+          const sessionId = `openclaw-memory-get:${toolCallId}`;
+          const result = (await client.callTool("memory_get_record", {
+            record_id: recordId,
+            session_id: sessionId,
+          })) as {
+            record?: { content?: string };
+            source?: Record<string, unknown>;
+          } | null;
+          const allLines = String(result?.record?.content ?? "").split("\n");
+          const from = Math.max(Number(params.from) || 1, 1);
+          const requested = Math.min(Math.max(Number(params.lines) || 50, 1), 200);
+          const selected = allLines.slice(from - 1, from - 1 + requested);
+          const payload = {
+            path: lookup,
+            text: selected.join("\n"),
+            from,
+            lines: selected.length,
+            totalLines: allLines.length,
+            truncated: from - 1 + selected.length < allLines.length,
+            source: "aetnamem",
+            provenance: result?.source ?? {},
+          };
+          return {
+            content: [{ type: "text", text: JSON.stringify(payload) }],
+            details: { found: Boolean(result?.record), sessionId },
+          };
+        },
+      },
+      { name: "memory_get" },
+    );
+
     api.registerTool(
       {
         name: "aetnamem_search",

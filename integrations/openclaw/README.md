@@ -2,8 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes experimental npm `0.4.1-experimental.2`, compatible with
-Python prerelease `v0.6.1.1a2`.
+This README describes experimental npm `0.4.1-experimental.3`, compatible with
+Python prerelease `v0.6.1.1a3`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -60,7 +60,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.6.1.1a2
+python -m pip install --pre aetnamem==0.6.1.1a3
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.
@@ -73,7 +73,7 @@ aetnamem dashboard
 
 The installer records the absolute engine path, so the OpenClaw service does
 not have to inherit the interactive shell's Python `PATH`. It installs npm
-`0.4.1-experimental.2` internally, starts shadow Safe Switch mode, synchronizes
+`0.4.1-experimental.3` internally, starts shadow Safe Switch mode, synchronizes
 native Markdown memory into an isolated evidence database, restarts the gateway,
 requires a successful RPC probe, and verifies the retained configuration. On
 failure it stops the trial and restores the prior plugin configuration.

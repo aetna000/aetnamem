@@ -13,7 +13,9 @@ MCP bridge, etc.) gets persistent, auditable memory by running:
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 import sys
 from typing import Any, Callable, TextIO
 
@@ -24,7 +26,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.6.1.1a2"
+    SERVER_VERSION = "0.6.1.1a3"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -131,6 +133,8 @@ class MCPServer:
             "memory_remember": self._tool_remember,
             "memory_observe": self._tool_observe,
             "memory_recall": self._tool_recall,
+            "memory_get_record": self._tool_get_record,
+            "memory_get_source": self._tool_get_source,
             "memory_recall_block": self._tool_recall_block,
             "memory_persona": self._tool_persona,
             "memory_context_pack": self._tool_context_pack,
@@ -226,7 +230,94 @@ class MCPServer:
             limit=int(arguments.get("limit", 10)),
             min_score=arguments.get("min_score"),
             use_graph=arguments.get("use_graph"),
+            include_scores=bool(arguments.get("include_scores", False)),
         )
+
+    def _tool_get_record(self, arguments: dict[str, Any]) -> Any:
+        subject = self._subject(arguments)
+        record_id = str(arguments["record_id"])
+        record = self.memory.store.get_record(subject, record_id)
+        if record is None or record.get("status") != "active":
+            return None
+        episode_id = str(record.get("episode_id") or "")
+        episode = next(
+            (
+                row
+                for row in self.memory.store.list_episodes(subject)
+                if str(row.get("id")) == episode_id
+            ),
+            None,
+        )
+        self.memory.store.append_audit_event(
+            subject_id=subject,
+            event_type="memory.record_read",
+            actor="mcp-caller",
+            session_id=arguments.get("session_id"),
+            record_id=record_id,
+            payload={
+                "record_id": record_id,
+                "episode_id": episode_id or None,
+                "content_sha256": hashlib.sha256(
+                    str(record.get("content") or "").encode("utf-8")
+                ).hexdigest(),
+            },
+        )
+        return {
+            "record": record,
+            "source": episode.get("raw", {}) if episode else {},
+        }
+
+    def _tool_get_source(self, arguments: dict[str, Any]) -> Any:
+        subject = self._subject(arguments)
+        relative_path = str(arguments["path"]).replace("\\", "/")
+        if (
+            relative_path.startswith("/")
+            or ".." in relative_path.split("/")
+            or not (
+                relative_path == "MEMORY.md"
+                or (
+                    relative_path.startswith("memory/")
+                    and relative_path.endswith(".md")
+                )
+            )
+        ):
+            raise ValueError("path must be MEMORY.md or memory/*.md")
+        source: dict[str, Any] | None = None
+        for episode in reversed(self.memory.store.list_episodes(subject)):
+            raw = episode.get("raw")
+            if (
+                isinstance(raw, dict)
+                and raw.get("format") == "aetnamem-openclaw-native-source-v1"
+                and raw.get("relative_path") == relative_path
+            ):
+                source = raw
+                break
+        if source is None:
+            return None
+        snapshot_path = str(source.get("snapshot_path") or "")
+        expected_sha256 = str(source.get("source_sha256") or "")
+        if not snapshot_path or not expected_sha256:
+            raise ValueError("source provenance is incomplete")
+        data = Path(snapshot_path).read_bytes()
+        actual_sha256 = hashlib.sha256(data).hexdigest()
+        if actual_sha256 != expected_sha256:
+            raise ValueError("frozen source no longer matches its admitted digest")
+        text = data.decode("utf-8", errors="replace")
+        self.memory.store.append_audit_event(
+            subject_id=subject,
+            event_type="memory.source_read",
+            actor="mcp-caller",
+            session_id=arguments.get("session_id"),
+            payload={
+                "relative_path": relative_path,
+                "source_sha256": actual_sha256,
+            },
+        )
+        return {
+            "path": relative_path,
+            "text": text,
+            "source": source,
+        }
 
     def _tool_recall_block(self, arguments: dict[str, Any]) -> Any:
         return self.memory.build_recall_block(
@@ -379,7 +470,10 @@ class MCPServer:
                 "older facts with the same slot instead of duplicating.",
                 {
                     **_SUBJECT_PROPERTY,
-                    "message": {"type": "string", "description": "The user message or fact."},
+                    "message": {
+                        "type": "string",
+                        "description": "The user message or fact.",
+                    },
                     "source_type": {
                         "type": "string",
                         "enum": ["user_message", "webpage", "tool_output"],
@@ -482,9 +576,37 @@ class MCPServer:
                         "type": "boolean",
                         "description": "Blend bounded graph seed-and-spread recall.",
                     },
+                    "include_scores": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include each returned record's audited ranking score.",
+                    },
                     **_SESSION_PROPERTIES,
                 },
                 required=["query"],
+            ),
+            _tool(
+                "memory_get_record",
+                "Read one active memory by its exact record id and return its "
+                "stored source provenance. The read is written to the audit chain.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "record_id": {"type": "string"},
+                    **_SESSION_PROPERTIES,
+                },
+                required=["record_id"],
+            ),
+            _tool(
+                "memory_get_source",
+                "Read an exact, digest-verified frozen OpenClaw source file "
+                "(MEMORY.md or memory/*.md) admitted during takeover. The "
+                "read is written to the audit chain.",
+                {
+                    **_SUBJECT_PROPERTY,
+                    "path": {"type": "string"},
+                    **_SESSION_PROPERTIES,
+                },
+                required=["path"],
             ),
             _tool(
                 "memory_recall_block",
@@ -669,7 +791,10 @@ class MCPServer:
                 "digests in the payload, not raw content.",
                 {
                     **_SUBJECT_PROPERTY,
-                    "action_type": {"type": "string", "description": 'e.g. "tool_call"'},
+                    "action_type": {
+                        "type": "string",
+                        "description": 'e.g. "tool_call"',
+                    },
                     "payload": {"type": "object"},
                     **_SESSION_PROPERTIES,
                 },

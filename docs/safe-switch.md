@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.6.1.1a2**
+Status: **experimental preview in AetnaMem 0.6.1.1a3**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.6.1.1a2
+python -m pip install --pre aetnamem==0.6.1.1a3
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -31,7 +31,7 @@ aetnamem dashboard
 ```
 
 The installer pins the exact engine executable, installs npm
-`0.4.1-experimental.2` internally, takes and verifies a complete byte-for-byte
+`0.4.1-experimental.3` internally, takes and verifies a complete byte-for-byte
 baseline of the existing native memory, builds the searchable mirror, restarts
 and probes the gateway, and enters shadow mode. If any step fails, it restores
 the prior plugin configuration. Users do not install the npm package directly.
@@ -98,13 +98,36 @@ Activation is a guarded cutover:
 4. Refuse activation if the source changes while copying or any digest differs.
 5. Record the complete snapshot manifest, then deactivate the live copies.
 6. Disable OpenClaw's native memory slot and `session-memory` writer.
-7. Point the AetnaMem bridge at the verified mirror with bounded recall.
-8. Restart OpenClaw and require a successful gateway probe.
+7. Point the AetnaMem bridge at the verified mirror with bounded recall and
+   the standard `memory_search` / `memory_get` tool contracts.
+8. Restart OpenClaw, require a successful gateway probe, then inspect the
+   loaded plugin runtime and verify both compatibility tools are present.
 9. Restore everything automatically if any cutover step fails.
 
 OpenClaw remains the agent and execution engine. Its identity, safety,
 authorization, tools and executable skills remain pinned. AetnaMem takes over
 supplemental durable memory.
+
+### Capability contract after activation
+
+| Native OpenClaw behavior | Active AetnaMem behavior |
+|---|---|
+| Agent calls `memory_search` | Same tool name and compatible input schema; returns governed records with audited rank scores |
+| Agent calls `memory_get` with a search result | Reads the exact `aetnamem://record/...` record and audits access |
+| Agent calls `memory_get` with `MEMORY.md` or `memory/*.md` | Reads the digest-verified frozen source and audits access |
+| Native pre-compaction file flush | Replaced by continuous authenticated-user capture; agent/tool text is not silently promoted to trusted memory |
+| `openclaw memory status/search` | Use `aetnamem openclaw memory status/search/trace`; AetnaMem SQLite is live and does not need a file reindex command |
+| Native `memory promote` / REM / dreaming | AetnaMem uses explicit quarantine and promotion; configured native dreaming is blocked at cutover |
+| Identity, authorization, tools, skills | Stay owned and loaded by OpenClaw |
+| Session transcripts and provider logs | Stay host-owned; AetnaMem does not delete or rewrite them |
+
+Before the gateway is stopped, activation inspects explicit OpenClaw memory
+configuration. Session-transcript indexing, extra paths, wiki memory, qmd,
+native multimodal indexing, memory-core dreaming, and active-memory are
+currently unsupported takeover features. If any is configured, activation
+prints the exact blockers and makes no change. This is deliberate: an
+unsupported capability must never disappear merely because the storage
+switched.
 
 Rollback restores every file and empty directory from the switch-time
 snapshot, re-verifies their hashes, restores the memory slot, session hook and
@@ -159,5 +182,5 @@ Default evidence files:
 ```
 
 Hermes keeps the earlier coexistence behavior: it can shadow, preview, canary
-and activate AetnaMem context, but 0.6.1.1a2 does not replace the selected
+and activate AetnaMem context, but 0.6.1.1a3 does not replace the selected
 Hermes memory provider.

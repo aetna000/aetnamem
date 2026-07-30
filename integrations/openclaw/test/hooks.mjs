@@ -71,7 +71,7 @@ const agentEnd = runtime.hooks.get("agent_end");
 const beforeWrite = runtime.hooks.get("before_message_write");
 
 try {
-  assert.equal(runtime.tools.size, 4);
+  assert.equal(runtime.tools.size, 6);
 
   const observe = runtime.tools.get("aetnamem_observe");
   const observed = await observe.execute("observe-1", {
@@ -109,6 +109,26 @@ try {
   assert.ok(injected.appendContext.includes("teal"));
   assert.match(injected.appendContext, /\[m:[a-f0-9]{8}\]/);
   assert.doesNotMatch(injected.appendContext, /\[rec_[a-f0-9]+\]/);
+
+  const compatibleSearch = runtime.tools.get("memory_search");
+  const searchResult = await compatibleSearch.execute("compat-search-1", {
+    query: "favorite color",
+    maxResults: 5,
+  });
+  const searchPayload = JSON.parse(searchResult.content[0].text);
+  assert.ok(searchPayload.results.length >= 1);
+  assert.match(searchPayload.results[0].path, /^aetnamem:\/\/record\/rec_/);
+  assert.equal(typeof searchPayload.results[0].score, "number");
+
+  const compatibleGet = runtime.tools.get("memory_get");
+  const getResult = await compatibleGet.execute("compat-get-1", {
+    path: searchPayload.results[0].path,
+    from: 1,
+    lines: 10,
+  });
+  const getPayload = JSON.parse(getResult.content[0].text);
+  assert.ok(getPayload.text.includes("teal"));
+  assert.equal(getResult.details.found, true);
 
   await beforePrompt(
     { prompt: "Actually, use blue as my favorite color going forward." },

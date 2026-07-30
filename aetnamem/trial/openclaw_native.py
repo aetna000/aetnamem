@@ -14,7 +14,6 @@ from aetnamem.store.sqlite import utc_now
 from aetnamem.trial.models import TrialState
 from aetnamem.trial.store import TrialStore
 
-
 MIRROR_DB_NAME = "openclaw-mirror.db"
 MIRROR_MANIFEST_NAME = "openclaw-mirror.json"
 CUTOVER_NAME = "openclaw-cutover.json"
@@ -61,9 +60,7 @@ def discover_workspace(openclaw: str | None = None) -> Path:
                 for row in rows:
                     status = row.get("status") if isinstance(row, dict) else None
                     workspace = (
-                        status.get("workspaceDir")
-                        if isinstance(status, dict)
-                        else None
+                        status.get("workspaceDir") if isinstance(status, dict) else None
                     )
                     if isinstance(workspace, str) and workspace.strip():
                         return Path(workspace).expanduser().resolve()
@@ -196,9 +193,7 @@ def sync_mirror(
     os.replace(build_path, mirror_path)
     _remove_sqlite_sidecars(mirror_path)
     native_memory_chars = sum(
-        int(row["bytes"])
-        for row in source_rows
-        if row["relative_path"] == "MEMORY.md"
+        int(row["bytes"]) for row in source_rows if row["relative_path"] == "MEMORY.md"
     )
     manifest = {
         "format": "aetnamem-openclaw-mirror-v1",
@@ -233,9 +228,7 @@ def mirror_status(state: TrialState, *, refresh: bool = True) -> dict[str, Any]:
             return sync_mirror(
                 state,
                 workspace=(
-                    manifest.get("workspace")
-                    if isinstance(manifest, dict)
-                    else None
+                    manifest.get("workspace") if isinstance(manifest, dict) else None
                 ),
             )
         except Exception as exc:
@@ -275,8 +268,7 @@ def search_mirror(
             min_score=0.3,
         )
         episodes = {
-            str(row["id"]): row
-            for row in memory.store.list_episodes(state.subject_id)
+            str(row["id"]): row for row in memory.store.list_episodes(state.subject_id)
         }
         for record in records:
             episode = episodes.get(str(record.get("episode_id") or ""))
@@ -332,6 +324,13 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
     executable = shutil.which("openclaw")
     if executable is None:
         raise ValueError("OpenClaw is not on PATH")
+    capability_report = inspect_native_memory_capabilities(executable)
+    if not capability_report["safe_to_switch"]:
+        details = "; ".join(capability_report["blocking_reasons"])
+        raise ValueError(
+            "OpenClaw memory takeover stopped because configured native "
+            f"capabilities would be lost: {details}"
+        )
 
     trial_dir = Path(state.trial_dir)
     cutover_path = trial_dir / CUTOVER_NAME
@@ -339,7 +338,9 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         current = _read_json(cutover_path) or {}
         if current.get("status") == "active":
             return _cutover_public(current)
-        raise ValueError("an incomplete OpenClaw cutover already exists; roll back first")
+        raise ValueError(
+            "an incomplete OpenClaw cutover already exists; roll back first"
+        )
 
     workspace = Path(str(status["workspace"]))
     archive = trial_dir / "openclaw-native-frozen"
@@ -377,6 +378,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         "prior_plugin_entry": prior_plugin_entry,
         "relocated": [],
         "approved_candidates_merged": 0,
+        "native_capability_report": capability_report,
         "created_at": utc_now(),
     }
     _private_json(cutover_path, cutover)
@@ -393,12 +395,9 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         archive.mkdir(mode=0o700, exist_ok=False)
         native_snapshot = _snapshot_native_memory(workspace, archive)
         shadow_history = status.get("shadow_history")
-        shadow_history = (
-            shadow_history if isinstance(shadow_history, dict) else {}
-        )
-        if (
-            native_snapshot["snapshot_sha256"]
-            != shadow_history.get("latest_observed_sha256")
+        shadow_history = shadow_history if isinstance(shadow_history, dict) else {}
+        if native_snapshot["snapshot_sha256"] != shadow_history.get(
+            "latest_observed_sha256"
         ):
             raise ValueError(
                 "switch-time snapshot does not match the final searchable mirror"
@@ -418,9 +417,7 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         )
         _private_json(cutover_path, cutover)
 
-        if _tree_manifest(workspace, NATIVE_MEMORY_ROOTS) != native_snapshot[
-            "entries"
-        ]:
+        if _tree_manifest(workspace, NATIVE_MEMORY_ROOTS) != native_snapshot["entries"]:
             raise ValueError(
                 "OpenClaw native memory changed after the switch-time snapshot"
             )
@@ -441,17 +438,26 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         _set_json(executable, f"{base}.config.safeSwitch", {"enabled": False})
         _set_json(executable, f"{base}.config.dbPath", status["mirror_db"])
         _set_json(executable, f"{base}.config.subject", state.subject_id)
-        _set_json(executable, f"{base}.config.capture", {
-            "enabled": True,
-            "captureAssistant": True,
-        })
-        _set_json(executable, f"{base}.config.recall", {
-            "enabled": True,
-            "maxRecords": 3,
-            "maxChars": DEFAULT_RECALL_CHARS,
-            "minScore": 0.3,
-            "timeoutMs": 4000,
-        })
+        _set_json(executable, f"{base}.hooks.allowConversationAccess", True)
+        _set_json(
+            executable,
+            f"{base}.config.capture",
+            {
+                "enabled": True,
+                "captureAssistant": True,
+            },
+        )
+        _set_json(
+            executable,
+            f"{base}.config.recall",
+            {
+                "enabled": True,
+                "maxRecords": 3,
+                "maxChars": DEFAULT_RECALL_CHARS,
+                "minScore": 0.3,
+                "timeoutMs": 4000,
+            },
+        )
         _set_json(executable, f"{base}.enabled", True)
         _run([executable, "gateway", "restart"])
         gateway = _json_command(
@@ -460,6 +466,43 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
         rpc = gateway.get("rpc") if isinstance(gateway, dict) else None
         if not isinstance(rpc, dict) or rpc.get("ok") is not True:
             raise ValueError("OpenClaw gateway RPC did not verify after cutover")
+        plugin_runtime = _json_command(
+            [
+                executable,
+                "plugins",
+                "inspect",
+                "memory-aetnamem",
+                "--runtime",
+                "--json",
+            ]
+        )
+        plugin = (
+            plugin_runtime.get("plugin") if isinstance(plugin_runtime, dict) else None
+        )
+        tool_names = (
+            set(plugin.get("toolNames") or []) if isinstance(plugin, dict) else set()
+        )
+        required_tools = {"memory_search", "memory_get"}
+        typed_hooks = {
+            str(row.get("name"))
+            for row in plugin_runtime.get("typedHooks", [])
+            if isinstance(row, dict)
+        }
+        required_hooks = {
+            "before_prompt_build",
+            "agent_end",
+            "before_message_write",
+        }
+        if (
+            not isinstance(plugin, dict)
+            or plugin.get("status") != "loaded"
+            or not required_tools.issubset(tool_names)
+            or not required_hooks.issubset(typed_hooks)
+        ):
+            raise ValueError(
+                "AetnaMem OpenClaw runtime did not verify the standard "
+                "memory tools and capture/injection hooks"
+            )
         cutover.update(
             {
                 "status": "active",
@@ -469,6 +512,9 @@ def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, An
                 "native_memory_slot": "none",
                 "session_memory_hook": "disabled",
                 "gateway_verified": True,
+                "compatibility_tools": ["memory_search", "memory_get"],
+                "compatibility_tools_verified": True,
+                "capture_hooks_verified": True,
             }
         )
         _private_json(cutover_path, cutover)
@@ -538,10 +584,101 @@ def restart_and_verify_gateway() -> dict[str, Any]:
 
 def takeover_status(state: TrialState) -> dict[str, Any]:
     cutover = _read_json(Path(state.trial_dir) / CUTOVER_NAME)
-    return _cutover_public(cutover) if cutover else {
-        "status": "shadow",
-        "active": False,
-        "native_memory_frozen": False,
+    return (
+        _cutover_public(cutover)
+        if cutover
+        else {
+            "status": "shadow",
+            "active": False,
+            "native_memory_frozen": False,
+        }
+    )
+
+
+def inspect_native_memory_capabilities(
+    executable: str | None = None,
+) -> dict[str, Any]:
+    """Find explicitly configured native features a takeover cannot preserve.
+
+    Missing keys mean OpenClaw defaults. Those defaults are covered by the
+    AetnaMem mirror, standard memory_search/memory_get aliases, continuous
+    capture, and verified rollback. Explicit extra corpora or native
+    experimental pipelines must never disappear silently.
+    """
+
+    command = executable or shutil.which("openclaw")
+    if command is None:
+        raise ValueError("OpenClaw is not on PATH")
+    checks = {
+        "default_memory_search": "agents.defaults.memorySearch",
+        "agent_overrides": "agents.list",
+        "memory_config": "memory",
+        "memory_core": "plugins.entries.memory-core",
+        "memory_wiki": "plugins.entries.memory-wiki",
+        "active_memory": "plugins.entries.active-memory",
+    }
+    configured = {
+        name: _optional_json([command, "config", "get", key, "--json"])
+        for name, key in checks.items()
+    }
+    reasons: list[str] = []
+
+    def inspect_search(value: Any, label: str) -> None:
+        if not isinstance(value, dict):
+            return
+        sources = value.get("sources")
+        if isinstance(sources, list) and any(str(item) != "memory" for item in sources):
+            reasons.append(f"{label} indexes non-memory sources: {sources}")
+        if value.get("extraPaths"):
+            reasons.append(f"{label} uses extraPaths")
+        experimental = value.get("experimental")
+        if isinstance(experimental, dict) and experimental.get("sessionMemory") is True:
+            reasons.append(f"{label} indexes session transcripts")
+        if value.get("backend") == "qmd":
+            reasons.append(f"{label} uses the qmd backend")
+        if value.get("multimodal"):
+            reasons.append(f"{label} enables native multimodal indexing")
+
+    inspect_search(configured["default_memory_search"], "agents.defaults.memorySearch")
+    agents = configured["agent_overrides"]
+    if isinstance(agents, list):
+        for agent in agents:
+            if isinstance(agent, dict):
+                inspect_search(
+                    agent.get("memorySearch"),
+                    f"agent {agent.get('id') or '<unknown>'} memorySearch",
+                )
+    memory_config = configured["memory_config"]
+    if isinstance(memory_config, dict):
+        if memory_config.get("backend") == "qmd":
+            reasons.append("memory.backend is qmd")
+        if memory_config.get("multimodal"):
+            reasons.append("memory.multimodal is configured")
+    core = configured["memory_core"]
+    if isinstance(core, dict):
+        core_config = core.get("config")
+        if isinstance(core_config, dict) and core_config.get("dreaming"):
+            reasons.append("memory-core dreaming is configured")
+    for name, label in (
+        ("memory_wiki", "memory-wiki corpus"),
+        ("active_memory", "active-memory plugin"),
+    ):
+        value = configured[name]
+        if isinstance(value, dict) and value.get("enabled") is not False:
+            reasons.append(f"{label} is enabled")
+
+    return {
+        "format": "aetnamem-openclaw-capability-check-v1",
+        "safe_to_switch": not reasons,
+        "blocking_reasons": reasons,
+        "preserved": [
+            "MEMORY.md and memory/*.md imported with provenance",
+            "standard memory_search tool",
+            "standard memory_get tool",
+            "continuous authenticated-user capture",
+            "pre-switch native files and configuration rollback",
+        ],
+        "configured": configured,
     }
 
 
@@ -603,14 +740,10 @@ def _source_row(source: NativeSource) -> dict[str, Any]:
     }
 
 
-def _merge_approved_trial_candidates(
-    state: TrialState, mirror_db: str | Path
-) -> int:
+def _merge_approved_trial_candidates(state: TrialState, mirror_db: str | Path) -> int:
     store = TrialStore(Path(state.trial_dir) / "evidence.db")
     try:
-        approved = store.list_candidates(
-            state.trial_id, statuses=("approved",)
-        )
+        approved = store.list_candidates(state.trial_id, statuses=("approved",))
     finally:
         store.close()
     if not approved:
@@ -675,9 +808,7 @@ def _markdown_chunks(text: str, *, max_chars: int = 1200) -> Iterable[dict[str, 
         current.append(line)
     value = "\n".join(current).strip()
     if value:
-        chunks.append(
-            {"text": value, "line_start": start, "line_end": len(lines)}
-        )
+        chunks.append({"text": value, "line_start": start, "line_end": len(lines)})
     return chunks
 
 
@@ -735,6 +866,10 @@ def _cutover_public(value: dict[str, Any]) -> dict[str, Any]:
             "native_memory_slot",
             "session_memory_hook",
             "gateway_verified",
+            "compatibility_tools",
+            "compatibility_tools_verified",
+            "capture_hooks_verified",
+            "native_capability_report",
         )
         if key in value
     } | {"active": value.get("status") == "active"}
@@ -780,9 +915,7 @@ def _ensure_native_baseline(trial_dir: Path, workspace: Path) -> dict[str, Any]:
             "entry_count": len(copied),
             "file_count": sum(1 for row in copied if row["type"] == "file"),
             "total_bytes": sum(
-                int(row.get("bytes") or 0)
-                for row in copied
-                if row["type"] == "file"
+                int(row.get("bytes") or 0) for row in copied if row["type"] == "file"
             ),
             "verified_at": utc_now(),
             "purpose": "pre-shadow-baseline",
@@ -1031,7 +1164,9 @@ def _json_command(arguments: list[str]) -> dict[str, Any]:
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"command returned invalid JSON: {' '.join(arguments)}") from exc
+        raise ValueError(
+            f"command returned invalid JSON: {' '.join(arguments)}"
+        ) from exc
     if not isinstance(value, dict):
         raise ValueError(f"command returned unexpected JSON: {' '.join(arguments)}")
     return value
@@ -1063,9 +1198,7 @@ def _set_json(executable: str, key: str, value: Any) -> None:
 def _run(
     arguments: list[str], *, allow_missing: bool = False
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        arguments, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(arguments, capture_output=True, text=True, check=False)
     if result.returncode != 0 and not allow_missing:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         raise ValueError(f"{' '.join(arguments[:3])} failed: {detail}")

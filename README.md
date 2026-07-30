@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.6.1.1a2 experimental" src="https://img.shields.io/badge/version-0.6.1.1a2--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.6.1.1a3 experimental" src="https://img.shields.io/badge/version-0.6.1.1a3--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,14 +28,14 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.6.1.1a2** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.6.1.1a3** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
 recall, and activate only after the mirror and rollback evidence verify.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
-plugin is **0.4.1-experimental.2**. These are prereleases, not the final
+plugin is **0.4.1-experimental.3**. These are prereleases, not the final
 `0.6.1.1` / `0.4.1` packages.
 
 ## Adopt AetnaMem without a blind switch
@@ -58,7 +58,8 @@ Your current OpenClaw memory remains authoritative during evaluation:
 6. **Activate with a verified freeze.** AetnaMem takes a second complete
    switch-time snapshot, verifies every byte digest, disables duplicate native
    memory retrieval and session-memory writing, and becomes the bounded
-   supplemental-memory path.
+   supplemental-memory path without changing the agent-facing
+   `memory_search` / `memory_get` names.
 7. **Roll back exactly.** Restore native files, memory slot, session-memory
    hook and the prior plugin configuration without deleting trial evidence.
 
@@ -66,7 +67,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.6.1.1a2
+python -m pip install --pre aetnamem==0.6.1.1a3
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -119,9 +120,21 @@ directories in `MEMORY.md` and `memory/`. It refuses activation if the source
 changes while copying or any digest differs. It then deactivates the live
 copies, sets OpenClaw's native memory slot to `none`, disables the native
 `session-memory` writer, and points the bridge at the verified AetnaMem mirror.
+The bridge preserves OpenClaw's standard `memory_search` and `memory_get`
+tools. Results use stable `aetnamem://record/...` paths; exact reads of those
+records and digest-verified reads of frozen `MEMORY.md` / `memory/*.md` paths
+are audited through the engine's `memory_get_record` and `memory_get_source`
+MCP operations. After restart, activation inspects the loaded plugin runtime and
+automatically restores native memory unless both compatibility tools verify.
 `AGENTS.md`, `TOOLS.md`, identity, safety instructions and executable skills
 remain pinned in OpenClaw. Rollback restores and re-verifies the switch-time
 snapshot.
+
+Activation also checks for configured native features the current takeover
+cannot preserve. It refuses the switch—with named reasons—when OpenClaw uses
+session-transcript search, extra memory paths, wiki memory, qmd, native
+multimodal indexing, memory-core dreaming, or the active-memory plugin. No
+configured corpus is silently dropped.
 
 The [77-second real OpenClaw demonstration](./docs/assets/demos/aetnamem-openclaw-safe-switch.mp4)
 uses DeepSeek on an isolated agent. Its baseline answered “I do not know yet”;
@@ -170,7 +183,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.6.1.1a2
+python -m pip install --pre aetnamem==0.6.1.1a3
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -797,7 +810,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.6.1.1a2
+python -m pip install --pre aetnamem==0.6.1.1a3
 aetnamem --version
 aetnamem openclaw install
 
@@ -999,7 +1012,7 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
-- **[0.6.1.1a2 experimental notes](./docs/releases/v0.6.1.1a2.md):**
+- **[0.6.1.1a3 experimental notes](./docs/releases/v0.6.1.1a3.md):**
   native-memory shadow, evidence review, verified takeover and rollback;
 - **[0.6.1 release notes](./docs/releases/v0.6.1.md):** Safe Switch package
   versions, compatibility, validation, and known limits.

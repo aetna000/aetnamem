@@ -73,7 +73,7 @@ def _configure_openclaw(
     if plugin_version is None or _version_tuple(plugin_version) < (0, 4, 1):
         raise ValueError(
             "Safe Switch requires openclaw-memory-aetnamem "
-            "0.4.1-experimental.2 or newer. "
+            "0.4.1-experimental.3 or newer. "
             "Run `aetnamem openclaw install`; it installs and verifies the "
             "matching bridge before starting the trial."
         )

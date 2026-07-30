@@ -124,7 +124,7 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
     <button class="nav" data-section="comparison"><span class="nd"></span>Evidence</button>
     <button class="nav" data-section="switch"><span class="nd"></span>Switch</button>
     <button class="nav" data-section="value"><span class="nd"></span>Value</button>
-    <div class="railfoot mono"><span id="trialId">loading</span><br><span id="version">AetnaMem 0.6.1.1a2 experimental</span></div>
+    <div class="railfoot mono"><span id="trialId">loading</span><br><span id="version">AetnaMem 0.6.1.1a3 experimental</span></div>
   </nav>
   <main>
     <div class="error" id="error" role="alert"></div>

@@ -27,7 +27,6 @@ from aetnamem.retrieve.rank import RECENCY_WEIGHT, TEXT_WEIGHT, TRUST_WEIGHT
 from aetnamem.store import SQLiteStore
 from aetnamem.store.sqlite import utc_now
 
-
 _T = TypeVar("_T")
 
 _RETRIEVAL_EVIDENCE_FORMAT = "aetnamem-retrieval-evidence-v2"
@@ -146,9 +145,9 @@ class Memory:
             duplicate = self.store.find_duplicate_record(
                 subject_id,
                 candidate.content,
-                statuses=("active",)
-                if status == "active"
-                else ("active", "quarantined"),
+                statuses=(
+                    ("active",) if status == "active" else ("active", "quarantined")
+                ),
             )
             if duplicate is not None:
                 duplicate_ids.append(duplicate["id"])
@@ -164,9 +163,7 @@ class Memory:
                 continue
 
             old_records = (
-                self.store.active_records_for_fact_key(
-                    subject_id, candidate.fact_key
-                )
+                self.store.active_records_for_fact_key(subject_id, candidate.fact_key)
                 if status == "active"
                 else []
             )
@@ -321,17 +318,13 @@ class Memory:
                     "envelope_sha256": observation.envelope_sha256,
                 },
             )
-            record = self.store.get_record(
-                subject_id, str(duplicate["record_id"])
-            )
+            record = self.store.get_record(subject_id, str(duplicate["record_id"]))
             assert record is not None
             return {
                 "format": "aetnamem-media-admission-v1",
                 "artifact": artifact,
                 "observation": duplicate,
-                "record": self._attach_media_provenance(
-                    subject_id, [record]
-                )[0],
+                "record": self._attach_media_provenance(subject_id, [record])[0],
                 "duplicate": True,
                 "audit_event_id": event_id,
             }
@@ -388,9 +381,7 @@ class Memory:
             lineage_sha256=observation.lineage_sha256,
             envelope_sha256=observation.envelope_sha256,
             observed_at=observation.observed_at,
-            supersedes_observation_id=(
-                str(previous[-1]["id"]) if previous else None
-            ),
+            supersedes_observation_id=(str(previous[-1]["id"]) if previous else None),
         )
         previous_ids = [str(item["id"]) for item in previous]
         superseded_record_ids = self.store.supersede_media_observations(
@@ -442,9 +433,7 @@ class Memory:
             "format": "aetnamem-media-admission-v1",
             "artifact": artifact,
             "observation": stored_observation,
-            "record": self._attach_media_provenance(
-                subject_id, [stored_record]
-            )[0],
+            "record": self._attach_media_provenance(subject_id, [stored_record])[0],
             "duplicate": False,
             "audit_event_id": event_id,
         }
@@ -459,6 +448,7 @@ class Memory:
         limit: int = 10,
         min_score: float | None = None,
         use_graph: bool | None = None,
+        include_scores: bool = False,
     ) -> list[dict[str, Any]]:
         """Top-k recall over bounded active record and optional graph candidates."""
         active_records, fts_scores = self.store.recall_candidates(
@@ -497,9 +487,7 @@ class Memory:
             active_records,
             fts_scores=fts_scores if fts_scores else None,
         )
-        lexical_by_record = {
-            str(item.record["id"]): item for item in lexical_scored
-        }
+        lexical_by_record = {str(item.record["id"]): item for item in lexical_scored}
         lexical_rank = {
             str(item.record["id"]): rank
             for rank, item in enumerate(lexical_scored, start=1)
@@ -522,8 +510,7 @@ class Memory:
             ),
         )
         recency_rank = {
-            str(record["id"]): rank
-            for rank, record in enumerate(by_recency)
+            str(record["id"]): rank for rank, record in enumerate(by_recency)
         }
         recency_denominator = max(len(active_records) - 1, 1)
         fts_max_raw = max(fts_scores.values(), default=0.0)
@@ -598,9 +585,7 @@ class Memory:
                 "trust": TRUST_WEIGHT,
                 "recency": RECENCY_WEIGHT,
             },
-            "fusion_version": (
-                _GRAPH_FUSION_VERSION if graph_by_record else None
-            ),
+            "fusion_version": (_GRAPH_FUSION_VERSION if graph_by_record else None),
             "rrf_rank_constant": _RRF_RANK_CONSTANT,
             "graph_rrf_weight": _GRAPH_RRF_WEIGHT,
             "candidate_log_window": _CANDIDATE_LOG_WINDOW,
@@ -655,6 +640,11 @@ class Memory:
         results: list[dict[str, Any]] = []
         for item in returned:
             record = dict(item.record)
+            if include_scores:
+                # Compatibility surfaces such as OpenClaw's memory_search
+                # need the actual audited rank score. Keep it opt-in so the
+                # long-standing Python API result shape remains unchanged.
+                record["score"] = item.score
             graph_candidate = graph_by_record.get(record["id"])
             if graph_candidate is not None:
                 record["graph"] = {
@@ -855,15 +845,12 @@ class Memory:
             if str(item["id"]) in episode_ids
         }
         episodes_purged = all(
-            episode_id in episodes
-            and episodes[episode_id]["message"] == "[purged]"
+            episode_id in episodes and episodes[episode_id]["message"] == "[purged]"
             for episode_id in episode_ids
         )
         verification = {
             "artifact_tombstoned": media_cleanup["artifact_tombstoned"],
-            "observations_tombstoned": media_cleanup[
-                "observations_tombstoned"
-            ],
+            "observations_tombstoned": media_cleanup["observations_tombstoned"],
             "records_tombstoned": records_tombstoned,
             "episodes_purged": episodes_purged,
             "vectors_verified_absent": (
@@ -873,13 +860,9 @@ class Memory:
             "verified_at": utc_now(),
         }
         verification["valid"] = all(
-            value
-            for key, value in verification.items()
-            if key != "verified_at"
+            value for key, value in verification.items() if key != "verified_at"
         )
-        verification["report_sha256"] = sha256_hex(
-            canonical_json(verification)
-        )
+        verification["report_sha256"] = sha256_hex(canonical_json(verification))
         if not verification["valid"]:
             raise RuntimeError(
                 "artifact deletion could not be verified; transaction rolled back"
@@ -902,9 +885,7 @@ class Memory:
             "host_file_deleted": False,
         }
         if cleanup["semantic_index_cleanup"] is not None:
-            payload["semantic_index_cleanup"] = cleanup[
-                "semantic_index_cleanup"
-            ]
+            payload["semantic_index_cleanup"] = cleanup["semantic_index_cleanup"]
         event_id = self.store.append_audit_event(
             subject_id=subject_id,
             event_type="media.artifact_forgotten",
@@ -944,9 +925,7 @@ class Memory:
             "audit_event_hash": event["event_hash"],
         }
         if cleanup["semantic_index_cleanup"] is not None:
-            receipt["semantic_index_cleanup"] = cleanup[
-                "semantic_index_cleanup"
-            ]
+            receipt["semantic_index_cleanup"] = cleanup["semantic_index_cleanup"]
         receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
         return {
             "deleted": True,
@@ -968,9 +947,7 @@ class Memory:
         )
         graph_mutations = self.graph.tombstone_records(subject_id, purged_ids)
         purged_graph_ids = [
-            str(item["object_id"])
-            for item in graph_mutations
-            if item.get("object_id")
+            str(item["object_id"]) for item in graph_mutations if item.get("object_id")
         ]
         self._audit_graph_mutations(
             subject_id,
@@ -991,10 +968,7 @@ class Memory:
                 for item in registered
             }
             default_path = str(default_index_path(self.store.path).resolve())
-            if (
-                Path(default_path).exists()
-                and default_path not in registered_by_path
-            ):
+            if Path(default_path).exists() and default_path not in registered_by_path:
                 registered_by_path[default_path] = {
                     "index_path": default_path,
                     "index_path_sha256": sha256_hex(default_path),
@@ -1011,21 +985,13 @@ class Memory:
                 semantic_index = SemanticIndex(index_path)
                 try:
                     if semantic_index.active_epoch(subject_id) is not None:
-                        index_cleanup = semantic_index.purge(
-                            subject_id, cleanup_ids
-                        )
-                        index_verification = semantic_index.verify(
-                            self, subject_id
-                        )
+                        index_cleanup = semantic_index.purge(subject_id, cleanup_ids)
+                        index_verification = semantic_index.verify(self, subject_id)
                         semantic_index.checkpoint_storage()
                         result = {
                             **index_cleanup,
-                            "index_path_sha256": registry[
-                                "index_path_sha256"
-                            ],
-                            "index_verification_valid": index_verification[
-                                "valid"
-                            ],
+                            "index_path_sha256": registry["index_path_sha256"],
+                            "index_verification_valid": index_verification["valid"],
                             "verification_report_sha256": index_verification[
                                 "report_sha256"
                             ],
@@ -1377,9 +1343,7 @@ class Memory:
         rejected. Nothing becomes active except through promote().
         """
         episodes = {e["id"] for e in self.store.list_episodes(subject_id)}
-        record_ids = {
-            r["id"] for r in self.list(subject_id, include_inactive=True)
-        }
+        record_ids = {r["id"] for r in self.list(subject_id, include_inactive=True)}
         visible = self.store.list_records(
             subject_id, statuses=("active", "quarantined")
         )
@@ -1538,9 +1502,7 @@ class Memory:
             session_id=session_id,
             payload=report,
         )
-        self._audit_graph_mutations(
-            subject_id, graph_mutations, session_id=session_id
-        )
+        self._audit_graph_mutations(subject_id, graph_mutations, session_id=session_id)
         return report
 
     @_atomic
@@ -1563,9 +1525,7 @@ class Memory:
         media_observation = self.store.get_media_observation_for_record(
             subject_id, record_id
         )
-        record = self.store.promote_record(
-            subject_id=subject_id, record_id=record_id
-        )
+        record = self.store.promote_record(subject_id=subject_id, record_id=record_id)
         if record is None:
             raise ValueError(f"record {record_id} is not quarantined for {subject_id}")
 
@@ -1580,9 +1540,7 @@ class Memory:
                 exclude_record_id=record_id,
             )
         old_ids = list(
-            dict.fromkeys(
-                str(item["id"]) for item in [*old_records, *lineage_records]
-            )
+            dict.fromkeys(str(item["id"]) for item in [*old_records, *lineage_records])
         )
         superseded_observation_ids = [
             str(item["media_observation_id"]) for item in lineage_records
@@ -1691,9 +1649,7 @@ class Memory:
             session_id=session_id,
         )
         merge_mutations = self.graph.propose_entity_merges(subject_id)
-        self._audit_graph_mutations(
-            subject_id, merge_mutations, session_id=session_id
-        )
+        self._audit_graph_mutations(subject_id, merge_mutations, session_id=session_id)
         archive = None
         if archive_root is not None and archive_before is not None:
             archive = self.graph.archive_history(
@@ -1783,9 +1739,7 @@ class Memory:
             actor=actor,
             winner_entity=winner_entity,
         )
-        self._audit_graph_mutations(
-            subject_id, [mutation], session_id=session_id
-        )
+        self._audit_graph_mutations(subject_id, [mutation], session_id=session_id)
         return next(
             item
             for item in self.graph.list_merge_proposals(subject_id)
@@ -1802,9 +1756,7 @@ class Memory:
         session_id: str | None = None,
     ) -> dict[str, Any]:
         mutation = self.graph.revert_merge(subject_id, proposal_id, actor=actor)
-        self._audit_graph_mutations(
-            subject_id, [mutation], session_id=session_id
-        )
+        self._audit_graph_mutations(subject_id, [mutation], session_id=session_id)
         return next(
             item
             for item in self.graph.list_merge_proposals(subject_id)
@@ -1903,9 +1855,7 @@ class Memory:
         subjects: dict[str, Any] = {}
         for sid in subject_ids:
             incremental_report = (
-                self.store.verify_audit_chain_incremental(sid)
-                if incremental
-                else None
+                self.store.verify_audit_chain_incremental(sid) if incremental else None
             )
             subjects[sid] = {
                 "chain_valid": (
@@ -1935,7 +1885,10 @@ class Memory:
             if sha256_hex(canonical_json(recomputed)) != claimed_digest:
                 for sid in subjects:
                     subjects[sid]["failures"].append(
-                        {"checkpoint": document.get("created_at"), "reason": "checkpoint digest mismatch"}
+                        {
+                            "checkpoint": document.get("created_at"),
+                            "reason": "checkpoint digest mismatch",
+                        }
                     )
                 continue
             for sid, pinned in document.get("subjects", {}).items():

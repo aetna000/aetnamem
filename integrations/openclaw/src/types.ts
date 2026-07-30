@@ -58,7 +58,10 @@ export interface OpenClawPluginApi {
     registrar: (context: { program: CliCommand }) => void,
     options?: { commands: string[] },
   ) => void;
-  registerTool(spec: OpenClawToolSpec, options?: { name: string }): void;
+  registerTool(
+    spec: OpenClawToolSpec,
+    options?: { name?: string; names?: string[] },
+  ): void;
   registerService?: (service: {
     id: string;
     start: () => void | Promise<void>;

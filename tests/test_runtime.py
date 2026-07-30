@@ -12,11 +12,12 @@ from aetnamem import Memory
 from aetnamem.mcp import MCPServer
 from aetnamem.runtime import MemoryRuntime, RuntimeScope, preset_config
 
-
 BASE_TOOL_NAMES = [
     "memory_remember",
     "memory_observe",
     "memory_recall",
+    "memory_get_record",
+    "memory_get_source",
     "memory_recall_block",
     "memory_persona",
     "memory_context_pack",
@@ -235,9 +236,7 @@ def test_cml_experiment_applies_logged_assignment_and_keeps_pins(
         assert decisions["semantic"]["applied"] is True
         assert decisions["semantic"]["propensity"] == 1.0
         admitted = {item["plane"] for item in pack["contributions"]}
-        expected = {
-            plane for plane, item in decisions.items() if item["applied"]
-        }
+        expected = {plane for plane, item in decisions.items() if item["applied"]}
         assert admitted == expected
         assert "semantic" in admitted
         assert pack["cml"]["arm_id"] == pack["cml"]["applied_arm_id"]
@@ -304,7 +303,10 @@ def test_runtime_degrades_one_provider_without_losing_the_turn(tmp_path: Path) -
     try:
         pack = runtime.prepare_turn("finish task", task_state={"goal": "finish"})
         assert pack["degraded_planes"] == ["episodic"]
-        assert "remote episodic provider unavailable" in pack["provider_failures"]["episodic"]
+        assert (
+            "remote episodic provider unavailable"
+            in pack["provider_failures"]["episodic"]
+        )
         assert "<working_memory>" in pack["dynamic_context"]
     finally:
         runtime.close()
@@ -338,7 +340,9 @@ def test_base_mcp_catalog_and_runtime_tools_are_opt_in(tmp_path: Path) -> None:
     default_tools = default_server.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     )
-    assert [item["name"] for item in default_tools["result"]["tools"]] == BASE_TOOL_NAMES
+    assert [
+        item["name"] for item in default_tools["result"]["tools"]
+    ] == BASE_TOOL_NAMES
 
     runtime = MemoryRuntime(
         preset_config(
@@ -420,10 +424,8 @@ def test_noninteractive_setup_is_a_ten_step_wizard(tmp_path: Path) -> None:
 def test_release_versions_are_consistent() -> None:
     root = Path(__file__).resolve().parents[1]
     project_text = (root / "pyproject.toml").read_text()
-    project_version = re.search(
-        r"(?m)^version = \"([^\"]+)\"$", project_text
-    )
-    assert project_version and project_version.group(1) == "0.6.1.1a2"
+    project_version = re.search(r"(?m)^version = \"([^\"]+)\"$", project_text)
+    assert project_version and project_version.group(1) == "0.6.1.1a3"
     package = json.loads((root / "integrations/openclaw/package.json").read_text())
     lock = json.loads((root / "integrations/openclaw/package-lock.json").read_text())
     manifest = json.loads(
@@ -433,5 +435,5 @@ def test_release_versions_are_consistent() -> None:
         package["version"]
         == lock["version"]
         == manifest["version"]
-        == "0.4.1-experimental.2"
+        == "0.4.1-experimental.3"
     )
