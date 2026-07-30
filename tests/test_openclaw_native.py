@@ -14,6 +14,7 @@ from aetnamem.trial.openclaw_native import (
     NATIVE_SNAPSHOT_MANIFEST_NAME,
     activate_takeover,
     discover_sources,
+    _focused_excerpt,
     inspect_native_memory_capabilities,
     restore_takeover,
     search_mirror,
@@ -53,6 +54,17 @@ def _workspace(tmp_path: Path) -> Path:
         "# Tools\n\nUse git status.\n", encoding="utf-8"
     )
     return workspace
+
+
+def test_search_excerpt_returns_only_the_matching_sentence() -> None:
+    content = (
+        "They like red cars. - JT said they hate blueberries. "
+        "- JT said they like kebab for food."
+    )
+
+    assert _focused_excerpt(content, "kebab") == (
+        "JT said they like kebab for food."
+    )
 
 
 def test_shadow_mirror_imports_native_planes_and_preserves_provenance(

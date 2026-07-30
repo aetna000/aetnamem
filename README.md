@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.6.1.1a5 experimental" src="https://img.shields.io/badge/version-0.6.1.1a5--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.6.1.1a6 experimental" src="https://img.shields.io/badge/version-0.6.1.1a6--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,7 +28,7 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.6.1.1a5** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.6.1.1a6** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
 recall internally, and activate only after the mirror and rollback evidence
@@ -66,7 +66,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.6.1.1a5
+python -m pip install --pre aetnamem==0.6.1.1a6
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -182,7 +182,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.6.1.1a5
+python -m pip install --pre aetnamem==0.6.1.1a6
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -800,7 +800,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.6.1.1a5
+python -m pip install --pre aetnamem==0.6.1.1a6
 aetnamem --version
 aetnamem openclaw install
 
@@ -1002,6 +1002,9 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
+- **[0.6.1.1a6 experimental notes](./docs/releases/v0.6.1.1a6.md):**
+  dashboard search shows the best matching sentence or bullet instead of an
+  unrelated full source chunk.
 - **[0.6.1.1a5 experimental notes](./docs/releases/v0.6.1.1a5.md):**
   dashboard restarts now wait for and return the new one-time login URL instead
   of reusing a consumed code from the append-only daemon log.

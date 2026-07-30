@@ -3,7 +3,7 @@
 > **AetnaMem remembers whether remembering actually helped.**
 
 This README describes experimental npm `0.4.1-experimental.3`, compatible with
-Python prerelease `v0.6.1.1a5`.
+Python prerelease `v0.6.1.1a6`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -61,7 +61,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.6.1.1a5
+python -m pip install --pre aetnamem==0.6.1.1a6
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.

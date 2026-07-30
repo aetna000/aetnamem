@@ -207,7 +207,7 @@ async function search(){
   var value=await get("/api/mirror/search?query="+encodeURIComponent(query)),rows=value.records||[],box=$("results");box.replaceChildren();
   if(!rows.length){box.appendChild(element("div","empty","No matching memory found."));return}
   rows.forEach(function(row){
-   var p=row.openclaw_provenance||{},item=element("div","result"),body=element("p","",row.content||"");
+   var p=row.openclaw_provenance||{},item=element("div","result"),body=element("p","",row.match_excerpt||row.content||"");
    var meta=element("div","meta");meta.append(element("span","pill",p.plane||row.scope||"memory"));
    meta.append(element("span","mono",p.relative_path||row.id||""));
    if(p.line_start)meta.append(element("span","mono","lines "+p.line_start+"–"+(p.line_end||p.line_start)));

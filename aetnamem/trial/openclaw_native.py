@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Any, Iterable
@@ -271,6 +272,9 @@ def search_mirror(
             str(row["id"]): row for row in memory.store.list_episodes(state.subject_id)
         }
         for record in records:
+            record["match_excerpt"] = _focused_excerpt(
+                str(record.get("content") or ""), query
+            )
             episode = episodes.get(str(record.get("episode_id") or ""))
             raw = episode.get("raw") if isinstance(episode, dict) else None
             if isinstance(raw, dict) and raw.get("format") in {
@@ -288,6 +292,49 @@ def search_mirror(
         }
     finally:
         memory.close()
+
+
+def _focused_excerpt(content: str, query: str, *, max_chars: int = 220) -> str:
+    """Return the smallest useful sentence or bullet matching the query."""
+
+    compact = " ".join(content.split())
+    if not compact:
+        return ""
+    terms = tuple(
+        dict.fromkeys(
+            token
+            for token in re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)
+            if token
+        )
+    )
+    fragments = [
+        fragment.strip("-*• \t")
+        for fragment in re.split(
+            r"(?<=[.!?])\s+|\n+|\s+-\s+(?=\S)",
+            content,
+        )
+        if fragment.strip("-*• \t")
+    ]
+    query_folded = " ".join(query.casefold().split())
+
+    def score(fragment: str) -> tuple[int, int, int]:
+        folded = fragment.casefold()
+        return (
+            int(bool(query_folded and query_folded in folded)),
+            sum(term in folded for term in terms),
+            -len(fragment),
+        )
+
+    matching = [
+        fragment
+        for fragment in fragments
+        if not terms or any(term in fragment.casefold() for term in terms)
+    ]
+    excerpt = max(matching, key=score) if matching else compact
+    if len(excerpt) <= max_chars:
+        return excerpt
+    shortened = excerpt[: max(1, max_chars - 1)].rsplit(" ", 1)[0].rstrip()
+    return (shortened or excerpt[: max_chars - 1]).rstrip() + "…"
 
 
 def trace_mirror(

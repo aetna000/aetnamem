@@ -81,7 +81,7 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 return
             self._json(
                 HTTPStatus.OK,
-                search_mirror(self.server.manager.state(), query, limit=50),
+                search_mirror(self.server.manager.state(), query, limit=12),
             )
             return
         if parsed.path == "/api/mirror/trace":
