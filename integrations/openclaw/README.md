@@ -2,8 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes experimental npm `0.4.1-experimental.1`, compatible with
-Python prerelease `v0.6.1.1a1`.
+This README describes experimental npm `0.4.1-experimental.2`, compatible with
+Python prerelease `v0.6.1.1a2`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -60,20 +60,21 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.6.1.1a1
+python -m pip install --pre aetnamem==0.6.1.1a2
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.
 aetnamem openclaw install
 
-# 3. Review the capture-only trial. Model context is unchanged.
-aetnamem trial dashboard
+# 3. Review the native mirror. Model context is unchanged.
+aetnamem openclaw memory status
+aetnamem dashboard
 ```
 
 The installer records the absolute engine path, so the OpenClaw service does
 not have to inherit the interactive shell's Python `PATH`. It installs npm
-`0.4.1-experimental.1` internally, starts capture-only Safe Switch mode,
-restarts the gateway,
+`0.4.1-experimental.2` internally, starts shadow Safe Switch mode, synchronizes
+native Markdown memory into an isolated evidence database, restarts the gateway,
 requires a successful RPC probe, and verifies the retained configuration. On
 failure it stops the trial and restores the prior plugin configuration.
 
@@ -91,8 +92,10 @@ openclaw aetnamem setup --single-user --subject you \
 the public quickstart; current releases accept one fixed `subject` per plugin
 instance. Do not use that subject for multiple authenticated users. The setup
 command enables the required conversation-hook permission, applies bounded
-recall defaults, and restarts the gateway. It deliberately does not rewrite
-OpenClaw's `MEMORY.md`; verify recall before removing duplicated native memory.
+recall defaults, and restarts the gateway. The supported customer takeover is
+instead `aetnamem trial activate`: it freezes and relocates native supplemental
+memory, disables duplicate native recall/writing, and preserves an exact
+rollback journal.
 
 For repository development, install the Python worktree first, verify its
 command, then build and register the local bridge:
@@ -139,11 +142,11 @@ automatic recall/capture is sufficient; doing so removes the explicit search
 and forget schemas from model context, so forgetting must remain available
 through a trusted UI, CLI, or another host control.
 
-Expect the plugin to bound new memory context, not to erase existing prompt
-costs. Token use falls only after you verify AetnaMem recall and reduce facts
-duplicated in `MEMORY.md`, daily notes, or another auto-memory plugin. Keep
-OpenClaw skills as procedures; AetnaMem stores the user/project facts and
-outcomes that make those procedures task-specific.
+In active takeover mode the plugin bounds supplemental memory context and the
+native `MEMORY.md`/daily-memory paths are no longer loaded or written.
+OpenClaw skills remain procedures; AetnaMem stores and selects the user/project
+facts and outcomes that make those procedures task-specific. The dashboard
+reports a context-budget projection, not a guaranteed token saving.
 
 ## Why this can reduce token use
 

@@ -1,172 +1,163 @@
-# Safe Switch: try AetnaMem beside your agent
+# OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental installer preview in AetnaMem 0.6.1.1a1**
+Status: **experimental preview in AetnaMem 0.6.1.1a2**
 
-Safe Switch answers a practical adoption question:
+Safe Switch gives a local, single-user OpenClaw installation a reversible way
+to adopt AetnaMem:
 
-> Can I inspect AetnaMem on my own agent before I let it influence a prompt?
+> Keep OpenClaw memory live while AetnaMem mirrors it. Search and audit the
+> mirror. Switch only after the evidence verifies. Roll back to the frozen
+> native state whenever you want.
 
-It is a reversible integration path for a local, single-user OpenClaw or
-Hermes installation. It is not a claim that every agent becomes cheaper or
-more accurate.
+It is not a promise that every agent becomes cheaper or more accurate.
 
-## Four steps to the first preview
+## Install and shadow
 
 ```bash
-# 1. Install the engine. No snapshot/sudo package is required.
-python -m pip install --pre aetnamem==0.6.1.1a1
-
-# 2. Verify it, then let AetnaMem install and verify its OpenClaw bridge.
+# 1. Install the engine. No sudo or snapshot package is required.
+python -m pip install --pre aetnamem==0.6.1.1a2
 aetnamem --version
+
+# 2. Let AetnaMem install and verify the matching OpenClaw bridge.
 aetnamem openclaw install
 
-# 3. Keep using the agent, then inspect normalized candidate memories.
-aetnamem trial candidates
+# 3. Inspect without changing the model's prompt.
+aetnamem openclaw memory status
+aetnamem openclaw memory search "TypeScript preference"
+aetnamem openclaw memory trace "TypeScript preference"
 
-# 4. Approve selected candidates and enter observer-only preview mode.
-aetnamem trial approve tc_example
-aetnamem trial preview
+# 4. Open the friendly local dashboard.
+aetnamem dashboard
 ```
 
-The OpenClaw plugin is an internal bridge dependency, not a second customer
-installation step. `aetnamem openclaw install` pins the matching bridge,
-records the exact engine executable, restarts and probes the gateway, and
-starts capture-only mode. It restores the prior OpenClaw configuration if
-verification fails.
+The installer pins the exact engine executable, installs npm
+`0.4.1-experimental.2` internally, takes and verifies a complete byte-for-byte
+baseline of the existing native memory, builds the searchable mirror, restarts
+and probes the gateway, and enters shadow mode. If any step fails, it restores
+the prior plugin configuration. Users do not install the npm package directly.
 
-Open the local review surface at any time:
+Shadow mode copies these native sources into an isolated AetnaMem database:
+
+| OpenClaw source | AetnaMem plane | Active during shadow? |
+|---|---|---|
+| `MEMORY.md` | semantic | OpenClaw remains authoritative |
+| `memory/**/*.md` | episodic | OpenClaw remains authoritative |
+| `USER.md` | semantic, pinned | yes |
+| `AGENTS.md`, `TOOLS.md`, `SOUL.md`, `IDENTITY.md`, `HEARTBEAT.md` | procedural/safety, pinned | yes |
+| workspace `skills/**/SKILL.md` | procedural, pinned | yes |
+
+The baseline covers every recognized persistent OpenClaw memory source:
+`MEMORY.md`, the complete `memory/` tree, `USER.md`, pinned workspace
+instructions and workspace skills, including non-Markdown files and empty
+directories. Every searchable mirrored chunk retains its source path,
+source-file SHA-256 and line range. Changed native states are versioned and
+changed Markdown triggers a deterministic mirror rebuild. Shadow recall is
+computed without injecting context or making another provider call.
+
+OpenClaw session JSONL and its derived search SQLite are not removed or
+rewritten during takeover; they remain host-owned conversation/runtime state.
+AetnaMem cannot recover information OpenClaw deleted or never persisted before
+the initial baseline. “Complete” means every byte present in the recognized
+persistent memory sources when shadowing starts and when cutover occurs.
+
+## Dashboard daemon
 
 ```bash
-aetnamem trial dashboard
+aetnamem dashboard daemon start --port 8766
+aetnamem dashboard daemon status
+aetnamem dashboard daemon restart
+aetnamem dashboard daemon stop
+aetnamem dashboard daemon remove
 ```
 
-It binds to `127.0.0.1`, uses a one-time sign-in URL and an HttpOnly session
-cookie, and requires CSRF tokens for changes.
+The dashboard binds only to `127.0.0.1`. It uses a one-time login URL, an
+HttpOnly session cookie, CSRF and Origin checks. `remove` deletes the daemon
+service record, not memory or trial evidence.
 
-## What the command words mean
+## Canary, activate and rollback
 
-### `--host auto`
+```bash
+# Optional: let AetnaMem influence only a bounded number of turns.
+aetnamem trial preview
+aetnamem trial canary --turns 10
 
-`auto` checks which supported executable is installed on `PATH`.
+# Full OpenClaw memory takeover. Requires typing `openclaw`.
+aetnamem trial activate
+aetnamem openclaw memory status
 
-- Exactly one of `openclaw` or `hermes`: use it.
-- Both: stop and ask you to pass one explicitly.
-- Neither: stop and explain what is missing.
+# Restore the pre-activation OpenClaw memory state.
+aetnamem trial rollback
+```
 
-It does not inspect your conversations to choose a host.
+Activation is a guarded cutover:
 
-### Subject
+1. Synchronize and verify the final searchable mirror.
+2. Checkpoint the SQLite database.
+3. Copy every file and empty directory in `MEMORY.md` and `memory/` into a
+   private switch-time snapshot and hash every file.
+4. Refuse activation if the source changes while copying or any digest differs.
+5. Record the complete snapshot manifest, then deactivate the live copies.
+6. Disable OpenClaw's native memory slot and `session-memory` writer.
+7. Point the AetnaMem bridge at the verified mirror with bounded recall.
+8. Restart OpenClaw and require a successful gateway probe.
+9. Restore everything automatically if any cutover step fails.
 
-The simple trial commands do not ask for `--subject`. They use the internal
-scope `local-user` because Safe Switch 0.6.1.1a1 is a local, single-user
-experimental preview.
+OpenClaw remains the agent and execution engine. Its identity, safety,
+authorization, tools and executable skills remain pinned. AetnaMem takes over
+supplemental durable memory.
 
-In the generic MCP and Python APIs, `subject_id` is a storage partition
-provided by the host—not proof of authenticated identity. Multi-user
-applications must map their authenticated user or tenant to that field.
+Rollback restores every file and empty directory from the switch-time
+snapshot, re-verifies their hashes, restores the memory slot, session hook and
+prior plugin configuration, restarts the gateway, and verifies it. The initial
+pre-shadow baseline and observed shadow versions remain as evidence. OpenClaw's
+derived search SQLite is left host-controlled and is not deleted. Rollback
+does not undo past agent responses or provider logs.
 
-### `rollback`
+`aetnamem trial off` is an emergency bridge stop. After an active takeover it
+leaves the native freeze untouched so two memory systems cannot silently
+restart together; run `rollback` to restore usable native memory.
 
-Rollback first writes the control state to `off`, then restores the exact
-AetnaMem plugin configuration captured at trial start and verifies the
-restored digest.
+## What the evidence means
 
-Rollback does not:
+The mirror can prove:
 
-- undo agent responses already produced;
-- delete provider-side logs;
-- delete the separate trial database;
-- remove facts from an unrelated native memory system; or
-- promise that a host-controlled original media file was deleted.
+- the complete native state before shadowing and at switch time;
+- which observed native versions appeared while shadowing;
+- which native files and line ranges produced each searchable memory;
+- whether the mirror database and hash-chained audit log verify;
+- which memories shadow recall would select;
+- which bounded context was actually exposed during canary/active modes;
+- whether cutover and rollback configuration checks passed.
 
-Use `aetnamem trial off` for an immediate stop without host restoration.
+The dashboard's token figure is a **context-budget projection**. It compares
+native memory bytes with AetnaMem's bounded recall allowance; it is not a
+provider bill or a universal saving. If the native memory is already smaller
+than the allowance, the dashboard says that no reduction is expected.
 
-## The safety boundary by mode
+## Command words
 
-| Mode | Local writes | Preview computed | Context sent to model | Provider calls added |
-|---|---:|---:|---:|---:|
-| `off` | No | No | No | No |
-| `capture` | Candidate facts and evidence | No | No | No |
-| `preview` | Candidate facts and preview manifests | Yes | No | No |
-| `canary` | Evidence plus bounded exposures | Yes | Yes, up to the declared turn cap | No separate calls |
-| `active` | Evidence plus exposures | Yes | Yes | No separate calls |
+- `--host auto` detects exactly one supported executable. It does not inspect
+  conversations.
+- The simple trial uses internal subject `local-user`. A `subject_id` is a
+  storage partition supplied by the host, not authenticated identity.
+- `rollback` means restore the saved host configuration and frozen native
+  memory. It does not delete the evidence database.
 
-The plugin uses the host's existing model call. AetnaMem does not mirror
-traffic or call a second model in these modes.
-
-In 0.6.1.1a1, `active` means AetnaMem's approved context is enabled on eligible
-turns. It does not silently delete or disable `MEMORY.md`, `USER.md`, or an
-existing Hermes memory provider. Removing duplicated native memory is a
-separate, reviewed migration after the user has verified their own results.
-
-Only authenticated user-turn text is eligible for trial capture. Webpages,
-tool output and assistant replies do not become trial candidates. The raw
-message is not stored; AetnaMem stores a deterministic extracted fact plus
-the source-message SHA-256. Candidate approval is available only through the
-local CLI/dashboard, not through agent-facing tools.
-
-## OpenClaw
-
-Safe Switch uses the same `memory-aetnamem` plugin as the existing integration
-but routes hooks to a private four-tool trial protocol:
-
-- `trial_capture`
-- `trial_prepare`
-- `trial_exposure_shown`
-- `trial_status`
-
-No approve, reject, mode-change, forget, or arbitrary memory tool is exposed
-on that protocol. The plugin also registers no agent-callable AetnaMem tools
-while Safe Switch is enabled.
-
-OpenClaw configuration is written through its validated `config set` CLI.
-The prior `plugins.entries.memory-aetnamem` object is saved before any write.
-OpenClaw normally hot-reloads this plugin configuration.
-
-## Hermes
-
-Safe Switch installs a Hermes **general plugin**, not a memory-provider
-replacement. It can therefore observe beside the current Hermes memory
-provider.
-
-- `pre_llm_call` computes a preview and returns `{"context": ...}` only in
-  canary or active mode.
-- `post_llm_call` confirms the exposure and captures the authenticated user
-  turn.
-
-Hermes must be restarted after initial plugin installation. The plugin
-registers no model-callable tool.
-
-## What the numbers prove
-
-The trial can verify:
-
-- the host plugin configuration snapshot and restore digest;
-- the trial state digest and transition hash chain;
-- candidate status and content digest;
-- the exact preview manifest and context digest;
-- whether a host requested and confirmed a context exposure; and
-- the number of characters supplied.
-
-These are operational and retrieval measurements. They do not establish that
-memory caused a better answer.
-
-The repository's published OpenClaw benchmark is a controlled reference run,
-not a measurement of your installation. The default-off Memory Impact Lab is
-the research surface for randomized, host-verified causal studies. It is
-documented separately because a scientific experiment and a low-risk product
-trial are different jobs.
-
-## Files
-
-Default locations:
+Default evidence files:
 
 ```text
-~/.aetnamem/safe-switch.json          digest-bound mode control
+~/.aetnamem/safe-switch.json
 ~/.aetnamem/trials/trial_*/evidence.db
-~/.aetnamem/trials/trial_*/openclaw-rollback.json
-~/.aetnamem/trials/trial_*/hermes-rollback.json
+~/.aetnamem/trials/trial_*/openclaw-mirror.db
+~/.aetnamem/trials/trial_*/openclaw-mirror.json
+~/.aetnamem/trials/trial_*/openclaw-native-baseline/
+~/.aetnamem/trials/trial_*/openclaw-native-baseline.json
+~/.aetnamem/trials/trial_*/openclaw-shadow-history/
+~/.aetnamem/trials/trial_*/openclaw-cutover.json
+~/.aetnamem/trials/trial_*/openclaw-native-snapshot.json
+~/.aetnamem/trials/trial_*/openclaw-native-frozen/
 ```
 
-Trial evidence is separate from `~/.aetnamem/memories.db` and is never
-silently imported into live AetnaMem memory.
+Hermes keeps the earlier coexistence behavior: it can shadow, preview, canary
+and activate AetnaMem context, but 0.6.1.1a2 does not replace the selected
+Hermes memory provider.

@@ -1,0 +1,1072 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+from typing import Any, Iterable
+
+from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.memory import Memory
+from aetnamem.store.sqlite import utc_now
+from aetnamem.trial.models import TrialState
+from aetnamem.trial.store import TrialStore
+
+
+MIRROR_DB_NAME = "openclaw-mirror.db"
+MIRROR_MANIFEST_NAME = "openclaw-mirror.json"
+CUTOVER_NAME = "openclaw-cutover.json"
+NATIVE_SNAPSHOT_MANIFEST_NAME = "openclaw-native-snapshot.json"
+NATIVE_BASELINE_NAME = "openclaw-native-baseline"
+NATIVE_BASELINE_MANIFEST_NAME = "openclaw-native-baseline.json"
+SHADOW_HISTORY_NAME = "openclaw-shadow-history"
+DEFAULT_RECALL_CHARS = 1200
+NATIVE_MEMORY_ROOTS = (
+    "MEMORY.md",
+    "memory",
+    "USER.md",
+    "AGENTS.md",
+    "TOOLS.md",
+    "SOUL.md",
+    "IDENTITY.md",
+    "HEARTBEAT.md",
+    "skills",
+)
+SUPPLEMENTAL_MEMORY_ROOTS = ("MEMORY.md", "memory")
+
+
+@dataclass(frozen=True)
+class NativeSource:
+    path: Path
+    relative_path: str
+    plane: str
+    pinned: bool
+
+
+def discover_workspace(openclaw: str | None = None) -> Path:
+    executable = openclaw or shutil.which("openclaw")
+    if executable:
+        result = subprocess.run(
+            [executable, "memory", "status", "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            try:
+                payload = json.loads(result.stdout)
+                rows = payload if isinstance(payload, list) else [payload]
+                for row in rows:
+                    status = row.get("status") if isinstance(row, dict) else None
+                    workspace = (
+                        status.get("workspaceDir")
+                        if isinstance(status, dict)
+                        else None
+                    )
+                    if isinstance(workspace, str) and workspace.strip():
+                        return Path(workspace).expanduser().resolve()
+            except json.JSONDecodeError:
+                pass
+    return (Path.home() / ".openclaw" / "workspace").resolve()
+
+
+def discover_sources(workspace: str | Path) -> list[NativeSource]:
+    root = Path(workspace).expanduser().resolve()
+    sources: list[NativeSource] = []
+
+    def add(path: Path, plane: str, *, pinned: bool = False) -> None:
+        if path.is_file() and not path.is_symlink():
+            sources.append(
+                NativeSource(
+                    path=path,
+                    relative_path=path.relative_to(root).as_posix(),
+                    plane=plane,
+                    pinned=pinned,
+                )
+            )
+
+    add(root / "MEMORY.md", "semantic")
+    add(root / "USER.md", "semantic", pinned=True)
+    for path in sorted((root / "memory").glob("**/*.md")):
+        add(path, "episodic")
+    for name in ("AGENTS.md", "TOOLS.md", "SOUL.md", "IDENTITY.md", "HEARTBEAT.md"):
+        add(root / name, "procedural", pinned=True)
+    for path in sorted((root / "skills").glob("**/SKILL.md")):
+        add(path, "procedural", pinned=True)
+    return sources
+
+
+def sync_mirror(
+    state: TrialState,
+    *,
+    workspace: str | Path | None = None,
+) -> dict[str, Any]:
+    root = (
+        Path(workspace).expanduser().resolve()
+        if workspace is not None
+        else discover_workspace()
+    )
+    trial_dir = Path(state.trial_dir)
+    mirror_path = trial_dir / MIRROR_DB_NAME
+    manifest_path = trial_dir / MIRROR_MANIFEST_NAME
+    baseline = _ensure_native_baseline(trial_dir, root)
+    shadow_history = _record_shadow_version(trial_dir, root, baseline)
+    snapshot_root = Path(str(shadow_history["snapshot_root"]))
+    sources = discover_sources(snapshot_root)
+    source_rows = [_source_row(source) for source in sources]
+    for source_row in source_rows:
+        relative_path = str(source_row["relative_path"])
+        source_row["snapshot_path"] = source_row["path"]
+        source_row["path"] = str(root / relative_path)
+    manifest_sha256 = sha256_hex(
+        canonical_json(
+            {
+                "format": "aetnamem-openclaw-native-manifest-v1",
+                "workspace": str(root),
+                "sources": source_rows,
+            }
+        )
+    )
+    previous = _read_json(manifest_path)
+    if (
+        previous
+        and previous.get("manifest_sha256") == manifest_sha256
+        and mirror_path.is_file()
+    ):
+        previous["native_baseline"] = _snapshot_summary(baseline)
+        previous["shadow_history"] = shadow_history
+        _private_json(manifest_path, previous)
+        return _mirror_status_from_manifest(previous, mirror_path)
+
+    build_path = trial_dir / f".{MIRROR_DB_NAME}.building"
+    _remove_sqlite_files(build_path)
+    memory = Memory(build_path)
+    imported_records = 0
+    imported_chunks = 0
+    try:
+        for source, source_row in zip(sources, source_rows):
+            text = source.path.read_text(encoding="utf-8", errors="replace")
+            for chunk in _markdown_chunks(text):
+                result = memory.remember(
+                    state.subject_id,
+                    fact=chunk["text"],
+                    force=True,
+                    session_id=f"openclaw-native:{source.relative_path}",
+                    turn_id=str(source_row["sha256"])[:16],
+                    source_type="user_message",
+                    actor="openclaw-shadow-import",
+                    raw={
+                        "format": "aetnamem-openclaw-native-source-v1",
+                        "source_path": str(root / source.relative_path),
+                        "snapshot_path": str(source.path),
+                        "relative_path": source.relative_path,
+                        "source_sha256": source_row["sha256"],
+                        "line_start": chunk["line_start"],
+                        "line_end": chunk["line_end"],
+                        "plane": source.plane,
+                        "pinned": source.pinned,
+                    },
+                )
+                imported_records += len(result.get("records") or [])
+                imported_chunks += 1
+        memory.store.append_audit_event(
+            subject_id=state.subject_id,
+            event_type="host.memory_mirror_synchronized",
+            actor="openclaw-shadow-import",
+            payload={
+                "trial_id": state.trial_id,
+                "workspace_sha256": sha256_hex(str(root)),
+                "manifest_sha256": manifest_sha256,
+                "source_count": len(source_rows),
+                "source_bytes": sum(int(row["bytes"]) for row in source_rows),
+                "imported_chunks": imported_chunks,
+                "record_count": imported_records,
+            },
+        )
+        verification = memory.verify()
+        if not verification.get("valid"):
+            raise ValueError("AetnaMem mirror audit verification failed")
+        memory.store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        memory.close()
+
+    _remove_sqlite_sidecars(build_path)
+    os.replace(build_path, mirror_path)
+    _remove_sqlite_sidecars(mirror_path)
+    native_memory_chars = sum(
+        int(row["bytes"])
+        for row in source_rows
+        if row["relative_path"] == "MEMORY.md"
+    )
+    manifest = {
+        "format": "aetnamem-openclaw-mirror-v1",
+        "trial_id": state.trial_id,
+        "subject_id": state.subject_id,
+        "workspace": str(root),
+        "mirror_db": str(mirror_path),
+        "manifest_sha256": manifest_sha256,
+        "source_count": len(source_rows),
+        "source_bytes": sum(int(row["bytes"]) for row in source_rows),
+        "native_memory_chars": native_memory_chars,
+        "imported_chunks": imported_chunks,
+        "record_count": imported_records,
+        "sources": source_rows,
+        "native_baseline": _snapshot_summary(baseline),
+        "shadow_history": shadow_history,
+        "synced_at": utc_now(),
+    }
+    _private_json(manifest_path, manifest)
+    return _mirror_status_from_manifest(manifest, mirror_path)
+
+
+def mirror_status(state: TrialState, *, refresh: bool = True) -> dict[str, Any]:
+    trial_dir = Path(state.trial_dir)
+    manifest = _read_json(trial_dir / MIRROR_MANIFEST_NAME)
+    cutover = _read_json(trial_dir / CUTOVER_NAME)
+    takeover_active = bool(
+        cutover and cutover.get("status") in {"active", "emergency_off"}
+    )
+    if refresh and state.host == "openclaw" and not takeover_active:
+        try:
+            return sync_mirror(
+                state,
+                workspace=(
+                    manifest.get("workspace")
+                    if isinstance(manifest, dict)
+                    else None
+                ),
+            )
+        except Exception as exc:
+            return {
+                "status": "error",
+                "synced": False,
+                "error": str(exc),
+                "mirror_db": str(Path(state.trial_dir) / MIRROR_DB_NAME),
+            }
+    if not manifest:
+        return {
+            "status": "not_started",
+            "synced": False,
+            "mirror_db": str(Path(state.trial_dir) / MIRROR_DB_NAME),
+        }
+    return _mirror_status_from_manifest(
+        manifest, Path(state.trial_dir) / MIRROR_DB_NAME
+    )
+
+
+def search_mirror(
+    state: TrialState,
+    query: str,
+    *,
+    limit: int = 20,
+) -> dict[str, Any]:
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        records = memory.recall(
+            state.subject_id,
+            query,
+            session_id=f"trial:{state.trial_id}:investigator",
+            limit=max(1, min(int(limit), 100)),
+            min_score=0.3,
+        )
+        episodes = {
+            str(row["id"]): row
+            for row in memory.store.list_episodes(state.subject_id)
+        }
+        for record in records:
+            episode = episodes.get(str(record.get("episode_id") or ""))
+            raw = episode.get("raw") if isinstance(episode, dict) else None
+            if isinstance(raw, dict) and raw.get("format") in {
+                "aetnamem-openclaw-native-source-v1",
+                "aetnamem-safe-switch-approved-source-v1",
+            }:
+                record["openclaw_provenance"] = raw
+        return {
+            "format": "aetnamem-openclaw-mirror-search-v1",
+            "query": query,
+            "subject_id": state.subject_id,
+            "manifest_sha256": status.get("manifest_sha256"),
+            "count": len(records),
+            "records": records,
+        }
+    finally:
+        memory.close()
+
+
+def trace_mirror(
+    state: TrialState,
+    query: str,
+    *,
+    limit: int = 50,
+) -> dict[str, Any]:
+    from aetnamem.investigate import trace_evidence
+
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        return trace_evidence(
+            memory,
+            state.subject_id,
+            query,
+            limit=max(1, min(int(limit), 200)),
+            audit_access=True,
+            access_actor="openclaw-local-operator",
+        )
+    finally:
+        memory.close()
+
+
+def activate_takeover(state: TrialState, state_path: str | Path) -> dict[str, Any]:
+    if state.host != "openclaw":
+        raise ValueError("native-memory takeover is currently implemented for OpenClaw")
+    status = sync_mirror(state)
+    if not status.get("synced") or int(status.get("record_count") or 0) < 1:
+        raise ValueError("OpenClaw memory mirror is empty or failed verification")
+    executable = shutil.which("openclaw")
+    if executable is None:
+        raise ValueError("OpenClaw is not on PATH")
+
+    trial_dir = Path(state.trial_dir)
+    cutover_path = trial_dir / CUTOVER_NAME
+    if cutover_path.exists():
+        current = _read_json(cutover_path) or {}
+        if current.get("status") == "active":
+            return _cutover_public(current)
+        raise ValueError("an incomplete OpenClaw cutover already exists; roll back first")
+
+    workspace = Path(str(status["workspace"]))
+    archive = trial_dir / "openclaw-native-frozen"
+    prior_slot = _optional_json(
+        [executable, "config", "get", "plugins.slots.memory", "--json"]
+    )
+    prior_session_hook = _optional_json(
+        [
+            executable,
+            "config",
+            "get",
+            "hooks.internal.entries.session-memory",
+            "--json",
+        ]
+    )
+    prior_plugin_entry = _optional_json(
+        [
+            executable,
+            "config",
+            "get",
+            "plugins.entries.memory-aetnamem",
+            "--json",
+        ]
+    )
+    cutover: dict[str, Any] = {
+        "format": "aetnamem-openclaw-cutover-v1",
+        "trial_id": state.trial_id,
+        "status": "preparing",
+        "workspace": str(workspace),
+        "mirror_db": status["mirror_db"],
+        "manifest_sha256": status["manifest_sha256"],
+        "archive": str(archive),
+        "prior_memory_slot": prior_slot,
+        "prior_session_memory_hook": prior_session_hook,
+        "prior_plugin_entry": prior_plugin_entry,
+        "relocated": [],
+        "approved_candidates_merged": 0,
+        "created_at": utc_now(),
+    }
+    _private_json(cutover_path, cutover)
+    try:
+        # Quiesce the native writer before the final mirror and snapshot. The
+        # gateway is restarted below on success and in the failure path.
+        _run([executable, "gateway", "stop"])
+        status = sync_mirror(state, workspace=workspace)
+        if not status.get("synced") or int(status.get("record_count") or 0) < 1:
+            raise ValueError("final OpenClaw memory mirror failed verification")
+        promoted_candidates = _merge_approved_trial_candidates(
+            state, status["mirror_db"]
+        )
+        archive.mkdir(mode=0o700, exist_ok=False)
+        native_snapshot = _snapshot_native_memory(workspace, archive)
+        shadow_history = status.get("shadow_history")
+        shadow_history = (
+            shadow_history if isinstance(shadow_history, dict) else {}
+        )
+        if (
+            native_snapshot["snapshot_sha256"]
+            != shadow_history.get("latest_observed_sha256")
+        ):
+            raise ValueError(
+                "switch-time snapshot does not match the final searchable mirror"
+            )
+        _private_json(
+            trial_dir / NATIVE_SNAPSHOT_MANIFEST_NAME,
+            native_snapshot,
+        )
+        cutover.update(
+            {
+                "mirror_db": status["mirror_db"],
+                "manifest_sha256": status["manifest_sha256"],
+                "native_snapshot": native_snapshot,
+                "native_snapshot_verified": True,
+                "approved_candidates_merged": promoted_candidates,
+            }
+        )
+        _private_json(cutover_path, cutover)
+
+        if _tree_manifest(workspace, NATIVE_MEMORY_ROOTS) != native_snapshot[
+            "entries"
+        ]:
+            raise ValueError(
+                "OpenClaw native memory changed after the switch-time snapshot"
+            )
+        for relative in SUPPLEMENTAL_MEMORY_ROOTS:
+            source = workspace / relative
+            if not source.exists():
+                continue
+            cutover["relocated"].append(relative)
+            _private_json(cutover_path, cutover)
+            if source.is_dir():
+                shutil.rmtree(source)
+            else:
+                source.unlink()
+
+        _run([executable, "hooks", "disable", "session-memory"], allow_missing=True)
+        _set_json(executable, "plugins.slots.memory", "none")
+        base = "plugins.entries.memory-aetnamem"
+        _set_json(executable, f"{base}.config.safeSwitch", {"enabled": False})
+        _set_json(executable, f"{base}.config.dbPath", status["mirror_db"])
+        _set_json(executable, f"{base}.config.subject", state.subject_id)
+        _set_json(executable, f"{base}.config.capture", {
+            "enabled": True,
+            "captureAssistant": True,
+        })
+        _set_json(executable, f"{base}.config.recall", {
+            "enabled": True,
+            "maxRecords": 3,
+            "maxChars": DEFAULT_RECALL_CHARS,
+            "minScore": 0.3,
+            "timeoutMs": 4000,
+        })
+        _set_json(executable, f"{base}.enabled", True)
+        _run([executable, "gateway", "restart"])
+        gateway = _json_command(
+            [executable, "gateway", "status", "--require-rpc", "--json"]
+        )
+        rpc = gateway.get("rpc") if isinstance(gateway, dict) else None
+        if not isinstance(rpc, dict) or rpc.get("ok") is not True:
+            raise ValueError("OpenClaw gateway RPC did not verify after cutover")
+        cutover.update(
+            {
+                "status": "active",
+                "activated_at": utc_now(),
+                "native_memory_frozen": True,
+                "native_snapshot_verified": True,
+                "native_memory_slot": "none",
+                "session_memory_hook": "disabled",
+                "gateway_verified": True,
+            }
+        )
+        _private_json(cutover_path, cutover)
+        return _cutover_public(cutover)
+    except Exception:
+        _restore_cutover(cutover, executable=executable)
+        _run([executable, "gateway", "restart"], allow_missing=True)
+        cutover["status"] = "rolled_back_after_failure"
+        cutover["rolled_back_at"] = utc_now()
+        _private_json(cutover_path, cutover)
+        raise
+
+
+def restore_takeover(state: TrialState) -> dict[str, Any]:
+    cutover_path = Path(state.trial_dir) / CUTOVER_NAME
+    cutover = _read_json(cutover_path)
+    if not cutover:
+        return {"restored": True, "takeover_present": False}
+    executable = shutil.which("openclaw")
+    if executable is None:
+        raise ValueError("OpenClaw is not on PATH; native memory was not restored")
+    _restore_cutover(cutover, executable=executable)
+    cutover["status"] = "rolled_back"
+    cutover["rolled_back_at"] = utc_now()
+    _private_json(cutover_path, cutover)
+    return {
+        "restored": True,
+        "takeover_present": True,
+        "native_memory_restored": True,
+        "manifest_sha256": cutover.get("manifest_sha256"),
+    }
+
+
+def emergency_off_takeover(state: TrialState) -> dict[str, Any]:
+    cutover = _read_json(Path(state.trial_dir) / CUTOVER_NAME)
+    if not cutover or cutover.get("status") != "active":
+        return {"takeover_present": bool(cutover), "plugin_disabled": False}
+    executable = shutil.which("openclaw")
+    if executable is None:
+        raise ValueError("OpenClaw is not on PATH; AetnaMem plugin was not disabled")
+    _set_json(executable, "plugins.entries.memory-aetnamem.enabled", False)
+    _run([executable, "gateway", "restart"])
+    cutover["status"] = "emergency_off"
+    cutover["emergency_off_at"] = utc_now()
+    _private_json(Path(state.trial_dir) / CUTOVER_NAME, cutover)
+    return {
+        "takeover_present": True,
+        "plugin_disabled": True,
+        "native_memory_frozen": True,
+        "next": "Run `aetnamem trial rollback` to restore native OpenClaw memory.",
+    }
+
+
+def restart_and_verify_gateway() -> dict[str, Any]:
+    executable = shutil.which("openclaw")
+    if executable is None:
+        raise ValueError("OpenClaw is not on PATH")
+    _run([executable, "gateway", "restart"])
+    gateway = _json_command(
+        [executable, "gateway", "status", "--require-rpc", "--json"]
+    )
+    rpc = gateway.get("rpc") if isinstance(gateway, dict) else None
+    if not isinstance(rpc, dict) or rpc.get("ok") is not True:
+        raise ValueError("OpenClaw gateway RPC verification failed")
+    return {"restarted": True, "verified": True}
+
+
+def takeover_status(state: TrialState) -> dict[str, Any]:
+    cutover = _read_json(Path(state.trial_dir) / CUTOVER_NAME)
+    return _cutover_public(cutover) if cutover else {
+        "status": "shadow",
+        "active": False,
+        "native_memory_frozen": False,
+    }
+
+
+def _restore_cutover(cutover: dict[str, Any], *, executable: str) -> None:
+    workspace = Path(str(cutover["workspace"]))
+    archive = Path(str(cutover["archive"]))
+    for relative in reversed(list(cutover.get("relocated") or [])):
+        source = archive / relative
+        destination = workspace / relative
+        if not source.exists():
+            continue
+        if destination.exists():
+            expected = _tree_manifest(archive, (relative,))
+            actual = _tree_manifest(workspace, (relative,))
+            if actual != expected:
+                raise ValueError(
+                    "cannot restore native memory because a different path "
+                    f"already exists: {destination}"
+                )
+            continue
+        _copy_native_path(source, destination)
+    snapshot = cutover.get("native_snapshot")
+    if isinstance(snapshot, dict):
+        restored = _tree_manifest(workspace, SUPPLEMENTAL_MEMORY_ROOTS)
+        expected = _entries_for_roots(
+            list(snapshot.get("entries") or []),
+            SUPPLEMENTAL_MEMORY_ROOTS,
+        )
+        if restored != expected:
+            raise ValueError("restored OpenClaw native memory failed hash verification")
+    prior_slot = cutover.get("prior_memory_slot")
+    if prior_slot is None:
+        _run(
+            [executable, "config", "unset", "plugins.slots.memory"],
+            allow_missing=True,
+        )
+    else:
+        _set_json(executable, "plugins.slots.memory", prior_slot)
+    hook = cutover.get("prior_session_memory_hook")
+    if isinstance(hook, dict) and hook.get("enabled") is True:
+        _run([executable, "hooks", "enable", "session-memory"])
+    elif isinstance(hook, dict) and hook.get("enabled") is False:
+        _run([executable, "hooks", "disable", "session-memory"])
+    prior_plugin = cutover.get("prior_plugin_entry")
+    if isinstance(prior_plugin, dict):
+        _set_json(executable, "plugins.entries.memory-aetnamem", prior_plugin)
+
+
+def _source_row(source: NativeSource) -> dict[str, Any]:
+    data = source.path.read_bytes()
+    return {
+        "relative_path": source.relative_path,
+        "path": str(source.path),
+        "plane": source.plane,
+        "pinned": source.pinned,
+        "bytes": len(data),
+        "sha256": sha256_hex(data),
+        "mtime_ns": source.path.stat().st_mtime_ns,
+    }
+
+
+def _merge_approved_trial_candidates(
+    state: TrialState, mirror_db: str | Path
+) -> int:
+    store = TrialStore(Path(state.trial_dir) / "evidence.db")
+    try:
+        approved = store.list_candidates(
+            state.trial_id, statuses=("approved",)
+        )
+    finally:
+        store.close()
+    if not approved:
+        return 0
+    memory = Memory(mirror_db)
+    created = 0
+    try:
+        for row in approved:
+            result = memory.remember(
+                state.subject_id,
+                fact=str(row["content"]),
+                force=True,
+                session_id=str(row.get("source_session_id") or state.trial_id),
+                source_type="user_message",
+                actor="safe-switch-approved-import",
+                raw={
+                    "format": "aetnamem-safe-switch-approved-source-v1",
+                    "trial_id": state.trial_id,
+                    "candidate_id": row["id"],
+                    "candidate_content_sha256": row["content_sha256"],
+                    "reviewed_at": row.get("reviewed_at"),
+                },
+            )
+            created += len(result.get("records") or [])
+        memory.store.append_audit_event(
+            subject_id=state.subject_id,
+            event_type="trial.approved_candidates_imported",
+            actor="safe-switch-activator",
+            payload={
+                "trial_id": state.trial_id,
+                "candidate_ids": [str(row["id"]) for row in approved],
+                "created_records": created,
+            },
+        )
+        memory.store._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        memory.close()
+    return created
+
+
+def _markdown_chunks(text: str, *, max_chars: int = 1200) -> Iterable[dict[str, Any]]:
+    lines = text.splitlines()
+    if not lines:
+        return []
+    chunks: list[dict[str, Any]] = []
+    current: list[str] = []
+    start = 1
+    for index, line in enumerate(lines, start=1):
+        candidate = "\n".join([*current, line]).strip()
+        boundary = not line.strip() and current
+        too_large = len(candidate) > max_chars and current
+        if too_large or boundary:
+            value = "\n".join(current).strip()
+            if value:
+                chunks.append(
+                    {"text": value, "line_start": start, "line_end": index - 1}
+                )
+            current = []
+            start = index + 1 if boundary else index
+            if boundary:
+                continue
+        current.append(line)
+    value = "\n".join(current).strip()
+    if value:
+        chunks.append(
+            {"text": value, "line_start": start, "line_end": len(lines)}
+        )
+    return chunks
+
+
+def _mirror_status_from_manifest(
+    manifest: dict[str, Any], mirror_path: Path
+) -> dict[str, Any]:
+    native_chars = int(manifest.get("native_memory_chars") or 0)
+    max_chars = DEFAULT_RECALL_CHARS
+    record_count = int(manifest.get("record_count") or 0)
+    audit_verified = False
+    audit_error = None
+    if mirror_path.is_file():
+        memory = Memory(mirror_path)
+        try:
+            subject_id = str(manifest.get("subject_id") or "local-user")
+            record_count = len(memory.list(subject_id, include_inactive=True))
+            audit_verified = bool(memory.verify(subject_id).get("valid"))
+        except Exception as exc:
+            audit_error = str(exc)
+        finally:
+            memory.close()
+    return {
+        **manifest,
+        "status": "synced" if mirror_path.is_file() else "missing",
+        "synced": mirror_path.is_file(),
+        "mirror_db": str(mirror_path),
+        "record_count": record_count,
+        "audit_verified": audit_verified,
+        "audit_error": audit_error,
+        "context_budget_chars": max_chars,
+        "native_memory_estimated_tokens": (native_chars + 3) // 4,
+        "aetnamem_context_budget_estimated_tokens": (max_chars + 3) // 4,
+        "token_projection": (
+            "potential_reduction"
+            if native_chars > max_chars
+            else "no_cost_reduction_expected"
+        ),
+    }
+
+
+def _cutover_public(value: dict[str, Any]) -> dict[str, Any]:
+    public = {
+        key: value.get(key)
+        for key in (
+            "format",
+            "status",
+            "trial_id",
+            "workspace",
+            "mirror_db",
+            "manifest_sha256",
+            "activated_at",
+            "rolled_back_at",
+            "native_memory_frozen",
+            "native_snapshot_verified",
+            "native_memory_slot",
+            "session_memory_hook",
+            "gateway_verified",
+        )
+        if key in value
+    } | {"active": value.get("status") == "active"}
+    snapshot = value.get("native_snapshot")
+    if isinstance(snapshot, dict):
+        public["native_snapshot"] = {
+            key: snapshot.get(key)
+            for key in (
+                "snapshot_sha256",
+                "entry_count",
+                "file_count",
+                "total_bytes",
+                "verified_at",
+            )
+        }
+    return public
+
+
+def _ensure_native_baseline(trial_dir: Path, workspace: Path) -> dict[str, Any]:
+    archive = trial_dir / NATIVE_BASELINE_NAME
+    manifest_path = trial_dir / NATIVE_BASELINE_MANIFEST_NAME
+    existing = _read_json(manifest_path)
+    if existing:
+        copied = _tree_manifest(archive, NATIVE_MEMORY_ROOTS)
+        if copied != existing.get("entries"):
+            raise ValueError(
+                "the initial OpenClaw native-memory baseline no longer verifies"
+            )
+        return existing
+    if archive.exists():
+        copied = _tree_manifest(archive, NATIVE_MEMORY_ROOTS)
+        current = _tree_manifest(workspace, NATIVE_MEMORY_ROOTS)
+        if copied != current:
+            raise ValueError(
+                "an incomplete pre-shadow baseline exists and no longer "
+                "matches OpenClaw; remove the failed trial before retrying"
+            )
+        recovered: dict[str, Any] = {
+            "format": "aetnamem-openclaw-native-snapshot-v1",
+            "workspace": str(workspace),
+            "archive": str(archive),
+            "entries": copied,
+            "entry_count": len(copied),
+            "file_count": sum(1 for row in copied if row["type"] == "file"),
+            "total_bytes": sum(
+                int(row.get("bytes") or 0)
+                for row in copied
+                if row["type"] == "file"
+            ),
+            "verified_at": utc_now(),
+            "purpose": "pre-shadow-baseline",
+            "snapshot_sha256": _native_snapshot_digest(copied),
+        }
+        _private_json(manifest_path, recovered)
+        return recovered
+
+    building = trial_dir / f".{NATIVE_BASELINE_NAME}.building"
+    shutil.rmtree(building, ignore_errors=True)
+    building.mkdir(mode=0o700)
+    try:
+        baseline = _snapshot_native_memory(workspace, building)
+        baseline["purpose"] = "pre-shadow-baseline"
+        os.replace(building, archive)
+        baseline["archive"] = str(archive)
+        _private_json(manifest_path, baseline)
+        return baseline
+    except Exception:
+        shutil.rmtree(building, ignore_errors=True)
+        raise
+
+
+def _record_shadow_version(
+    trial_dir: Path,
+    workspace: Path,
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    entries = _tree_manifest(workspace, NATIVE_MEMORY_ROOTS)
+    digest = _native_snapshot_digest(entries)
+    history_root = trial_dir / SHADOW_HISTORY_NAME
+    history_root.mkdir(mode=0o700, exist_ok=True)
+    baseline_digest = str(baseline.get("snapshot_sha256") or "")
+    if digest != baseline_digest:
+        target = history_root / digest
+        if not target.exists():
+            building = history_root / f".{digest}.building"
+            shutil.rmtree(building, ignore_errors=True)
+            building.mkdir(mode=0o700)
+            try:
+                observed = _snapshot_native_memory(workspace, building)
+                if observed["snapshot_sha256"] != digest:
+                    raise ValueError(
+                        "OpenClaw native memory changed during shadow synchronization"
+                    )
+                observed["purpose"] = "shadow-observed-version"
+                _private_json(building / "snapshot.json", observed)
+                os.replace(building, target)
+            except Exception:
+                shutil.rmtree(building, ignore_errors=True)
+                raise
+    versions = sorted(
+        path.name
+        for path in history_root.iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    )
+    return {
+        "initial_baseline_sha256": baseline_digest,
+        "latest_observed_sha256": digest,
+        "observed_change_versions": len(versions),
+        "version_sha256s": versions,
+        "snapshot_root": str(
+            Path(str(baseline["archive"]))
+            if digest == baseline_digest
+            else history_root / digest
+        ),
+    }
+
+
+def _snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: snapshot.get(key)
+        for key in (
+            "snapshot_sha256",
+            "entry_count",
+            "file_count",
+            "total_bytes",
+            "verified_at",
+            "purpose",
+        )
+    }
+
+
+def _snapshot_native_memory(workspace: Path, archive: Path) -> dict[str, Any]:
+    roots = NATIVE_MEMORY_ROOTS
+    before = _tree_manifest(workspace, roots)
+    for relative in roots:
+        source = workspace / relative
+        if source.exists():
+            _copy_native_path(source, archive / relative)
+    after = _tree_manifest(workspace, roots)
+    copied = _tree_manifest(archive, roots)
+    if before != after:
+        raise ValueError(
+            "OpenClaw native memory changed while it was being snapshotted; "
+            "activation was not attempted"
+        )
+    if before != copied:
+        raise ValueError(
+            "OpenClaw native-memory snapshot failed byte-for-byte verification"
+        )
+    snapshot: dict[str, Any] = {
+        "format": "aetnamem-openclaw-native-snapshot-v1",
+        "workspace": str(workspace),
+        "archive": str(archive),
+        "entries": copied,
+        "entry_count": len(copied),
+        "file_count": sum(1 for row in copied if row["type"] == "file"),
+        "total_bytes": sum(
+            int(row.get("bytes") or 0) for row in copied if row["type"] == "file"
+        ),
+        "verified_at": utc_now(),
+    }
+    snapshot["snapshot_sha256"] = _native_snapshot_digest(copied)
+    return snapshot
+
+
+def _native_snapshot_digest(entries: list[dict[str, Any]]) -> str:
+    return sha256_hex(
+        canonical_json(
+            {
+                "format": "aetnamem-openclaw-native-snapshot-v1",
+                "entries": entries,
+            }
+        )
+    )
+
+
+def _copy_native_path(source: Path, destination: Path) -> None:
+    if source.is_symlink():
+        raise ValueError(
+            f"cannot guarantee a complete native-memory snapshot through symlink: {source}"
+        )
+    if source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    for item in sorted(source.rglob("*")):
+        if item.is_symlink():
+            raise ValueError(
+                "cannot guarantee a complete native-memory snapshot through "
+                f"symlink: {item}"
+            )
+        target = destination / item.relative_to(source)
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+        else:
+            raise ValueError(f"unsupported native-memory filesystem entry: {item}")
+
+
+def _tree_manifest(base: Path, roots: Iterable[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for relative in roots:
+        root = base / relative
+        if not root.exists():
+            continue
+        if root.is_symlink():
+            raise ValueError(
+                f"cannot verify a native-memory snapshot through symlink: {root}"
+            )
+        candidates = [root]
+        if root.is_dir():
+            candidates.extend(sorted(root.rglob("*")))
+        for candidate in candidates:
+            if candidate.is_symlink():
+                raise ValueError(
+                    "cannot verify a native-memory snapshot through symlink: "
+                    f"{candidate}"
+                )
+            path = candidate.relative_to(base).as_posix()
+            if candidate.is_dir():
+                rows.append({"path": path, "type": "directory"})
+            elif candidate.is_file():
+                data = candidate.read_bytes()
+                rows.append(
+                    {
+                        "path": path,
+                        "type": "file",
+                        "bytes": len(data),
+                        "sha256": sha256_hex(data),
+                    }
+                )
+            else:
+                raise ValueError(
+                    f"unsupported native-memory filesystem entry: {candidate}"
+                )
+    return sorted(rows, key=lambda row: (str(row["path"]), str(row["type"])))
+
+
+def _entries_for_roots(
+    entries: list[dict[str, Any]],
+    roots: Iterable[str],
+) -> list[dict[str, Any]]:
+    prefixes = tuple(str(root).rstrip("/") for root in roots)
+    return [
+        row
+        for row in entries
+        if any(
+            str(row.get("path") or "") == prefix
+            or str(row.get("path") or "").startswith(f"{prefix}/")
+            for prefix in prefixes
+        )
+    ]
+
+
+def _private_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _remove_sqlite_files(path: Path) -> None:
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        try:
+            candidate.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _remove_sqlite_sidecars(path: Path) -> None:
+    for candidate in (Path(f"{path}-wal"), Path(f"{path}-shm")):
+        try:
+            candidate.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _json_command(arguments: list[str]) -> dict[str, Any]:
+    result = _run(arguments)
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"command returned invalid JSON: {' '.join(arguments)}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"command returned unexpected JSON: {' '.join(arguments)}")
+    return value
+
+
+def _optional_json(arguments: list[str]) -> Any | None:
+    result = subprocess.run(arguments, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _set_json(executable: str, key: str, value: Any) -> None:
+    _run(
+        [
+            executable,
+            "config",
+            "set",
+            key,
+            json.dumps(value, separators=(",", ":")),
+            "--strict-json",
+        ]
+    )
+
+
+def _run(
+    arguments: list[str], *, allow_missing: bool = False
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        arguments, capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0 and not allow_missing:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        raise ValueError(f"{' '.join(arguments[:3])} failed: {detail}")
+    return result

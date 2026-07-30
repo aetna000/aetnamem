@@ -17,7 +17,7 @@ AetnaMem before it changes a Hermes prompt:
 python3 -m pip install --upgrade aetnamem
 aetnamem trial start --host hermes
 # Restart Hermes once so it discovers the installed general plugin.
-aetnamem trial dashboard
+aetnamem dashboard
 ```
 
 The installer writes `~/.hermes/plugins/aetnamem-safe-switch/` and saves any

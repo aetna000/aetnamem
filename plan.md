@@ -1,39 +1,68 @@
+# OpenClaw shadow-and-takeover implementation plan
+
+Current experimental implementation: Python `0.6.1.1a2`, matching OpenClaw
+bridge `0.4.1-experimental.2`.
+
+```bash
 # 1. Install the AetnaMem Python engine.
-python3 -m pip install --upgrade aetnamem
+python -m pip install --pre --upgrade aetnamem==0.6.1.1a2
 
 # 2. Verify the engine is accessible.
 aetnamem --version
 
-# 3. Only then install the OpenClaw bridge.
-openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+# 3. Let AetnaMem install and verify its matching bridge.
+aetnamem openclaw install
 
-# 4. Start the trial.
-aetnamem trial start --host openclaw
-aetnamem trial dashboard
+# 4. Inspect the verified native-memory mirror.
+aetnamem openclaw memory status
+aetnamem dashboard
+```
 
+The required order is:
 
+1. Copy and hash the complete native `MEMORY.md` and `memory/` tree as an
+   immutable pre-shadow baseline.
+2. Build the searchable AetnaMem mirror only after that baseline verifies.
+3. Re-synchronize the mirror and retain each native state observed during the
+   shadow period.
+4. Before activation, create and verify a second complete switch-time snapshot.
+5. Disable duplicate native memory paths and activate bounded AetnaMem recall.
+6. On rollback, restore and re-verify every switch-time file and directory.
 
+| Component | Purpose |
+|---|---|
+| `MEMORY.md` and `memory/*.md` | Canonical human-readable memory |
+| `openclaw-agent.sqlite` | Derived search index and agent runtime state |
+| Session `.jsonl` files | Conversation history |
+| AetnaMem `openclaw-mirror.db` | Governed searchable shadow and, after explicit activation, OpenClaw's supplemental-memory source |
 
+| Memory type | Native OpenClaw equivalent | Location on your machine | Current state |
+|---|---|---|---|
+| Working | Current conversation/context | [sessions.json](/Users/javadtaghia/.openclaw/agents/main/sessions/sessions.json) and session `.jsonl` files in `/Users/javadtaghia/.openclaw/agents/main/sessions/` | One active session, approximately 58k tokens |
+| Semantic | Durable facts, preferences and decisions | `/Users/javadtaghia/.openclaw/workspace/MEMORY.md` | **Does not exist yet** |
+| Episodic | Daily experiences, observations and session summaries | `/Users/javadtaghia/.openclaw/workspace/memory/YYYY-MM-DD.md` | **Directory does not exist yet** |
+| Procedural | Agent instructions, tool guidance and skills | [AGENTS.md](/Users/javadtaghia/.openclaw/workspace/AGENTS.md), [TOOLS.md](/Users/javadtaghia/.openclaw/workspace/TOOLS.md), `/opt/homebrew/lib/node_modules/openclaw/skills/*/SKILL.md` | Available; 43 of 54 skills ready |
 
+The remaining material below records how the product direction was developed.
+Where it conflicts with the contract above, the implemented contract and
+[`docs/current-status.md`](docs/current-status.md) are authoritative.
 
-
-
-
-
-The closest honest pitch for AetnaMem 6.0 is:
+The closest honest pitch for AetnaMem 6.0 was:
 
 > Give OpenClaw memory without trusting it blindly.
 
 1. Install AetnaMem and the OpenClaw plugin.
 
    ```bash
-   pip install aetnamem
-   openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+   python -m pip install --pre aetnamem==0.6.1.1a2
+   aetnamem openclaw install
    ```
 
 2. Keep your current model provider and existing `MEMORY.md`. AetnaMem does not require you to switch models or immediately remove your current memory.
 
-3. Start AetnaMem in capture-only mode. It observes new trusted user facts and builds a private local memory database, but does not inject that memory into OpenClaw’s answers yet.
+3. Start AetnaMem in shadow mode. It mirrors native memory, observes new
+   trusted user facts and builds a private local memory database, but does not
+   inject that memory into OpenClaw’s answers yet.
 
 4. Review what it collected. Search in ordinary language, inspect where memories came from, and export an audit report:
 
@@ -132,7 +161,7 @@ That single command would:
 1. Detect OpenClaw or Hermes.
 2. Record the host, model, current memory and configuration digests.
 3. Save a rollback snapshot.
-4. Install AetnaMem in capture-only mode.
+4. Install AetnaMem in shadow capture mode.
 5. Open `http://127.0.0.1:8766`.
 6. Leave the current provider, model and native memory in control.
 
@@ -371,7 +400,11 @@ Activation is a privileged operation and must:
 
 The emergency `off` state should work through the state file even if a host restart fails. Full rollback then restores the validated configuration snapshot.
 
-AetnaMem must not automatically erase `MEMORY.md` or `USER.md`. After a successful canary, the dashboard can identify duplicated durable facts and offer a separately reviewed migration patch. Identity, safety and authorization instructions remain pinned in the host.
+AetnaMem must never erase native memory during activation. The implemented
+OpenClaw cutover instead relocates `MEMORY.md` and `memory/` into a private,
+hash-bound freeze after explicit confirmation, disables duplicate native
+memory paths, and restores the files on rollback. `USER.md`, identity, safety,
+authorization, tools and executable skills remain pinned in the host.
 
 ## Implementation phases
 
@@ -402,7 +435,8 @@ Version 6.1 should remain:
 - No automatic live traffic duplication.
 - No side-effecting replay.
 - No automatic activation.
-- No automatic deletion of native memory.
+- No deletion of native memory; activation uses a reversible freeze and
+  relocation after explicit confirmation.
 - No claim that all provider data remains local.
 
 If the Hermes native adapter cannot pass the same end-to-end non-interference and rollback tests, the 6.1 release must say “OpenClaw Safe Switch; Hermes diagnostic preview,” rather than claiming false parity.

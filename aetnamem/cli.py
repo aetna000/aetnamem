@@ -57,7 +57,7 @@ def main() -> None:
     )
     openclaw_install = openclaw_commands.add_parser(
         "install",
-        help="Install the bridge and start a capture-only Safe Switch trial",
+        help="Install the bridge and start a native-memory shadow trial",
     )
     openclaw_install.add_argument(
         "--state",
@@ -74,6 +74,50 @@ def main() -> None:
         action="store_true",
         help="Print machine-readable JSON",
     )
+    openclaw_memory = openclaw_commands.add_parser(
+        "memory",
+        help="Inspect the OpenClaw memory mirror owned by AetnaMem",
+    )
+    openclaw_memory_commands = openclaw_memory.add_subparsers(
+        dest="openclaw_memory_command",
+        required=True,
+    )
+    for name, help_text in (
+        ("status", "Show native mirror, takeover, audit, and context-budget status"),
+        ("sync", "Synchronize changed native OpenClaw memory into the shadow mirror"),
+        ("search", "Search the mirrored memory by ordinary words"),
+        ("trace", "Trace mirrored memories and their audit evidence"),
+    ):
+        command_parser = openclaw_memory_commands.add_parser(name, help=help_text)
+        command_parser.add_argument("--state", default=None)
+        command_parser.add_argument(
+            "--json", action="store_true", help="Print machine-readable JSON"
+        )
+        if name in {"search", "trace"}:
+            command_parser.add_argument("query")
+            command_parser.add_argument("--limit", type=int, default=50)
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard",
+        help="Run the friendly local AetnaMem mirror, audit, search, and switch UI",
+    )
+    dashboard_parser.add_argument("--state", default=None)
+    dashboard_parser.add_argument("--port", type=int, default=8766)
+    dashboard_parser.add_argument("--no-open", action="store_true")
+    dashboard_commands = dashboard_parser.add_subparsers(dest="dashboard_command")
+    dashboard_daemon = dashboard_commands.add_parser(
+        "daemon", help="Manage the dashboard as a background user service"
+    )
+    dashboard_daemon_commands = dashboard_daemon.add_subparsers(
+        dest="dashboard_daemon_command", required=True
+    )
+    for name in ("start", "stop", "restart", "status", "remove"):
+        command_parser = dashboard_daemon_commands.add_parser(name)
+        command_parser.add_argument("--state", default=None)
+        command_parser.add_argument("--port", type=int, default=8766)
+        command_parser.add_argument(
+            "--json", action="store_true", help="Print machine-readable JSON"
+        )
 
     remember_parser = subparsers.add_parser(
         "remember", help="Ingest a message through the write pipeline"
@@ -804,6 +848,10 @@ def main() -> None:
         _run_openclaw(args)
         return
 
+    if args.command == "dashboard":
+        _run_dashboard(args)
+        return
+
     if args.command == "impact":
         _run_impact(args)
         return
@@ -1090,6 +1138,40 @@ def _print(value: object) -> None:
 
 
 def _run_openclaw(args: argparse.Namespace) -> None:
+    if args.openclaw_command == "memory":
+        from aetnamem.trial import TrialManager
+        from aetnamem.trial.manager import DEFAULT_STATE_PATH
+        from aetnamem.trial.openclaw_native import (
+            mirror_status,
+            search_mirror,
+            sync_mirror,
+            takeover_status,
+            trace_mirror,
+        )
+
+        manager = TrialManager(args.state or DEFAULT_STATE_PATH)
+        state = manager.state()
+        command = args.openclaw_memory_command
+        if command == "sync":
+            result = sync_mirror(state)
+        elif command == "status":
+            result = {
+                "format": "aetnamem-openclaw-memory-status-v1",
+                "mode": state.mode.value,
+                "mirror": mirror_status(state),
+                "takeover": takeover_status(state),
+            }
+        elif command == "search":
+            result = search_mirror(state, args.query, limit=args.limit)
+        elif command == "trace":
+            result = trace_mirror(state, args.query, limit=args.limit)
+        else:
+            raise ValueError(f"unknown OpenClaw memory command: {command}")
+        if args.json:
+            _print(result)
+        else:
+            _print_openclaw_memory(command, result)
+        return
     if args.openclaw_command != "install":
         raise ValueError(f"unknown OpenClaw command: {args.openclaw_command}")
     from aetnamem.openclaw_install import install_openclaw
@@ -1124,16 +1206,143 @@ def _run_openclaw(args: argparse.Namespace) -> None:
         "  Gateway verification "
         + ("PASSED" if result.get("gateway_verified") else "FAILED")
     )
-    print("  Trial mode            capture only")
+    print(
+        "  Native memory baseline "
+        + ("PASSED" if result.get("native_baseline_verified") else "FAILED")
+    )
+    print(
+        "  Baseline files         "
+        f"{int(result.get('native_baseline_files') or 0)}"
+    )
+    print(
+        "  Baseline bytes         "
+        f"{int(result.get('native_baseline_bytes') or 0):,}"
+    )
+    print(
+        "  Search mirror          "
+        + ("PASSED" if result.get("mirror_verified") else "FAILED")
+    )
+    print("  Trial mode            shadow capture")
     print("  Model context changed no")
     print("  Extra provider calls  no")
     print(f"  Trial ID              {result['trial_id']}")
     print(f"  Evidence directory    {result['trial_dir']}")
     print(
         "\nKeep using OpenClaw normally. AetnaMem will collect candidate memories "
-        "locally without changing model context."
+        "locally and mirror native memory without changing model context."
     )
-    print("Next: aetnamem trial dashboard")
+    print("Next: aetnamem dashboard")
+
+
+def _print_openclaw_memory(command: str, result: dict[str, object]) -> None:
+    if command == "status":
+        mirror = result.get("mirror")
+        mirror = mirror if isinstance(mirror, dict) else {}
+        takeover = result.get("takeover")
+        takeover = takeover if isinstance(takeover, dict) else {}
+        print("AetnaMem OpenClaw memory status")
+        print(f"\n  Mode                    {result.get('mode', 'unknown')}")
+        print(
+            "  Native mirror           "
+            + ("synchronized" if mirror.get("synced") else "NOT READY")
+        )
+        print(f"  Native sources          {int(mirror.get('source_count') or 0)}")
+        print(f"  Mirrored records        {int(mirror.get('record_count') or 0)}")
+        print(f"  Source bytes            {int(mirror.get('source_bytes') or 0):,}")
+        baseline = mirror.get("native_baseline")
+        baseline = baseline if isinstance(baseline, dict) else {}
+        history = mirror.get("shadow_history")
+        history = history if isinstance(history, dict) else {}
+        print(
+            "  Pre-shadow baseline     "
+            + ("PASSED" if baseline.get("snapshot_sha256") else "MISSING")
+        )
+        if baseline.get("snapshot_sha256"):
+            print(
+                "  Baseline files          "
+                f"{int(baseline.get('file_count') or 0)}"
+            )
+            print(
+                "  Baseline digest         "
+                f"{baseline.get('snapshot_sha256')}"
+            )
+            print(
+                "  Observed change states  "
+                f"{int(history.get('observed_change_versions') or 0)}"
+            )
+        print(
+            "  Audit verification      "
+            + ("PASSED" if mirror.get("audit_verified") else "FAILED")
+        )
+        print(f"  Mirror database         {mirror.get('mirror_db', 'not created')}")
+        print(f"  Manifest                {mirror.get('manifest_sha256', 'none')}")
+        print(
+            "  Native memory takeover  "
+            + ("active" if takeover.get("active") else "shadow only")
+        )
+        snapshot = takeover.get("native_snapshot")
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        if takeover.get("native_snapshot_verified"):
+            print("  Complete native snapshot PASSED")
+            print(
+                "  Snapshot files          "
+                f"{int(snapshot.get('file_count') or 0)}"
+            )
+            print(
+                "  Snapshot bytes          "
+                f"{int(snapshot.get('total_bytes') or 0):,}"
+            )
+            print(
+                "  Snapshot digest         "
+                f"{snapshot.get('snapshot_sha256', 'none')}"
+            )
+        print(
+            "  Cost projection         "
+            + str(mirror.get("token_projection") or "not measured").replace("_", " ")
+        )
+        if not takeover.get("active"):
+            print(
+                "\nOpenClaw native memory remains authoritative. "
+                "AetnaMem is mirroring and auditing without changing prompts."
+            )
+        else:
+            print(
+                "\nAetnaMem owns supplemental memory recall. The frozen native "
+                "snapshot remains available for verified rollback."
+            )
+        return
+    if command == "sync":
+        print("AetnaMem OpenClaw mirror synchronized")
+        print(f"\n  Sources          {int(result.get('source_count') or 0)}")
+        print(f"  Records          {int(result.get('record_count') or 0)}")
+        print(f"  Source bytes     {int(result.get('source_bytes') or 0):,}")
+        print(f"  Database         {result.get('mirror_db')}")
+        print(f"  Manifest         {result.get('manifest_sha256')}")
+        return
+    if command == "search":
+        rows = result.get("records")
+        rows = rows if isinstance(rows, list) else []
+        print(f"AetnaMem OpenClaw memory search\n\n  {len(rows)} result(s)")
+        for index, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            content = str(row.get("content") or "").replace("\n", " ").strip()
+            print(f"  {index}. {content}")
+            provenance = row.get("openclaw_provenance")
+            provenance = provenance if isinstance(provenance, dict) else {}
+            source = provenance.get("relative_path") or row.get("source_type")
+            lines = (
+                f" lines {provenance.get('line_start')}-{provenance.get('line_end')}"
+                if provenance.get("line_start")
+                else ""
+            )
+            print(f"     record {row.get('id')} · {source}{lines}")
+        return
+    if command == "trace":
+        from aetnamem.investigate import format_trace
+
+        print(format_trace(result), end="")
+        return
 
 
 def _print_trial(command: str, value: object, *, json_output: bool) -> None:
@@ -1947,6 +2156,76 @@ def _approval_secret(
     return value
 
 
+def _run_dashboard(args: argparse.Namespace) -> None:
+    if args.dashboard_command == "daemon":
+        from aetnamem.dashboard_daemon import manage_dashboard_daemon
+
+        result = manage_dashboard_daemon(
+            args.dashboard_daemon_command,
+            port=args.port,
+            trial_state_path=args.state,
+        )
+        if args.json:
+            _print(result)
+            return
+        print("AetnaMem dashboard daemon")
+        print(
+            f"\n  Status       "
+            f"{'running' if result.get('running') else 'stopped'}"
+        )
+        if result.get("pid"):
+            print(f"  Process      {result['pid']}")
+        if result.get("port"):
+            print(f"  Port         {result['port']}")
+        if result.get("login_url"):
+            print(f"  Open         {result['login_url']}")
+        elif result.get("url"):
+            print(f"  Dashboard    {result['url']}")
+        if result.get("log_path"):
+            print(f"  Log          {result['log_path']}")
+        if result.get("removed"):
+            print("\nThe background service record was removed. Memory and trial data were preserved.")
+        return
+    _serve_dashboard(
+        state_path=args.state,
+        port=args.port,
+        open_browser=not args.no_open,
+    )
+
+
+def _serve_dashboard(
+    *,
+    state_path: str | None,
+    port: int,
+    open_browser: bool,
+) -> None:
+    import webbrowser
+
+    from aetnamem.trial import TrialManager
+    from aetnamem.trial.manager import DEFAULT_STATE_PATH
+    from aetnamem.trial.web import TrialDashboardServer, dashboard_html
+
+    manager = TrialManager(state_path or DEFAULT_STATE_PATH)
+    # Fail before opening a port if no valid trial exists.
+    manager.state()
+    server = TrialDashboardServer(
+        ("127.0.0.1", port), manager, html=dashboard_html()
+    )
+    base = f"http://127.0.0.1:{server.server_port}/"
+    login = f"{base}auth?code={server.login_code}"
+    print(f"AetnaMem dashboard: {base}", flush=True)
+    print(f"Dashboard login: {login}", flush=True)
+    print("The dashboard is loopback-only. Press Ctrl-C to stop.", flush=True)
+    if open_browser:
+        webbrowser.open(login)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
 def _run_trial(args: argparse.Namespace) -> None:
     from aetnamem.trial import TrialManager, TrialMode
     from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
@@ -2029,16 +2308,46 @@ def _run_trial(args: argparse.Namespace) -> None:
         )
     elif args.trial_command == "activate":
         _confirm_trial_host(manager, non_interactive=args.yes)
+        readiness = manager.status().get("readiness") or {}
+        if not readiness.get("ready_for_active"):
+            raise ValueError("; ".join(readiness.get("reasons") or ["trial is not ready"]))
+        state = manager.state()
+        if state.host == "openclaw":
+            from aetnamem.trial.openclaw_native import (
+                activate_takeover,
+                restore_takeover,
+            )
+
+            takeover = activate_takeover(state, manager.state_path)
+            try:
+                state = manager.transition(TrialMode.ACTIVE)
+            except Exception:
+                restore_takeover(state)
+                raise
+        else:
+            state = manager.transition(TrialMode.ACTIVE)
+            takeover = {
+                "activated": True,
+                "host": state.host,
+                "native_memory_replaced": False,
+            }
+        result = state.public_status()
+        result["takeover"] = takeover
+        result["mirror"] = manager.status().get("mirror")
         _print_trial(
             "activate",
-            manager.transition(TrialMode.ACTIVE).public_status(),
+            result,
             json_output=args.json,
         )
     elif args.trial_command == "off":
+        from aetnamem.trial.openclaw_native import emergency_off_takeover
+
         state = manager.state()
+        emergency = emergency_off_takeover(state)
         if state.mode is not TrialMode.OFF:
             state = manager.transition(TrialMode.OFF)
         result = state.public_status()
+        result["takeover_off"] = emergency
         result["rollback_boundary"] = (
             "Future AetnaMem capture and context injection are off. Trial evidence "
             "is preserved. Past agent outputs and provider logs are not undone."
@@ -2046,12 +2355,27 @@ def _run_trial(args: argparse.Namespace) -> None:
         _print_trial("off", result, json_output=args.json)
     elif args.trial_command == "rollback":
         from aetnamem.trial.hosts import restore_host
+        from aetnamem.trial.openclaw_native import (
+            restart_and_verify_gateway,
+            restore_takeover,
+        )
 
         _confirm_trial_host(manager, non_interactive=args.yes)
         state = manager.state()
         if state.mode is not TrialMode.OFF:
             state = manager.transition(TrialMode.OFF, actor="rollback")
+        takeover_restore = restore_takeover(state)
         restored = restore_host(state)
+        gateway = (
+            restart_and_verify_gateway()
+            if state.host == "openclaw"
+            else {"restarted": False, "verified": True}
+        )
+        restored["takeover"] = takeover_restore
+        restored["gateway"] = gateway
+        restored["verified"] = bool(restored.get("verified")) and bool(
+            gateway.get("verified")
+        )
         result = state.public_status()
         result["host_restore"] = restored
         result["rollback_boundary"] = (
@@ -2073,26 +2397,11 @@ def _run_trial(args: argparse.Namespace) -> None:
     elif args.trial_command == "mcp":
         TrialMCPServer(manager).serve()
     elif args.trial_command == "dashboard":
-        import webbrowser
-
-        from aetnamem.trial.web import TrialDashboardServer, dashboard_html
-
-        server = TrialDashboardServer(
-            ("127.0.0.1", args.port), manager, html=dashboard_html()
+        _serve_dashboard(
+            state_path=state_path,
+            port=args.port,
+            open_browser=not args.no_open,
         )
-        url = f"http://127.0.0.1:{args.port}/auth?code={server.login_code}"
-        print(f"Safe Switch dashboard: http://127.0.0.1:{args.port}/")
-        print("The dashboard is loopback-only. Press Ctrl-C to stop.")
-        if not args.no_open:
-            webbrowser.open(url)
-        else:
-            print(f"One-time sign-in URL: {url}")
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.server_close()
     else:  # pragma: no cover - argparse prevents this
         raise ValueError(f"unknown trial command: {args.trial_command}")
 

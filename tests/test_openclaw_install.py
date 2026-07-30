@@ -38,6 +38,15 @@ class FakeTrialManager:
             "trial_dir": str(self.trial_root / "trial_test"),
             "mode": self.mode,
             "changes_model_context": False,
+            "mirror": {
+                "audit_verified": True,
+                "mirror_db": str(self.trial_root / "trial_test" / "openclaw-mirror.db"),
+                "native_baseline": {
+                    "snapshot_sha256": "a" * 64,
+                    "file_count": 3,
+                    "total_bytes": 1024,
+                },
+            },
         }
 
     def transition(self, mode: object, *, actor: str) -> None:
@@ -55,7 +64,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 0.6.1.1a1\n", "")
+            return CommandResult(0, "aetnamem 0.6.1.1a2\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:

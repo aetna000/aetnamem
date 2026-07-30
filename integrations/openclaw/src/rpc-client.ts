@@ -166,7 +166,7 @@ export class AetnamemClient {
       capabilities: {},
       clientInfo: {
         name: "openclaw-memory-aetnamem",
-        version: "0.4.1-experimental.1",
+        version: "0.4.1-experimental.2",
       },
     });
     this.notify("notifications/initialized", {});

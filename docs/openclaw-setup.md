@@ -1,7 +1,7 @@
 # Wiring aetnamem into OpenClaw via MCP
 
 This page covers the public legacy surface and the experimental Python
-`v0.6.1.1a1` / npm `v0.4.1-experimental.1` installer preview. New users who
+`v0.6.1.1a2` / npm `v0.4.1-experimental.2` shadow-and-takeover preview. New users who
 want to observe before
 enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
@@ -15,33 +15,38 @@ and auto-capture hooks, use the plugin in
 
 For a single-user OpenClaw instance, the native plugin is the shortest path:
 
-The Python engine owns installation of its npm bridge:
+The Python engine owns installation of its npm bridge. Installation first
+copies and verifies the complete existing native memory tree, then builds the
+searchable mirror:
 
 ```bash
 # 1. Install the engine.
-python -m pip install --pre aetnamem==0.6.1.1a1
+python -m pip install --pre aetnamem==0.6.1.1a2
 
 # 2. Verify it, then install and verify the matching bridge.
 aetnamem --version
 aetnamem openclaw install
 
-# 3. Evaluate capture, preview, and a bounded canary.
-aetnamem trial dashboard
+# 3. Evaluate the mirror, audit evidence, and a bounded canary.
+aetnamem openclaw memory status
+aetnamem openclaw memory search "your question"
+aetnamem dashboard
 
-# 4. For the advanced direct four-memory runtime, restore the trial baseline.
+# 4. Switch only after review; rollback restores native memory exactly.
+aetnamem trial activate
 aetnamem trial rollback
-aetnamem setup
-openclaw aetnamem setup --single-user --subject you \
-  --orchestrated --runtime-config ~/.aetnamem/runtime.json
 ```
 
 This enables working, semantic, episodic, and procedural memory through one
 bounded runtime connection, plus post-turn outcome capture. The
 [four-memory guide](four-memory-runtime.md) explains the ten-step wizard and
-ready-made presets. It does not promise an
-immediate token reduction or alter `MEMORY.md`: first verify recall, then remove
-duplicated durable facts from always-loaded native context. Do not use one
-fixed subject for multiple authenticated users.
+ready-made presets. During shadow mode it does not alter `MEMORY.md`. On
+activation it creates and verifies a second complete switch-time snapshot,
+deactivates the live native supplemental-memory paths, disables the duplicate
+native memory slot/writer, and uses bounded AetnaMem recall. Rollback restores
+and hash-verifies the switch-time tree. It keeps identity, safety, tools and
+executable skills pinned in OpenClaw. Do not use one fixed subject for multiple
+authenticated users.
 
 ## Measured result and what it means
 

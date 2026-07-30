@@ -38,13 +38,13 @@ server behavior.
 
 ## Connect OpenClaw
 
-Use the verified installer first. It begins in capture-only Safe Switch mode;
+Use the verified installer first. It begins in native-memory shadow mode;
 after evaluating that path, restore its baseline before enabling the direct
 four-memory runtime:
 
 ```bash
 aetnamem openclaw install
-aetnamem trial dashboard
+aetnamem dashboard
 # After evaluation:
 aetnamem trial rollback
 openclaw aetnamem setup --single-user --subject you \

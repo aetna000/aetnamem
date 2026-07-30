@@ -78,6 +78,30 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 {"candidates": self.server.manager.candidates(include_reviewed=True)},
             )
             return
+        if parsed.path == "/api/mirror/search":
+            from aetnamem.trial.openclaw_native import search_mirror
+
+            query = (parse_qs(parsed.query).get("query") or [""])[0].strip()
+            if not query:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "query is required"})
+                return
+            self._json(
+                HTTPStatus.OK,
+                search_mirror(self.server.manager.state(), query, limit=50),
+            )
+            return
+        if parsed.path == "/api/mirror/trace":
+            from aetnamem.trial.openclaw_native import trace_mirror
+
+            query = (parse_qs(parsed.query).get("query") or [""])[0].strip()
+            if not query:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "query is required"})
+                return
+            self._json(
+                HTTPStatus.OK,
+                trace_mirror(self.server.manager.state(), query, limit=100),
+            )
+            return
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -114,6 +138,11 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                             f"type the host name `{expected_host}` to confirm"
                         )
                 if mode is TrialMode.OFF:
+                    from aetnamem.trial.openclaw_native import (
+                        emergency_off_takeover,
+                    )
+
+                    emergency_off_takeover(self.server.manager.state())
                     state = self.server.manager.transition(
                         mode, actor="dashboard-emergency-off"
                     )
@@ -123,11 +152,80 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                         actor="dashboard-reviewer",
                         canary_turns=int(body.get("turns", 0)),
                     )
+                elif mode is TrialMode.ACTIVE:
+                    current = self.server.manager.state()
+                    if current.host == "openclaw":
+                        from aetnamem.trial.openclaw_native import (
+                            activate_takeover,
+                            restore_takeover,
+                        )
+
+                        takeover = activate_takeover(
+                            current, self.server.manager.state_path
+                        )
+                        try:
+                            state = self.server.manager.transition(
+                                mode, actor="dashboard-reviewer"
+                            )
+                        except Exception:
+                            restore_takeover(current)
+                            raise
+                    else:
+                        state = self.server.manager.transition(
+                            mode, actor="dashboard-reviewer"
+                        )
+                        takeover = {
+                            "activated": True,
+                            "host": current.host,
+                            "native_memory_replaced": False,
+                        }
+                    value = state.public_status()
+                    value["takeover"] = takeover
+                    self._json(HTTPStatus.OK, value)
+                    return
                 else:
                     state = self.server.manager.transition(
                         mode, actor="dashboard-reviewer"
                     )
                 self._json(HTTPStatus.OK, state.public_status())
+                return
+            if path == "/api/mirror/sync":
+                from aetnamem.trial.openclaw_native import sync_mirror
+
+                self._json(
+                    HTTPStatus.OK,
+                    sync_mirror(self.server.manager.state()),
+                )
+                return
+            if path == "/api/rollback":
+                from aetnamem.trial.hosts import restore_host
+                from aetnamem.trial.openclaw_native import (
+                    restart_and_verify_gateway,
+                    restore_takeover,
+                )
+
+                state = self.server.manager.state()
+                if state.mode is not TrialMode.OFF:
+                    state = self.server.manager.transition(
+                        TrialMode.OFF, actor="dashboard-rollback"
+                    )
+                takeover = restore_takeover(state)
+                host = restore_host(state)
+                gateway = (
+                    restart_and_verify_gateway()
+                    if state.host == "openclaw"
+                    else {"verified": True}
+                )
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "restored": bool(host.get("verified"))
+                        and bool(gateway.get("verified")),
+                        "takeover": takeover,
+                        "host": host,
+                        "gateway": gateway,
+                    },
+                )
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except (KeyError, TypeError, ValueError) as exc:

@@ -14,7 +14,7 @@ from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "0.4.1-experimental.1"
+OPENCLAW_PLUGIN_VERSION = "0.4.1-experimental.2"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 
@@ -146,7 +146,15 @@ def install_openclaw(
 
         status = manager.status()
         if status.get("mode") != "capture":
-            raise ValueError("AetnaMem trial did not enter capture-only mode")
+            raise ValueError("AetnaMem trial did not enter shadow capture mode")
+        mirror = status.get("mirror")
+        mirror = mirror if isinstance(mirror, dict) else {}
+        baseline = mirror.get("native_baseline")
+        baseline = baseline if isinstance(baseline, dict) else {}
+        if not mirror.get("audit_verified") or not baseline.get("snapshot_sha256"):
+            raise ValueError(
+                "OpenClaw native-memory baseline or searchable mirror did not verify"
+            )
         return {
             "format": "aetnamem-openclaw-install-v1",
             "installed": True,
@@ -161,6 +169,12 @@ def install_openclaw(
             "trial_dir": status.get("trial_dir"),
             "state_path": str(Path(state_path).expanduser().resolve(strict=False)),
             "integration": integration,
+            "native_baseline_verified": True,
+            "native_baseline_sha256": baseline.get("snapshot_sha256"),
+            "native_baseline_files": baseline.get("file_count"),
+            "native_baseline_bytes": baseline.get("total_bytes"),
+            "mirror_verified": True,
+            "mirror_db": mirror.get("mirror_db"),
         }
     except Exception as exc:
         if manager is not None:

@@ -115,8 +115,20 @@ class TrialManager:
             evidence = store.summary(state.trial_id)
         finally:
             store.close()
+        mirror: dict[str, Any] | None = None
+        takeover: dict[str, Any] | None = None
+        if state.host == "openclaw":
+            from aetnamem.trial.openclaw_native import (
+                mirror_status,
+                takeover_status,
+            )
+
+            mirror = mirror_status(state)
+            takeover = takeover_status(state)
         result["evidence"] = evidence
-        result["readiness"] = self._readiness(state, evidence)
+        result["mirror"] = mirror
+        result["takeover"] = takeover
+        result["readiness"] = self._readiness(state, evidence, mirror=mirror)
         return result
 
     def capture(
@@ -191,29 +203,62 @@ class TrialManager:
         min_score: float = 0.3,
     ) -> dict[str, Any]:
         state, warning = self.effective_state()
-        if warning or not state.mode.previews:
-            return self._no_context(state, warning or "mode does not preview")
+        if warning or not state.mode.captures:
+            return self._no_context(state, warning or "trial is off")
         store = self._store(state)
         try:
             approved = store.list_candidates(
                 state.trial_id, statuses=("approved",)
             )
             ranked = rank_records(query, approved)
-            chosen = [
+            candidate_chosen = [
                 item
                 for item in ranked
                 if item.text_score > 0 and item.score >= min_score
             ][: max(0, limit)]
+            mirror_records: list[dict[str, Any]] = []
+            if state.host == "openclaw":
+                from aetnamem.trial.openclaw_native import search_mirror
+
+                try:
+                    mirror_records = list(
+                        search_mirror(state, query, limit=limit).get("records") or []
+                    )
+                except ValueError:
+                    mirror_records = []
             lines: list[str] = []
             candidate_ids: list[str] = []
+            candidate_hashes: list[str] = []
             used_chars = 0
-            for item in chosen:
-                content = str(item.record["content"]).strip()
+            chosen_rows = [
+                (
+                    str(item.record["id"]),
+                    str(item.record["content"]),
+                    str(item.record["content_sha256"]),
+                )
+                for item in candidate_chosen
+            ]
+            chosen_rows.extend(
+                (
+                    str(record["id"]),
+                    str(record.get("content") or ""),
+                    sha256_hex(str(record.get("content") or "")),
+                )
+                for record in mirror_records
+            )
+            seen: set[str] = set()
+            for record_id, value, content_sha256 in chosen_rows:
+                content = value.strip()
+                normalized = content.casefold()
+                if not content or normalized in seen:
+                    continue
+                seen.add(normalized)
                 line = f"- {content}"
                 if used_chars + len(line) + 1 > max_chars:
                     break
                 lines.append(line)
-                candidate_ids.append(str(item.record["id"]))
+                candidate_ids.append(record_id)
+                candidate_hashes.append(content_sha256)
                 used_chars += len(line) + 1
             context = (
                 "<aetnamem_safe_switch>\n"
@@ -235,9 +280,7 @@ class TrialManager:
                 "mode": state.mode.value,
                 "query_sha256": sha256_hex(query),
                 "candidate_ids": candidate_ids,
-                "candidate_content_sha256": [
-                    str(item.record["content_sha256"]) for item in chosen[: len(candidate_ids)]
-                ],
+                "candidate_content_sha256": candidate_hashes,
                 "context_sha256": sha256_hex(context),
             }
             preview = store.insert_preview(
@@ -305,8 +348,15 @@ class TrialManager:
                 )
             evidence_store = self._store(state)
             try:
+                mirror = None
+                if state.host == "openclaw":
+                    from aetnamem.trial.openclaw_native import mirror_status
+
+                    mirror = mirror_status(state)
                 readiness = self._readiness(
-                    state, evidence_store.summary(state.trial_id)
+                    state,
+                    evidence_store.summary(state.trial_id),
+                    mirror=mirror,
                 )
                 if target is TrialMode.PREVIEW and not readiness["ready_for_preview"]:
                     raise ValueError("; ".join(readiness["reasons"]))
@@ -342,17 +392,26 @@ class TrialManager:
                 evidence_store.close()
 
     def _readiness(
-        self, state: TrialState, evidence: dict[str, Any]
+        self,
+        state: TrialState,
+        evidence: dict[str, Any],
+        *,
+        mirror: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         counts = evidence["candidates"]
         approved = int(counts.get("approved", 0))
         chain_valid = bool(evidence["transition_chain"]["valid"])
+        mirror_ready = bool(
+            mirror
+            and mirror.get("synced")
+            and int(mirror.get("record_count") or 0) > 0
+        )
         reasons: list[str] = []
         if not chain_valid:
             reasons.append("trial transition evidence did not verify")
-        if approved < 1:
-            reasons.append("approve at least one candidate memory")
-        ready_for_preview = chain_valid and approved > 0
+        if approved < 1 and not mirror_ready:
+            reasons.append("mirror native memory or approve at least one candidate")
+        ready_for_preview = chain_valid and (approved > 0 or mirror_ready)
         ready_for_canary = ready_for_preview and int(evidence["previews"]) > 0
         if ready_for_preview and int(evidence["previews"]) < 1:
             reasons.append("observe at least one successful preview")
@@ -375,6 +434,7 @@ class TrialManager:
             "ready_for_preview": ready_for_preview,
             "ready_for_canary": ready_for_canary,
             "ready_for_active": ready_for_active,
+            "mirror_ready": mirror_ready,
             "reasons": reasons,
         }
 

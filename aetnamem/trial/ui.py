@@ -93,6 +93,12 @@ display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;b
 display:none;background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad);
 padding:9px 12px;border-radius:8px;margin-bottom:14px}.error.show{display:block}
 .skeleton{opacity:.55}.hash{overflow-wrap:anywhere}
+.searchrow{display:flex;gap:8px;margin:12px 0}.searchrow input{flex:1;min-width:0;border:1px solid var(--line);
+background:var(--paper);color:var(--ink);border-radius:8px;padding:9px 11px}.results{white-space:pre-wrap;
+font-family:ui-monospace,monospace;font-size:12px;max-height:330px;overflow:auto;background:var(--paper);
+border:1px solid var(--line);border-radius:8px;padding:12px}.sourcegrid{display:grid;
+grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}.sourcegrid div{background:var(--paper);
+border:1px solid var(--line);border-radius:8px;padding:10px}.sourcegrid b{display:block;font-size:20px}
 @media(max-width:760px){.shell{grid-template-columns:1fr}.rail{position:sticky;top:49px;z-index:4;
 flex-direction:row;overflow:auto;padding:0;background:var(--paper);border-right:0;border-bottom:1px solid var(--line)}
 .nav{white-space:nowrap;border-left:0;border-bottom:3px solid transparent}.nav[aria-current=true]{
@@ -118,7 +124,7 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
     <button class="nav" data-section="comparison"><span class="nd"></span>Evidence</button>
     <button class="nav" data-section="switch"><span class="nd"></span>Switch</button>
     <button class="nav" data-section="value"><span class="nd"></span>Value</button>
-    <div class="railfoot mono"><span id="trialId">loading</span><br><span id="version">AetnaMem 0.6.1.1a1 experimental</span></div>
+    <div class="railfoot mono"><span id="trialId">loading</span><br><span id="version">AetnaMem 0.6.1.1a2 experimental</span></div>
   </nav>
   <main>
     <div class="error" id="error" role="alert"></div>
@@ -127,10 +133,19 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
         <h1 id="bannerTitle">LOADING LOCAL TRIAL EVIDENCE</h1><p id="bannerBody"></p>
       </div>
       <div class="tiles">
-        <div class="tile"><div class="v mono" id="turns">—</div><div class="d">turns observed</div></div>
-        <div class="tile"><div class="v mono" id="candidateCount">—</div><div class="d">memory candidates</div></div>
-        <div class="tile"><div class="v mono" id="previewCount">—</div><div class="d">recall previews</div></div>
+        <div class="tile"><div class="v mono" id="nativeSources">—</div><div class="d">native sources mirrored</div></div>
+        <div class="tile"><div class="v mono" id="mirrorRecords">—</div><div class="d">AetnaMem mirror records</div></div>
+        <div class="tile"><div class="v mono" id="previewCount">—</div><div class="d">shadow recalls</div></div>
         <div class="tile"><div class="v mono">$0.00</div><div class="d">extra provider spend</div></div>
+      </div>
+      <div class="card">
+        <span class="label">OpenClaw memory mirror</span>
+        <p id="mirrorSummary">Discovering and verifying native memory…</p>
+        <div class="sourcegrid">
+          <div><b class="mono" id="mirrorBytes">—</b><span class="why">source bytes</span></div>
+          <div><b class="mono" id="mirrorAudit">—</b><span class="why">audit verification</span></div>
+          <div><b class="mono" id="costProjection">—</b><span class="why">cost projection</span></div>
+        </div>
       </div>
       <div class="card">
         <span class="label">What AetnaMem is not doing right now</span>
@@ -144,15 +159,21 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
 
     <section id="section-memory" hidden>
       <h1>Memory</h1>
-      <p class="sub">Captured memory candidates with their source and review state. Capture and preview modes do not show these to your agent.</p>
+      <p class="sub">Search the synchronized OpenClaw mirror, then review newly captured candidate memories. Shadow mode does not show AetnaMem context to your agent.</p>
+      <div class="card">
+        <span class="label">Search mirrored OpenClaw memory</span>
+        <div class="searchrow"><input id="mirrorQuery" placeholder="Type ordinary words, for example TypeScript preference">
+          <button class="primary" id="searchBtn">Search</button><button class="ghost" id="traceBtn">Trace</button></div>
+        <div class="results" id="mirrorResults">Enter a query to search memories and inspect their evidence.</div>
+      </div>
       <div class="filters" id="filters"></div>
       <div class="card" id="memoryList"><div class="empty">Loading memory candidates…</div></div>
     </section>
 
     <section id="section-preview" hidden>
       <h1>Recall Preview</h1>
-      <p class="sub">What AetnaMem has computed after observed turns.</p>
-      <div class="note">◎ Previews are computed after the fact in preview mode. They are shown to the agent only in canary or active mode.</div>
+      <p class="sub">What AetnaMem computed from the synchronized mirror for real OpenClaw prompts.</p>
+      <div class="note">◎ Shadow recalls are computed without changing the prompt. They are shown only during canary; activation performs a verified native-memory takeover.</div>
       <div class="tiles">
         <div class="tile"><div class="v mono" id="previews2">—</div><div class="d">previews computed</div></div>
         <div class="tile"><div class="v mono" id="exposures">—</div><div class="d">contexts requested</div></div>
@@ -166,7 +187,7 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
 
     <section id="section-comparison" hidden>
       <h1>Evidence</h1>
-      <p class="sub">A live view of the trial funnel. This is operational evidence, not a claim that AetnaMem improved success or cost.</p>
+      <p class="sub">A live view of mirror coverage, shadow retrieval and bounded exposure. Savings remain a measurement, never an assumption.</p>
       <div class="card">
         <span class="label">Observed trial funnel</span>
         <div class="legend"><span><i></i>Recorded local evidence</span></div>
@@ -176,8 +197,8 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
         </svg>
       </div>
       <div class="card"><span class="label">Quantitative comparison</span>
-        <p><b>Not measured in this trial yet.</b></p>
-        <p class="why">The 0.6.1.1a1 experimental dashboard will not turn preview counts into a performance claim. Paid paired comparison and host-verified outcomes remain a later beta milestone.</p>
+        <p><b id="projectionText">Waiting for the native mirror.</b></p>
+        <p class="why">A projection compares bounded context sizes only. The dashboard recommends a cost switch only when actual host token receipts show a benefit.</p>
       </div>
     </section>
 
@@ -189,8 +210,10 @@ border-bottom-color:var(--accent)}.railfoot{display:none}main{padding:16px}.tile
         <button class="primary" id="previewBtn">Enter preview</button></div>
       <div class="card stage"><div><b>Limited canary</b><p class="why">Serve memory for a bounded number of eligible turns, then stop injecting.</p></div>
         <button class="primary" id="canaryBtn">Start 20-turn canary</button></div>
-      <div class="card stage"><div><b>Activate</b><p class="why">Available only after the configured canary exposures are confirmed healthy.</p></div>
-        <button class="primary" id="activeBtn">Make active</button></div>
+      <div class="card stage"><div><b>Activate and take over native memory</b><p class="why">Freeze the verified OpenClaw memory snapshot, stop duplicate native recall and session-memory writing, and point the bridge at the AetnaMem mirror. Failure rolls back automatically.</p></div>
+        <button class="primary" id="activeBtn">Freeze and activate</button></div>
+      <div class="card stage"><div><b>Restore OpenClaw</b><p class="why">Restore the exact native files, memory slot, session-memory hook and prior plugin configuration.</p></div>
+        <button class="ghost" id="rollbackBtn">Rollback</button></div>
     </section>
 
     <section id="section-value" hidden>
@@ -229,7 +252,7 @@ function counts(){var c=(state&&state.evidence&&state.evidence.candidates)||{};r
 function modeCopy(mode){
  var all={
   off:["OFF — AETNAMEM IS NOT RUNNING","No capture and no context influence. Your host keeps running normally."],
-  capture:["OBSERVING — NOT INFLUENCING YOUR AGENT","AetnaMem is collecting quarantined candidates locally. Your current memory and provider remain in control."],
+  capture:["OBSERVING — NOT INFLUENCING YOUR AGENT","AetnaMem is mirroring native memory, computing silent recall and collecting quarantined candidates locally. Your current memory and provider remain in control."],
   preview:["PREVIEWING — NOTHING SHOWN TO THE AGENT","AetnaMem computes what it would recall after the fact. The agent prompt remains untouched."],
   canary:["CANARY — LIMITED CONTEXT EXPOSURE","AetnaMem may serve bounded memory context for the configured canary turns. Emergency off remains available."],
   active:["ACTIVE — AETNAMEM IS SERVING MEMORY","AetnaMem is serving governed context. The local evidence chain records mode changes and exposures."]
@@ -241,7 +264,13 @@ function render(){
  $("modeChip").className="chip "+mode;escText($("modeText"),mode.toUpperCase());escText($("hostChip"),state.host||"unknown host");
  escText($("subjectChip"),"subject: "+(state.subject_id||"unknown"));escText($("trialId"),short(state.trial_id));$("banner").className="banner "+mode;
  escText($("bannerTitle"),copy[0]);escText($("bannerBody"),copy[1]);$("offBtn").style.visibility=mode==="off"?"hidden":"visible";
- escText($("turns"),ev.turns);escText($("candidateCount"),total);escText($("previewCount"),ev.previews);
+ var mirror=state.mirror||{},takeover=state.takeover||{};
+ escText($("nativeSources"),mirror.source_count);escText($("mirrorRecords"),mirror.record_count);escText($("previewCount"),ev.previews);
+ escText($("mirrorBytes"),num(mirror.source_bytes).toLocaleString());escText($("mirrorAudit"),mirror.audit_verified?"PASSED":"CHECK");
+ escText($("costProjection"),String(mirror.token_projection||"not measured").replaceAll("_"," "));
+ var snap=takeover.native_snapshot||{},baseline=mirror.native_baseline||{},history=mirror.shadow_history||{};
+ escText($("mirrorSummary"),mirror.synced?"Synchronized to "+short(mirror.manifest_sha256)+". "+(takeover.active?"AetnaMem is authoritative; "+num(snap.file_count)+" native files ("+num(snap.total_bytes).toLocaleString()+" bytes) are preserved in the verified switch-time snapshot.":"Pre-shadow baseline verified for "+num(baseline.file_count)+" files; "+num(history.observed_change_versions)+" changed native states preserved. OpenClaw remains authoritative while AetnaMem shadows it."):"Mirror needs attention: "+(mirror.error||mirror.status||"not synchronized"));
+ escText($("projectionText"),mirror.token_projection==="potential_reduction"?"The native long-term block is larger than AetnaMem's bounded recall budget. Validate actual host tokens before switching.":"No token reduction should be claimed from the current native long-term block.");
  escText($("previews2"),ev.previews);escText($("exposures"),ev.exposures);escText($("shown"),ev.shown_exposures);
  escText($("withheld"),Math.max(0,num(ev.previews)-num(ev.exposures)));escText($("served"),ev.shown_exposures);
  escText($("approved"),c.approved);escText($("chainEvents"),ev.transition_chain&&ev.transition_chain.events);
@@ -249,8 +278,8 @@ function render(){
  var nd=$("notDoing");nd.replaceChildren();var items=[];
  if(!state.changes_model_context)items.push("Not injecting anything into your agent's prompt");
  if(!state.makes_extra_provider_calls)items.push("Not making extra model calls");
- items.push("Not replacing or deleting your host's native memory");
- if(mode==="capture")items.push("Not computing recall previews yet");
+ if(!takeover.active)items.push("Not replacing or disabling your host's native memory");
+ if(mode==="capture")items.push("Not exposing silent shadow recall to the model");
  items.forEach(function(t){var li=document.createElement("li");li.textContent=t;nd.appendChild(li)});
  var next={off:["Start a trial from the CLI before using this dashboard.","overview"],capture:["Review candidates, approve trusted items, then enter preview.","memory"],preview:["Observe at least one recall preview, then consider a limited canary.","preview"],canary:["Complete the bounded canary before considering activation.","switch"],active:["Inspect the evidence AetnaMem is preserving.","value"]}[mode];
  escText($("nextText"),next[0]);$("nextBtn").onclick=function(){show(next[1])};
@@ -286,12 +315,17 @@ function renderChart(){
  values.forEach(function(v,i){var x=95+i*155,h=130*v/max,y=190-h;var r=document.createElementNS("http://www.w3.org/2000/svg","rect");r.setAttribute("x",x);r.setAttribute("y",y);r.setAttribute("width","72");r.setAttribute("height",h);r.setAttribute("rx","5");r.setAttribute("class","bar");var val=document.createElementNS("http://www.w3.org/2000/svg","text");val.setAttribute("x",x+36);val.setAttribute("y",Math.max(20,y-8));val.setAttribute("text-anchor","middle");val.setAttribute("class","chartvalue");val.textContent=String(v);var lab=document.createElementNS("http://www.w3.org/2000/svg","text");lab.setAttribute("x",x+36);lab.setAttribute("y","214");lab.setAttribute("text-anchor","middle");lab.textContent=labels[i];g.append(r,val,lab)})
 }
 async function review(id,approve){try{clearError();await post("/api/review",{candidate_ids:[id],approve:approve});await reload()}catch(e){showError(e)}}
+function traceText(v){var rows=v.timeline||v.items||v.results||[];if(!rows.length)return"No matching trace evidence.";return rows.map(function(x,i){var d=x.data||x;return(i+1)+". "+(x.summary||d.event_type||d.content||x.kind||"evidence")+"\\n   "+(x.id||d.event_id||d.id||"")}).join("\\n\\n")}
+async function mirrorLookup(trace){var q=$("mirrorQuery").value.trim();if(!q)return;try{clearError();var v=await get((trace?"/api/mirror/trace?query=":"/api/mirror/search?query=")+encodeURIComponent(q));$("mirrorResults").textContent=trace?traceText(v):(v.records||[]).map(function(r,i){var p=r.openclaw_provenance||{};return(i+1)+". "+r.content+"\\n   "+(p.relative_path||r.source_type)+" · "+r.id}).join("\\n\\n")||"No matching mirrored memory."}catch(e){showError(e)}}
 async function setMode(mode,turns){
  var body={mode:mode};if(mode==="canary"||mode==="active"){var expected=state.host||"";var entered=prompt("Type the host name '"+expected+"' to confirm:");if(entered===null)return;body.confirm_host=entered}if(turns)body.turns=turns;
  try{clearError();await post("/api/mode",body);await reload();show("switch")}catch(e){showError(e)}
 }
 $("offBtn").onclick=function(){if(confirm("Stop AetnaMem influencing your agent immediately? Your host keeps running."))setMode("off")};
 $("previewBtn").onclick=function(){setMode("preview")};$("canaryBtn").onclick=function(){setMode("canary",20)};$("activeBtn").onclick=function(){setMode("active")};
+$("searchBtn").onclick=function(){mirrorLookup(false)};$("traceBtn").onclick=function(){mirrorLookup(true)};
+$("mirrorQuery").addEventListener("keydown",function(e){if(e.key==="Enter")mirrorLookup(false)});
+$("rollbackBtn").onclick=async function(){if(!confirm("Restore native OpenClaw memory and turn AetnaMem influence off?"))return;try{clearError();await post("/api/rollback",{});await reload();show("overview")}catch(e){showError(e)}};
 async function reload(){var out=await Promise.all([get("/api/status"),get("/api/candidates")]);state=out[0];candidates=out[1].candidates||[];render()}
 async function init(){try{csrf=(await get("/api/session")).csrf_token;await reload()}catch(e){showError(e)}}
 init()

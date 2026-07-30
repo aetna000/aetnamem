@@ -1,6 +1,6 @@
 # AetnaMem Safe Switch — CLI and dashboard UX specification
 
-Current implemented subset: v0.6.1.1a1 experimental · Status: design contract with future
+Current implemented subset: v0.6.1.1a2 experimental · Status: design contract with future
 comparison/report sections.
 
 The [Safe Switch guide](safe-switch.md) and
@@ -93,15 +93,16 @@ aetnamem trial canary --turns N                 # limited fresh-session exposure
 aetnamem trial activate                         # full switch, guarded ceremony
 aetnamem trial rollback                         # turn off and restore host snapshot
 aetnamem trial off                              # emergency: state-file kill, no restart needed
-aetnamem trial dashboard
+aetnamem dashboard
+aetnamem dashboard daemon start --port 8766
 ```
 
 Paid paired comparison, exported readiness reports, and receipt-backed purge
-are later milestones; they are not accepted commands in 0.6.1.1a1.
+are later milestones; they are not accepted commands in 0.6.1.1a2.
 
 ### Output conventions
 
-- The 0.6.1.1a1 CLI prints a human-readable `State`/`Next` view by default.
+- The 0.6.1.1a2 CLI prints a human-readable `State`/`Next` view by default.
   Automation receives the same underlying result with `--json`.
 - Respect `NO_COLOR`. Never encode meaning in color alone — state words are
   always printed.
