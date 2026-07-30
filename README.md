@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.6.1.1a3 experimental" src="https://img.shields.io/badge/version-0.6.1.1a3--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.6.1.1a4 experimental" src="https://img.shields.io/badge/version-0.6.1.1a4--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,10 +28,11 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.6.1.1a3** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.6.1.1a4** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
-recall, and activate only after the mirror and rollback evidence verify.
+recall internally, and activate only after the mirror and rollback evidence
+verify.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
@@ -51,23 +52,21 @@ Your current OpenClaw memory remains authoritative during evaluation:
    isolated AetnaMem mirror with file hashes and line provenance.
 3. **Shadow real prompts.** AetnaMem computes bounded recall without injecting
    it or making an extra model call.
-4. **Inspect the benefit.** Search ordinary words, follow a trace, verify the
-   audit chain, and review context-budget projections in the dashboard.
-5. **Run a bounded canary.** Only the number of turns you authorize receive
-   AetnaMem context.
-6. **Activate with a verified freeze.** AetnaMem takes a second complete
+4. **Inspect the copy.** Search ordinary words, follow a trace, verify the
+   audit chain, and review the exact source manifest in the dashboard.
+5. **Activate with a verified freeze.** AetnaMem takes a second complete
    switch-time snapshot, verifies every byte digest, disables duplicate native
    memory retrieval and session-memory writing, and becomes the bounded
    supplemental-memory path without changing the agent-facing
    `memory_search` / `memory_get` names.
-7. **Roll back exactly.** Restore native files, memory slot, session-memory
+6. **Roll back exactly.** Restore native files, memory slot, session-memory
    hook and the prior plugin configuration without deleting trial evidence.
 
 Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.6.1.1a3
+python -m pip install --pre aetnamem==0.6.1.1a4
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -99,17 +98,17 @@ aetnamem dashboard daemon stop
 aetnamem dashboard daemon remove  # service record only; memory is preserved
 ```
 
-Then inspect shadow recall and allow a bounded canary:
+There are only two customer-visible states:
 
 ```bash
-aetnamem trial preview
-aetnamem trial canary --turns 1
+# OpenClaw memory is active while AetnaMem mirrors it.
+aetnamem trial status
 
-# After evaluating your own result:
+# After inspecting and searching the verified mirror:
 aetnamem trial activate
 aetnamem openclaw memory status
 
-# Restore OpenClaw's exact native memory state at any time:
+# Make the frozen OpenClaw memory authoritative again:
 aetnamem trial rollback
 ```
 
@@ -138,13 +137,13 @@ configured corpus is silently dropped.
 
 The [77-second real OpenClaw demonstration](./docs/assets/demos/aetnamem-openclaw-safe-switch.mp4)
 uses DeepSeek on an isolated agent. Its baseline answered “I do not know yet”;
-the one-turn AetnaMem canary answered “Kyoto” and used 12.9% fewer model tokens
-in that run. This is reproducible evidence for one demonstration task—not a
-promise that every workload improves by 12.9%.
+the AetnaMem arm answered “Kyoto” and used 12.9% fewer model tokens in that
+run. This is reproducible evidence for one demonstration task—not a promise
+that every workload improves by 12.9%.
 
 > **The product promise is the safe evaluation path:** see what AetnaMem
-> captures, inspect what it would show, try a limited canary, and switch only
-> when your own evidence supports the decision.
+> mirrors, search it, inspect the evidence, and switch only when you are
+> satisfied. Restore OpenClaw whenever you want.
 
 ## Give your agent governed-memory skills
 
@@ -183,7 +182,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.6.1.1a3
+python -m pip install --pre aetnamem==0.6.1.1a4
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -195,42 +194,33 @@ installed; it never guesses. The beginner flow has no `--subject`: candidate
 memory is scoped internally as `local-user`. Applications with real tenant
 identity should continue using the explicit Python/MCP subject boundary.
 
-The trial moves through visible modes:
+The dashboard and CLI expose two states:
 
-| Mode | What AetnaMem does | Does it change the agent's context? |
+| State | What happens | Does AetnaMem change agent context? |
 |---|---|---|
-| `capture` | Mirrors native sources, captures new candidates and computes silent shadow recall | **No** |
-| `preview` | Shows native-mirror and approved-candidate recall without exposure | **No** |
-| `canary` | Supplies approved context for a fixed number of turns | **Yes, limited** |
-| `active` | Freezes native memory and supplies bounded recall from the AetnaMem mirror | **Yes** |
-| `off` | Stops capture and injection through the local control file | **No** |
+| **OpenClaw active** | AetnaMem copies, indexes, searches, and audits the native memory while OpenClaw remains authoritative | **No** |
+| **AetnaMem active** | The native memory is frozen and AetnaMem supplies bounded recall through compatible `memory_search` and `memory_get` tools | **Yes** |
 
-Important: capture stores normalized candidate facts and a source digest, not
-the raw user message. It does not expose memory tools to the agent. A missing,
-corrupt, or tampered trial state fails closed to `off`.
+Internal evidence still distinguishes observations, retrieval decisions, and
+exposures, but those are not adoption modes. A missing, corrupt, or tampered
+state fails closed without injecting AetnaMem context.
 
 ```bash
 aetnamem trial status
-aetnamem trial candidates
-aetnamem trial approve tc_...
-aetnamem trial preview
-aetnamem trial canary --turns 10  # asks you to type the detected host name
-aetnamem trial off       # immediate stop; host keeps running
-aetnamem trial rollback  # stop, then restore the saved host plugin config
+aetnamem trial activate  # asks you to type the detected host name
+aetnamem trial rollback  # restore native memory and host configuration
 ```
 
-After takeover, `off` disables the AetnaMem bridge immediately while leaving
-the native freeze untouched; run `rollback` to restore usable native memory.
 Rollback restores the host configuration, native memory slot, session-memory
-hook, `MEMORY.md` and `memory/`. Neither command deletes trial evidence,
-reverses past agent outputs, or deletes provider logs.
+hook, `MEMORY.md` and `memory/`. It does not delete trial evidence, reverse
+past agent outputs, or delete provider logs.
 
-The dashboard labels what is measured. Candidate counts, preview contents,
-context size, exposure counts, config digests, and chain verification are
-local evidence. They do **not** prove that answers improved. The checked-in
-OpenClaw benchmark is reference evidence, not a measurement of your
-installation. A paid paired-replay comparison remains a separate explicit
-operation; AetnaMem never spends provider money merely because it was
+The dashboard is functional rather than experimental: it shows the active
+memory provider, the exact mirrored file manifest and SHA-256 digests, memory
+search results with source provenance, verification checks, and one
+activate/restore control. It does **not** claim that local answers improved.
+The checked-in OpenClaw benchmark is reference evidence, not a measurement of
+your installation. AetnaMem never spends provider money merely because it was
 installed.
 
 Read the [Safe Switch guide](./docs/safe-switch.md) for host-specific details
@@ -810,7 +800,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.6.1.1a3
+python -m pip install --pre aetnamem==0.6.1.1a4
 aetnamem --version
 aetnamem openclaw install
 
@@ -818,7 +808,7 @@ aetnamem openclaw install
 aetnamem openclaw memory status
 aetnamem dashboard
 
-# After shadow review and a bounded canary:
+# After inspecting and searching the verified mirror:
 aetnamem trial activate
 ```
 
@@ -1012,6 +1002,9 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
+- **[0.6.1.1a4 experimental notes](./docs/releases/v0.6.1.1a4.md):**
+  two-state OpenClaw memory dashboard with exact source inspection, search,
+  direct activation, and verified restore.
 - **[0.6.1.1a3 experimental notes](./docs/releases/v0.6.1.1a3.md):**
   native-memory shadow, evidence review, verified takeover and rollback;
 - **[0.6.1 release notes](./docs/releases/v0.6.1.md):** Safe Switch package

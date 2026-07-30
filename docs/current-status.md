@@ -7,21 +7,21 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-30**:
+Status as of **2026-07-31**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 19-tool MCP | Released core plus experimental compatibility additions | The v0.6.1 surface remains supported; `memory_get_record` and `memory_get_source` are additive in v0.6.1.1a3 |
-| Verified OpenClaw installer | Experimental preview (`v0.6.1.1a3`) | Engine-owned bridge install/upgrade, absolute executable binding, native-memory shadow start, gateway restart/RPC probe, retained-config verification, and rollback on failure |
-| Safe Switch control plane | Beta, opt-in (`v0.6.1`) | Separate candidate/evidence DB; digest-bound modes; approval, preview, bounded canary, off and rollback; preview/capture do not change context |
+| Python `Memory`, CLI, and 19-tool MCP | Released core plus experimental compatibility additions | The v0.6.1 surface remains supported; `memory_get_record` and `memory_get_source` are additive in v0.6.1.1a4 |
+| Verified OpenClaw installer | Experimental preview (`v0.6.1.1a4`) | Engine-owned bridge install/upgrade, absolute executable binding, native-memory shadow start, gateway restart/RPC probe, retained-config verification, and rollback on failure |
+| Safe Switch control plane | Experimental preview (`v0.6.1.1a4`) | Customer surface has two states: OpenClaw active while AetnaMem mirrors without changing context, or AetnaMem active; rollback restores OpenClaw. Detailed retrieval/exposure events remain internal audit evidence rather than customer modes |
 | Safe Switch OpenClaw adapter | Experimental preview (`npm v0.4.1-experimental.3`) | Private host protocol, startup MCP handshake, silent shadow recall, no agent memory tools during trial, verified native-memory takeover and rollback |
-| OpenClaw native-memory mirror | Experimental preview (`v0.6.1.1a3`) | Verified byte-for-byte pre-shadow baseline, observed native-state versions, hash-bound Markdown import with source-file and line provenance, isolated SQLite mirror, status/search/trace |
-| OpenClaw memory takeover | Experimental preview (`v0.6.1.1a3`) | Final mirror verification, complete switch-time snapshot, standard `memory_search` / `memory_get` compatibility, audited exact reads, unsupported-capability gate, runtime tool/hook verification, and hash-verified rollback |
+| OpenClaw native-memory mirror | Experimental preview (`v0.6.1.1a4`) | Verified byte-for-byte pre-shadow baseline, observed native-state versions, hash-bound Markdown import with source-file and line provenance, isolated SQLite mirror, status/search/trace |
+| OpenClaw memory takeover | Experimental preview (`v0.6.1.1a4`) | Final mirror verification, complete switch-time snapshot, standard `memory_search` / `memory_get` compatibility, audited exact reads, unsupported-capability gate, runtime tool/hook verification, and hash-verified rollback |
 | Safe Switch Hermes adapter | Beta (`v0.6.1`) | General lifecycle-hook plugin that coexists with the selected Hermes memory provider; restart required after installation |
-| Safe Switch dashboard | Experimental preview (`v0.6.1.1a3`) | Functional visual trial UI with mirror status/search/trace and takeover controls, backed by a loopback-only API, one-time login, HttpOnly cookie, CSRF and origin controls |
-| Dashboard daemon | Experimental preview (`v0.6.1.1a3`) | Detached local start/stop/restart/status/remove lifecycle with PID validation; removal preserves memory and evidence |
+| Safe Switch dashboard | Experimental preview (`v0.6.1.1a4`) | One functional page: active provider, exact mirrored source manifest, ordinary-language memory search, verification checks, and activate/restore control. No preview, canary, emergency, candidate queue, or mock comparison UI. Loopback-only API, one-time login, HttpOnly cookie, CSRF and origin controls remain |
+| Dashboard daemon | Experimental preview (`v0.6.1.1a4`) | Detached local start/stop/restart/status/remove lifecycle with PID validation; removal preserves memory and evidence |
 | Agent memory skills | Beta (`v0.6.1`) | Provider-neutral governed-memory, audit and trial workflows with deterministic CLI wrappers; skills are procedural guidance, while the engine and authenticated host remain the evidence boundary |
-| OpenClaw Safe Switch demonstration | Completed single-task integration check | Actual OpenClaw `2026.7.1-2` and DeepSeek baseline/canary, activation and verified rollback passed; the 12.9% token reduction is scoped to that one task |
+| OpenClaw Safe Switch demonstration | Completed single-task integration check | Actual OpenClaw `2026.7.1-2` and DeepSeek baseline/AetnaMem comparison, activation and verified rollback passed; the 12.9% token reduction is scoped to that one task |
 | Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
 | MCP media tools | Public (`v0.5.2`) | `memory_observe` and `memory_forget_artifact` add governed multimodal observations |
 | Four-memory runtime | Public, opt-in (`v0.5.2`; introduced in `v0.5.0`) | Working, semantic, episodic, and procedural orchestration |
@@ -79,7 +79,7 @@ for their stated scopes. They are not CML causal results.
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
 | Memory Impact experiment guide | [`memory-impact.md`](memory-impact.md) |
-| Current experimental preview notes | [`releases/v0.6.1.1a3.md`](releases/v0.6.1.1a3.md) |
+| Current experimental preview notes | [`releases/v0.6.1.1a4.md`](releases/v0.6.1.1a4.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

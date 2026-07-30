@@ -72,12 +72,6 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/status":
             self._json(HTTPStatus.OK, self.server.manager.status())
             return
-        if parsed.path == "/api/candidates":
-            self._json(
-                HTTPStatus.OK,
-                {"candidates": self.server.manager.candidates(include_reviewed=True)},
-            )
-            return
         if parsed.path == "/api/mirror/search":
             from aetnamem.trial.openclaw_native import search_mirror
 
@@ -116,43 +110,20 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             path = urlparse(self.path).path
-            if path == "/api/review":
-                ids = body.get("candidate_ids")
-                if not isinstance(ids, list) or not all(
-                    isinstance(item, str) for item in ids
-                ):
-                    raise ValueError("candidate_ids must be a list of strings")
-                result = self.server.manager.review(
-                    ids, approve=bool(body.get("approve"))
-                )
-                self._json(HTTPStatus.OK, {"candidates": result})
-                return
             if path == "/api/mode":
                 mode = TrialMode(str(body["mode"]))
-                if mode in {TrialMode.CANARY, TrialMode.ACTIVE}:
-                    expected_host = self.server.manager.state().host
-                    if not secrets.compare_digest(
-                        str(body.get("confirm_host") or ""), expected_host
-                    ):
-                        raise ValueError(
-                            f"type the host name `{expected_host}` to confirm"
-                        )
-                if mode is TrialMode.OFF:
-                    from aetnamem.trial.openclaw_native import (
-                        emergency_off_takeover,
+                if mode is not TrialMode.ACTIVE:
+                    raise ValueError(
+                        "the dashboard supports only Activate AetnaMem or Restore OpenClaw"
                     )
-
-                    emergency_off_takeover(self.server.manager.state())
-                    state = self.server.manager.transition(
-                        mode, actor="dashboard-emergency-off"
+                expected_host = self.server.manager.state().host
+                if not secrets.compare_digest(
+                    str(body.get("confirm_host") or ""), expected_host
+                ):
+                    raise ValueError(
+                        f"type the host name `{expected_host}` to confirm"
                     )
-                elif mode is TrialMode.CANARY:
-                    state = self.server.manager.transition(
-                        mode,
-                        actor="dashboard-reviewer",
-                        canary_turns=int(body.get("turns", 0)),
-                    )
-                elif mode is TrialMode.ACTIVE:
+                if mode is TrialMode.ACTIVE:
                     current = self.server.manager.state()
                     if current.host == "openclaw":
                         from aetnamem.trial.openclaw_native import (
@@ -183,12 +154,6 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                     value["takeover"] = takeover
                     self._json(HTTPStatus.OK, value)
                     return
-                else:
-                    state = self.server.manager.transition(
-                        mode, actor="dashboard-reviewer"
-                    )
-                self._json(HTTPStatus.OK, state.public_status())
-                return
             if path == "/api/mirror/sync":
                 from aetnamem.trial.openclaw_native import sync_mirror
 

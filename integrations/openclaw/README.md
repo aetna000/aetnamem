@@ -3,7 +3,7 @@
 > **AetnaMem remembers whether remembering actually helped.**
 
 This README describes experimental npm `0.4.1-experimental.3`, compatible with
-Python prerelease `v0.6.1.1a3`.
+Python prerelease `v0.6.1.1a4`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -43,9 +43,10 @@ Recall failures/timeouts never block a turn — the agent just proceeds
 without injection.
 
 With `safeSwitch.enabled`, the plugin instead uses the private trial protocol.
-Capture and preview never return model context; canary and active return only
-human-approved candidates. Agent-callable AetnaMem tools are not registered in
-this mode. A missing or tampered state fails closed to no injection.
+While OpenClaw is active, internal shadow recall never returns model context.
+After the verified switch, AetnaMem returns bounded governed context.
+Agent-callable AetnaMem tools are not registered in the side-by-side state. A
+missing or tampered state fails closed to no injection.
 
 The two media tools introduced in npm `0.3.1` remain available in the normal
 integration. They do not inspect OpenClaw media
@@ -60,7 +61,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.6.1.1a3
+python -m pip install --pre aetnamem==0.6.1.1a4
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.

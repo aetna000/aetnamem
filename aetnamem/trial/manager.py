@@ -21,12 +21,15 @@ DEFAULT_SUBJECT = "local-user"
 
 _ALLOWED_TRANSITIONS: dict[TrialMode, frozenset[TrialMode]] = {
     TrialMode.OFF: frozenset({TrialMode.CAPTURE}),
-    TrialMode.CAPTURE: frozenset({TrialMode.PREVIEW, TrialMode.OFF}),
-    TrialMode.PREVIEW: frozenset({TrialMode.CANARY, TrialMode.OFF}),
+    # Customer-facing adoption is deliberately two-state: OpenClaw remains
+    # authoritative while AetnaMem mirrors, or AetnaMem is active. Legacy
+    # preview/canary states stay readable so existing trial files still load.
+    TrialMode.CAPTURE: frozenset({TrialMode.ACTIVE, TrialMode.OFF}),
+    TrialMode.PREVIEW: frozenset({TrialMode.ACTIVE, TrialMode.OFF}),
     TrialMode.CANARY: frozenset(
         {TrialMode.PREVIEW, TrialMode.ACTIVE, TrialMode.OFF}
     ),
-    TrialMode.ACTIVE: frozenset({TrialMode.PREVIEW, TrialMode.OFF}),
+    TrialMode.ACTIVE: frozenset({TrialMode.OFF}),
 }
 
 
@@ -413,23 +416,7 @@ class TrialManager:
             reasons.append("mirror native memory or approve at least one candidate")
         ready_for_preview = chain_valid and (approved > 0 or mirror_ready)
         ready_for_canary = ready_for_preview and int(evidence["previews"]) > 0
-        if ready_for_preview and int(evidence["previews"]) < 1:
-            reasons.append("observe at least one successful preview")
-        shown_canary = int(evidence.get("shown_canary_exposures", 0))
-        ready_for_active = (
-            ready_for_canary
-            and state.canary_turns > 0
-            and shown_canary >= state.canary_turns
-        )
-        if ready_for_canary and state.canary_turns < 1:
-            reasons.append("run a limited canary before active mode")
-        elif (
-            state.canary_turns > 0
-            and shown_canary < state.canary_turns
-        ):
-            reasons.append(
-                f"complete {state.canary_turns - shown_canary} more canary exposure(s)"
-            )
+        ready_for_active = ready_for_preview
         return {
             "ready_for_preview": ready_for_preview,
             "ready_for_canary": ready_for_canary,

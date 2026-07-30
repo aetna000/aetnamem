@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.6.1.1a3**
+Status: **experimental preview in AetnaMem 0.6.1.1a4**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.6.1.1a3
+python -m pip install --pre aetnamem==0.6.1.1a4
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -74,20 +74,25 @@ The dashboard binds only to `127.0.0.1`. It uses a one-time login URL, an
 HttpOnly session cookie, CSRF and Origin checks. `remove` deletes the daemon
 service record, not memory or trial evidence.
 
-## Canary, activate and rollback
+## Two states: OpenClaw active or AetnaMem active
 
 ```bash
-# Optional: let AetnaMem influence only a bounded number of turns.
-aetnamem trial preview
-aetnamem trial canary --turns 10
+# OpenClaw remains authoritative while AetnaMem mirrors it.
+aetnamem trial status
 
-# Full OpenClaw memory takeover. Requires typing `openclaw`.
+# Switch after inspecting the dashboard or CLI search. Requires typing `openclaw`.
 aetnamem trial activate
 aetnamem openclaw memory status
 
-# Restore the pre-activation OpenClaw memory state.
+# Make the frozen native memory authoritative again.
 aetnamem trial rollback
 ```
+
+There is no customer-facing preview, canary, or emergency mode. Before
+activation, internal shadow retrieval is recorded but never reaches the model.
+After activation, AetnaMem is the memory provider. Rollback is the single
+supported way back because it restores a usable, verified OpenClaw state
+instead of merely turning one bridge off.
 
 Activation is a guarded cutover:
 
@@ -136,10 +141,6 @@ pre-shadow baseline and observed shadow versions remain as evidence. OpenClaw's
 derived search SQLite is left host-controlled and is not deleted. Rollback
 does not undo past agent responses or provider logs.
 
-`aetnamem trial off` is an emergency bridge stop. After an active takeover it
-leaves the native freeze untouched so two memory systems cannot silently
-restart together; run `rollback` to restore usable native memory.
-
 ## What the evidence means
 
 The mirror can prove:
@@ -149,7 +150,7 @@ The mirror can prove:
 - which native files and line ranges produced each searchable memory;
 - whether the mirror database and hash-chained audit log verify;
 - which memories shadow recall would select;
-- which bounded context was actually exposed during canary/active modes;
+- which bounded context was exposed after AetnaMem became active;
 - whether cutover and rollback configuration checks passed.
 
 The dashboard's token figure is a **context-budget projection**. It compares
@@ -181,6 +182,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-native-frozen/
 ```
 
-Hermes keeps the earlier coexistence behavior: it can shadow, preview, canary
-and activate AetnaMem context, but 0.6.1.1a3 does not replace the selected
-Hermes memory provider.
+Hermes keeps the earlier coexistence integration, but 0.6.1.1a4 does not
+replace the selected Hermes memory provider. The two-state native-memory
+takeover described on this page is currently OpenClaw-specific.

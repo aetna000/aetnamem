@@ -26,7 +26,7 @@ def _manager(tmp_path: Path) -> TrialManager:
     )
 
 
-def test_capture_preview_canary_and_active_are_separate_gates(
+def test_mirror_then_active_is_the_customer_transition(
     tmp_path: Path,
 ) -> None:
     manager = _manager(tmp_path)
@@ -39,30 +39,16 @@ def test_capture_preview_canary_and_active_are_separate_gates(
     assert captured["captured"] == 1
     assert captured["raw_message_stored"] is False
 
-    # Capture mode can neither preview nor inject.
+    # Side-by-side mode computes recall internally but cannot inject it.
     assert manager.prepare("Which editor?")["inject"] is False
     candidate_id = captured["candidate_ids"][0]
     manager.review([candidate_id], approve=True)
-    manager.transition(TrialMode.PREVIEW)
-
-    preview = manager.prepare("Which editor do I prefer?")
-    assert preview["inject"] is False
-    assert "Neovim" in preview["preview_context"]
-    assert preview["context"] == ""
-
-    manager.transition(TrialMode.CANARY, canary_turns=1)
-    canary = manager.prepare("Which editor do I prefer?")
-    assert canary["inject"] is True
-    assert canary["context"] == canary["preview_context"]
-    assert manager.confirm_exposure(canary["exposure_id"]) is True
-
-    capped = manager.prepare("Which editor do I prefer?")
-    assert capped["inject"] is False
-    assert capped["reason"] == "canary exposure limit reached"
 
     active = manager.transition(TrialMode.ACTIVE)
     assert active.mode is TrialMode.ACTIVE
-    assert manager.prepare("Which editor do I prefer?")["inject"] is True
+    prepared = manager.prepare("Which editor do I prefer?")
+    assert prepared["inject"] is True
+    assert "Neovim" in prepared["context"]
 
 
 def test_capture_rejects_non_user_and_does_not_store_raw_prompt(tmp_path: Path) -> None:
@@ -270,8 +256,11 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
             },
             method="POST",
         )
-        result = json.loads(opener.open(protected).read())
-        assert result["mode"] == "off"
+        with pytest.raises(HTTPError) as error:
+            opener.open(protected)
+        assert error.value.code == 409
+        result = json.loads(error.value.read())
+        assert "Activate AetnaMem or Restore OpenClaw" in result["error"]
     finally:
         server.shutdown()
         server.server_close()
@@ -283,12 +272,17 @@ def test_dashboard_ships_the_visual_trial_ui_not_the_json_fallback() -> None:
 
     html = dashboard_html()
 
-    assert "Observed trial funnel" in html
-    assert 'data-section="memory"' in html
-    assert 'id="funnelBars"' in html
-    assert 'id="memoryList"' in html
+    assert "Exactly what is mirrored" in html
+    assert 'id="sources"' in html
+    assert 'id="query"' in html
+    assert "Activate AetnaMem" in html
+    assert "Restore OpenClaw" in html
     assert 'get("/api/status")' in html
     assert 'JSON.stringify(v,null,2)' not in html
+    assert "Canary" not in html
+    assert "Emergency" not in html
+    assert "Recall Preview" not in html
+    assert 'id="funnelBars"' not in html
     # Mockup-only comparison figures must never be presented as live evidence.
     assert "112,480" not in html
     assert "35/42" not in html
@@ -321,7 +315,7 @@ def test_trial_rollback_defaults_to_human_output_and_keeps_json_opt_in(
     assert "AetnaMem rollback complete" in human
     assert "Host configuration   restored" in human
     assert "Verification         PASSED" in human
-    assert "Safe Switch trial    off" in human
+    assert "Memory provider      OpenClaw" in human
     assert "AetnaMem plugin      enabled (restored pre-trial state)" in human
     assert "AetnaMem itself is still enabled" in human
     assert not human.lstrip().startswith("{")
