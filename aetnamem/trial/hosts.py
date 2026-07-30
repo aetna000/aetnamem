@@ -12,9 +12,18 @@ from aetnamem.trial.models import TrialState
 from aetnamem.trial.store import TrialStore
 
 
-def configure_host(state: TrialState, state_path: str | Path) -> dict[str, Any]:
+def configure_host(
+    state: TrialState,
+    state_path: str | Path,
+    *,
+    aetnamem_executable: str | None = None,
+) -> dict[str, Any]:
     if state.host == "openclaw":
-        return _configure_openclaw(state, state_path)
+        return _configure_openclaw(
+            state,
+            state_path,
+            aetnamem_executable=aetnamem_executable,
+        )
     if state.host == "hermes":
         return _configure_hermes(state, state_path)
     raise ValueError(f"unsupported trial host: {state.host}")
@@ -37,7 +46,10 @@ def restore_host(state: TrialState) -> dict[str, Any]:
 
 
 def _configure_openclaw(
-    state: TrialState, state_path: str | Path
+    state: TrialState,
+    state_path: str | Path,
+    *,
+    aetnamem_executable: str | None = None,
 ) -> dict[str, Any]:
     executable = shutil.which("openclaw")
     if executable is None:
@@ -45,7 +57,7 @@ def _configure_openclaw(
             "OpenClaw was not found on PATH. Install/start it, or use "
             "`aetnamem trial start --host openclaw --no-configure` only for testing."
         )
-    aetnamem_executable = shutil.which("aetnamem")
+    aetnamem_executable = aetnamem_executable or shutil.which("aetnamem")
     if aetnamem_executable is None:
         raise ValueError("the aetnamem executable is not on PATH")
     plugin_info = _run_json(
@@ -58,11 +70,12 @@ def _configure_openclaw(
         ]
     )
     plugin_version = _find_plugin_version(plugin_info)
-    if plugin_version is None or _version_tuple(plugin_version) < (0, 4, 0):
+    if plugin_version is None or _version_tuple(plugin_version) < (0, 4, 1):
         raise ValueError(
-            "Safe Switch requires openclaw-memory-aetnamem 0.4.0 or newer; "
-            "install it with `openclaw plugins install "
-            "npm:openclaw-memory-aetnamem@0.4.0 --pin`"
+            "Safe Switch requires openclaw-memory-aetnamem "
+            "0.4.1-experimental.1 or newer. "
+            "Run `aetnamem openclaw install`; it installs and verifies the "
+            "matching bridge before starting the trial."
         )
     prior = _run_optional_json(
         [executable, "config", "get", "plugins.entries.memory-aetnamem", "--json"]
@@ -163,11 +176,24 @@ def _restore_openclaw(metadata: dict[str, Any]) -> dict[str, Any]:
         expected_sha = str(metadata["entry_sha256"])
         if sha256_hex(canonical_json(restored)) != expected_sha:
             raise ValueError("OpenClaw rollback verification failed")
+        entry = restored if isinstance(restored, dict) else {}
     else:
         _run([executable, "config", "unset", key])
         if _run_optional_json([executable, "config", "get", key, "--json"]) is not None:
             raise ValueError("OpenClaw rollback verification failed")
-    return {"host": "openclaw", "restored": True, "verified": True}
+        entry = {}
+    config = entry.get("config")
+    config = config if isinstance(config, dict) else {}
+    safe_switch = config.get("safeSwitch")
+    safe_switch = safe_switch if isinstance(safe_switch, dict) else {}
+    return {
+        "host": "openclaw",
+        "restored": True,
+        "verified": True,
+        "plugin_present": bool(metadata.get("present")),
+        "plugin_enabled": bool(entry.get("enabled")),
+        "safe_switch_enabled": bool(safe_switch.get("enabled")),
+    }
 
 
 def _configure_hermes(
@@ -257,7 +283,14 @@ def _restore_hermes(metadata: dict[str, Any]) -> dict[str, Any]:
         if not backup_dir.is_dir():
             raise ValueError("Hermes plugin backup is missing")
         shutil.copytree(backup_dir, plugin_dir)
-    return {"host": "hermes", "restored": True, "verified": True}
+    return {
+        "host": "hermes",
+        "restored": True,
+        "verified": True,
+        "plugin_present": bool(metadata.get("present")),
+        "plugin_enabled": bool(metadata.get("present")),
+        "safe_switch_enabled": False,
+    }
 
 
 def _run(arguments: list[str]) -> subprocess.CompletedProcess[str]:

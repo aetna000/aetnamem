@@ -1,8 +1,8 @@
 {
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
-  "description": "Auditable agent memory — auto-recall and auto-capture backed by the aetnamem engine: quarantined untrusted content, verifiable deletion with receipts, hash-chained audit log.",
-  "version": "0.4.0",
+  "description": "OpenClaw bridge for the separately installed AetnaMem Python engine. Requires `pip install aetnamem` first. Adds auditable auto-recall and auto-capture.",
+  "version": "0.4.1-experimental.1",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true

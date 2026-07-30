@@ -7,15 +7,16 @@ describe historical releases, specifications describe contracts or proposals,
 and [`plan.md`](../plan.md) describes future research. None of those documents
 should be read as proof that every named capability is generally available.
 
-Status as of **2026-07-29**:
+Status as of **2026-07-30**:
 
 | Area | Status | What that means |
 |---|---|---|
-| Python `Memory`, CLI, and 17-tool MCP | Released core (`v0.6.1`) | Existing compatibility surface remains supported; Safe Switch and Memory Impact are additive |
+| Python `Memory`, CLI, and 17-tool MCP | Released core (`v0.6.1`) | Existing compatibility surface remains supported; experimental installer work is additive |
+| Verified OpenClaw installer | Experimental preview (`v0.6.1.1a1`) | Engine-owned bridge install/upgrade, absolute executable binding, capture-only start, gateway restart/RPC probe, retained-config verification, and rollback on failure |
 | Safe Switch control plane | Beta, opt-in (`v0.6.1`) | Separate candidate/evidence DB; digest-bound modes; approval, preview, bounded canary, off and rollback; preview/capture do not change context |
-| Safe Switch OpenClaw adapter | Beta (`npm v0.4.0`) | Private host protocol, no agent memory tools during trial, verified plugin-config snapshot/restore |
+| Safe Switch OpenClaw adapter | Experimental preview (`npm v0.4.1-experimental.1`) | Private host protocol, startup MCP handshake, no agent memory tools during trial, verified plugin-config snapshot/restore |
 | Safe Switch Hermes adapter | Beta (`v0.6.1`) | General lifecycle-hook plugin that coexists with the selected Hermes memory provider; restart required after installation |
-| Safe Switch dashboard API | Beta (`v0.6.1`) | Loopback-only service, one-time login, HttpOnly cookie, CSRF and origin controls; the polished visual frontend remains future beta work |
+| Safe Switch dashboard | Experimental preview (`v0.6.1.1a1`) | Functional visual trial UI backed by a loopback-only API, one-time login, HttpOnly cookie, CSRF, origin controls and live trial evidence |
 | Agent memory skills | Beta (`v0.6.1`) | Provider-neutral governed-memory, audit and trial workflows with deterministic CLI wrappers; skills are procedural guidance, while the engine and authenticated host remain the evidence boundary |
 | OpenClaw Safe Switch demonstration | Completed single-task integration check | Actual OpenClaw `2026.7.1-2` and DeepSeek baseline/canary, activation and verified rollback passed; the 12.9% token reduction is scoped to that one task |
 | Multimodal observation envelopes | Public (`v0.5.2`) | Typed text observations, indexed artifact provenance, quarantine, lineage-closing promotion, search/trace surfacing, and exact-artifact deletion; no media bytes or media embeddings; `verified_by_aetnamem` is reserved until an engine-owned byte-hashing path exists |
@@ -75,7 +76,7 @@ for their stated scopes. They are not CML causal results.
 | CML architecture and falsifiable research plan | [`plan.md`](../plan.md) |
 | Four-memory user and configuration guide | [`four-memory-runtime.md`](four-memory-runtime.md) |
 | Memory Impact experiment guide | [`memory-impact.md`](memory-impact.md) |
-| Current release notes | [`releases/v0.6.1.md`](releases/v0.6.1.md) |
+| Current experimental preview notes | [`releases/v0.6.1.1a1.md`](releases/v0.6.1.1a1.md) |
 | Public historical release notes | [`releases/v0.4.1.md`](releases/v0.4.1.md) and earlier |
 | Remaining engineering work | [`TODO.md`](../TODO.md) |
 | Draft application proposals | Documents explicitly marked `draft / proposal` |

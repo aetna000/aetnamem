@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
@@ -15,8 +16,20 @@ DEFAULT_MCP_DB = os.environ.get(
 DEFAULT_RUNTIME_CONFIG = str(Path.home() / ".aetnamem" / "runtime.json")
 
 
+def _installed_version() -> str:
+    try:
+        return version("aetnamem")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="aetnamem")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_installed_version()}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     setup_parser = subparsers.add_parser(
@@ -32,6 +45,34 @@ def main() -> None:
     setup_parser.add_argument("--skill-path", action="append", default=[])
     setup_parser.add_argument(
         "--yes", action="store_true", help="Accept defaults without interactive prompts"
+    )
+
+    openclaw_parser = subparsers.add_parser(
+        "openclaw",
+        help="Install and verify the matching OpenClaw bridge",
+    )
+    openclaw_commands = openclaw_parser.add_subparsers(
+        dest="openclaw_command",
+        required=True,
+    )
+    openclaw_install = openclaw_commands.add_parser(
+        "install",
+        help="Install the bridge and start a capture-only Safe Switch trial",
+    )
+    openclaw_install.add_argument(
+        "--state",
+        default=None,
+        help="Advanced: override the local trial control-file path",
+    )
+    openclaw_install.add_argument(
+        "--trial-root",
+        default=None,
+        help="Advanced: override the private trial evidence directory",
+    )
+    openclaw_install.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON",
     )
 
     remember_parser = subparsers.add_parser(
@@ -570,6 +611,9 @@ def main() -> None:
         action="store_true",
         help="Testing only: create trial state without installing the host hook",
     )
+    trial_start.add_argument(
+        "--json", action="store_true", help="Print machine-readable JSON"
+    )
 
     for name, help_text in (
         ("status", "Show mode, safety boundary, evidence, and readiness"),
@@ -583,6 +627,10 @@ def main() -> None:
     ):
         command_parser = trial_commands.add_parser(name, help=help_text)
         command_parser.add_argument("--state", default=None)
+        if name not in {"mcp", "dashboard"}:
+            command_parser.add_argument(
+                "--json", action="store_true", help="Print machine-readable JSON"
+            )
         if name == "preview":
             command_parser.add_argument(
                 "--query",
@@ -603,6 +651,9 @@ def main() -> None:
     trial_canary.add_argument("--turns", type=int, required=True)
     trial_canary.add_argument("--state", default=None)
     trial_canary.add_argument(
+        "--json", action="store_true", help="Print machine-readable JSON"
+    )
+    trial_canary.add_argument(
         "--yes", action="store_true", help="Confirm non-interactively"
     )
 
@@ -613,6 +664,9 @@ def main() -> None:
         command_parser = trial_commands.add_parser(name, help=help_text)
         command_parser.add_argument("candidate_ids", nargs="+")
         command_parser.add_argument("--state", default=None)
+        command_parser.add_argument(
+            "--json", action="store_true", help="Print machine-readable JSON"
+        )
         command_parser.set_defaults(trial_approve=approve)
 
     trial_capture = trial_commands.add_parser(
@@ -621,6 +675,9 @@ def main() -> None:
     trial_capture.add_argument("message")
     trial_capture.add_argument("--session", default=None)
     trial_capture.add_argument("--state", default=None)
+    trial_capture.add_argument(
+        "--json", action="store_true", help="Print machine-readable JSON"
+    )
 
     actions_parser = subparsers.add_parser(
         "actions", help="Stage, approve, execute, and verify guarded actions"
@@ -741,6 +798,10 @@ def main() -> None:
 
     if args.command == "runtime":
         _run_runtime(args)
+        return
+
+    if args.command == "openclaw":
+        _run_openclaw(args)
         return
 
     if args.command == "impact":
@@ -1026,6 +1087,243 @@ def main() -> None:
 
 def _print(value: object) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def _run_openclaw(args: argparse.Namespace) -> None:
+    if args.openclaw_command != "install":
+        raise ValueError(f"unknown OpenClaw command: {args.openclaw_command}")
+    from aetnamem.openclaw_install import install_openclaw
+    from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
+
+    try:
+        result = install_openclaw(
+            state_path=args.state or DEFAULT_STATE_PATH,
+            trial_root=args.trial_root or DEFAULT_TRIAL_ROOT,
+        )
+    except ValueError as exc:
+        if args.json:
+            _print(
+                {
+                    "format": "aetnamem-openclaw-install-v1",
+                    "installed": False,
+                    "error": str(exc),
+                }
+            )
+        else:
+            print("AetnaMem OpenClaw installation did not complete", file=sys.stderr)
+            print(f"\n{exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    if args.json:
+        _print(result)
+        return
+    print("AetnaMem is installed beside OpenClaw")
+    print(f"\n  Engine version        {result['engine_version']}")
+    print(f"  Engine executable     {result['engine_executable']}")
+    print(f"  OpenClaw bridge       {result['plugin_version']}")
+    print(
+        "  Gateway verification "
+        + ("PASSED" if result.get("gateway_verified") else "FAILED")
+    )
+    print("  Trial mode            capture only")
+    print("  Model context changed no")
+    print("  Extra provider calls  no")
+    print(f"  Trial ID              {result['trial_id']}")
+    print(f"  Evidence directory    {result['trial_dir']}")
+    print(
+        "\nKeep using OpenClaw normally. AetnaMem will collect candidate memories "
+        "locally without changing model context."
+    )
+    print("Next: aetnamem trial dashboard")
+
+
+def _print_trial(command: str, value: object, *, json_output: bool) -> None:
+    if json_output:
+        _print(value)
+        return
+    if command == "candidates":
+        _print_trial_candidates(value)
+        return
+    if command in {"approve", "reject"}:
+        rows = value if isinstance(value, list) else []
+        action = "approved" if command == "approve" else "rejected"
+        print(f"AetnaMem memory review\n\n  {len(rows)} candidate(s) {action}.")
+        for row in rows:
+            if isinstance(row, dict):
+                print(f"  - {row.get('content', row.get('id', 'unknown'))}")
+        print(
+            "\nApproved memories are eligible for preview. "
+            "They are not shown to the agent in capture or preview mode."
+        )
+        return
+    if command == "capture-test":
+        result = value if isinstance(value, dict) else {}
+        captured = int(result.get("captured", 0))
+        print("AetnaMem capture test")
+        print(f"\n  Candidates captured  {captured}")
+        print("  Raw message stored    no")
+        if captured:
+            print("\nNext: aetnamem trial candidates")
+        else:
+            print(
+                f"\nNothing was captured: {result.get('reason', 'no candidate fact found')}."
+            )
+        return
+    result = value if isinstance(value, dict) else {}
+    if command == "rollback":
+        restored = result.get("host_restore")
+        restored = restored if isinstance(restored, dict) else {}
+        verified = bool(restored.get("verified"))
+        print("AetnaMem rollback complete")
+        print(f"\n  Host                 {_display_host(result.get('host'))}")
+        print(
+            "  Host configuration   "
+            + ("restored" if restored.get("restored") else "not restored")
+        )
+        print(f"  Verification         {'PASSED' if verified else 'FAILED'}")
+        print("  Safe Switch trial    off")
+        plugin_enabled = restored.get("plugin_enabled")
+        if plugin_enabled is True:
+            print("  AetnaMem plugin      enabled (restored pre-trial state)")
+        elif plugin_enabled is False:
+            print("  AetnaMem plugin      disabled")
+        else:
+            print("  AetnaMem plugin      state unknown")
+        print("  Trial evidence       preserved")
+        if result.get("trial_id"):
+            print(f"  Trial ID             {result['trial_id']}")
+        if result.get("trial_dir"):
+            print(f"  Evidence directory   {result['trial_dir']}")
+        print("\nYour original host configuration has been restored.")
+        if plugin_enabled is True:
+            print(
+                "AetnaMem itself is still enabled because it was enabled before "
+                "this Safe Switch trial."
+            )
+        else:
+            print("AetnaMem is not enabled in the restored host configuration.")
+        print("Past agent outputs and provider logs are unchanged.")
+        return
+    titles = {
+        "start": "AetnaMem Safe Switch trial started",
+        "status": "AetnaMem Safe Switch status",
+        "preview": "AetnaMem recall preview",
+        "canary": "AetnaMem limited canary started",
+        "activate": "AetnaMem is active",
+        "off": "AetnaMem emergency off complete",
+    }
+    print(titles.get(command, "AetnaMem Safe Switch"))
+    if command == "preview" and "preview_context" in result:
+        context = str(result.get("preview_context") or "").strip()
+        print(f"\n  Agent context changed  {'yes' if result.get('inject') else 'no'}")
+        print(f"  Matching memories      {len(result.get('candidate_ids') or [])}")
+        print(f"  Manifest               {result.get('manifest_sha256') or 'none'}")
+        print("\nPreview:")
+        print(context or "  No matching approved memory.")
+        print("\nNothing in this preview was shown to the agent.")
+        return
+    _print_trial_status_rows(result)
+    if command == "start":
+        integration = result.get("integration")
+        integration = integration if isinstance(integration, dict) else {}
+        print(
+            f"  Host integration      "
+            f"{'configured' if integration.get('configured') else 'not configured'}"
+        )
+        print("\nYour agent continues using its current memory and provider.")
+        print("AetnaMem is observing only and does not change model context.")
+    elif command == "status":
+        readiness = result.get("readiness")
+        readiness = readiness if isinstance(readiness, dict) else {}
+        reasons = readiness.get("reasons")
+        if result.get("mode") == "off":
+            print(
+                "\nNext: start a new trial with "
+                "`aetnamem trial start --host openclaw`."
+            )
+        elif isinstance(reasons, list) and reasons:
+            print(f"\nNext: {reasons[0]}")
+        elif readiness.get("ready_for_active"):
+            print("\nNext: review the evidence before choosing activation.")
+    elif command == "canary":
+        print(
+            "\nOnly bounded approved-memory exposures are allowed. "
+            "Use `aetnamem trial off` for an immediate stop."
+        )
+    elif command == "activate":
+        print(
+            "\nAetnaMem can now supply approved memory context. "
+            "Use `aetnamem trial rollback` to restore the saved host configuration."
+        )
+    elif command == "off":
+        print(
+            "\nFuture AetnaMem capture and context injection are off. "
+            "Trial evidence remains available for review."
+        )
+
+
+def _print_trial_status_rows(result: dict[str, object]) -> None:
+    mode = str(result.get("mode") or "unknown")
+    evidence = result.get("evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    counts = evidence.get("candidates")
+    counts = counts if isinstance(counts, dict) else {}
+    candidate_total = sum(
+        int(number)
+        for number in counts.values()
+        if isinstance(number, (int, float))
+    )
+    chain = evidence.get("transition_chain")
+    chain = chain if isinstance(chain, dict) else {}
+    print(f"\n  Mode                  {mode}")
+    print(f"  Host                  {_display_host(result.get('host'))}")
+    print(
+        "  Changes agent context "
+        + ("yes" if result.get("changes_model_context") else "no")
+    )
+    print(
+        "  Extra provider calls  "
+        + ("yes" if result.get("makes_extra_provider_calls") else "no")
+    )
+    if evidence:
+        print(f"  Memory candidates     {candidate_total}")
+        print(f"  Recall previews       {int(evidence.get('previews', 0))}")
+        print(f"  Confirmed exposures   {int(evidence.get('shown_exposures', 0))}")
+        print(
+            "  Audit chain           "
+            + ("valid" if chain.get("valid") else "CHECK REQUIRED")
+        )
+    if result.get("trial_id"):
+        print(f"  Trial ID              {result['trial_id']}")
+
+
+def _print_trial_candidates(value: object) -> None:
+    rows = value if isinstance(value, list) else []
+    print("AetnaMem memory candidates")
+    if not rows:
+        print("\n  No candidates captured yet.")
+        print("\nKeep using your agent normally, then run this command again.")
+        return
+    print(f"\n  {'STATUS':<11} {'ID':<22} MEMORY")
+    print(f"  {'-' * 10:<11} {'-' * 21:<22} {'-' * 32}")
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identifier = str(row.get("id") or "")
+        if len(identifier) > 21:
+            identifier = identifier[:9] + "…" + identifier[-9:]
+        content = " ".join(str(row.get("content") or "").split())
+        if len(content) > 70:
+            content = content[:67] + "..."
+        print(f"  {str(row.get('status') or 'unknown'):<11} {identifier:<22} {content}")
+    print(
+        "\nReview with: aetnamem trial approve <candidate-id>\n"
+        "             aetnamem trial reject <candidate-id>"
+    )
+
+
+def _display_host(value: object) -> str:
+    text = str(value or "unknown")
+    return {"openclaw": "OpenClaw", "hermes": "Hermes"}.get(text, text)
 
 
 def _add_report_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1684,19 +1982,26 @@ def _run_trial(args: argparse.Namespace) -> None:
             if integration.get("configured")
             else "Configure the host hook before expecting live trial evidence."
         )
-        _print(status)
+        _print_trial("start", status, json_output=args.json)
         return
 
     manager = TrialManager(state_path)
     if args.trial_command == "status":
-        _print(manager.status())
+        _print_trial("status", manager.status(), json_output=args.json)
     elif args.trial_command == "candidates":
-        _print(manager.candidates(include_reviewed=True))
+        _print_trial(
+            "candidates",
+            manager.candidates(include_reviewed=True),
+            json_output=args.json,
+        )
     elif args.trial_command in {"approve", "reject"}:
-        _print(
-            manager.review(
-                list(args.candidate_ids), approve=bool(args.trial_approve)
-            )
+        reviewed = manager.review(
+            list(args.candidate_ids), approve=bool(args.trial_approve)
+        )
+        _print_trial(
+            args.trial_command,
+            reviewed,
+            json_output=args.json,
         )
     elif args.trial_command == "preview":
         state = manager.state()
@@ -1706,21 +2011,29 @@ def _run_trial(args: argparse.Namespace) -> None:
             raise ValueError(
                 f"preview requires capture or preview mode, not {state.mode.value}"
             )
-        _print(
+        _print_trial(
+            "preview",
             manager.prepare(args.query)
             if args.query is not None
-            else manager.status()
+            else manager.status(),
+            json_output=args.json,
         )
     elif args.trial_command == "canary":
         _confirm_trial_host(manager, non_interactive=args.yes)
-        _print(
+        _print_trial(
+            "canary",
             manager.transition(
                 TrialMode.CANARY, canary_turns=args.turns
-            ).public_status()
+            ).public_status(),
+            json_output=args.json,
         )
     elif args.trial_command == "activate":
         _confirm_trial_host(manager, non_interactive=args.yes)
-        _print(manager.transition(TrialMode.ACTIVE).public_status())
+        _print_trial(
+            "activate",
+            manager.transition(TrialMode.ACTIVE).public_status(),
+            json_output=args.json,
+        )
     elif args.trial_command == "off":
         state = manager.state()
         if state.mode is not TrialMode.OFF:
@@ -1730,7 +2043,7 @@ def _run_trial(args: argparse.Namespace) -> None:
             "Future AetnaMem capture and context injection are off. Trial evidence "
             "is preserved. Past agent outputs and provider logs are not undone."
         )
-        _print(result)
+        _print_trial("off", result, json_output=args.json)
     elif args.trial_command == "rollback":
         from aetnamem.trial.hosts import restore_host
 
@@ -1746,14 +2059,16 @@ def _run_trial(args: argparse.Namespace) -> None:
             "AetnaMem injection is off. Trial evidence is preserved. Past "
             "agent outputs and provider logs are not undone."
         )
-        _print(result)
+        _print_trial("rollback", result, json_output=args.json)
     elif args.trial_command == "capture-test":
-        _print(
+        _print_trial(
+            "capture-test",
             manager.capture(
                 args.message,
                 session_id=args.session,
                 authenticated_user=True,
-            )
+            ),
+            json_output=args.json,
         )
     elif args.trial_command == "mcp":
         TrialMCPServer(manager).serve()

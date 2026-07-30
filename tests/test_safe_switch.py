@@ -168,7 +168,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "0.4.0",
+                            "version": "0.4.1-experimental.1",
                         }
                     }
                 ),
@@ -224,6 +224,8 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
 
     restored = restore_host(state)
     assert restored["verified"] is True
+    assert restored["plugin_enabled"] is False
+    assert restored["safe_switch_enabled"] is False
     assert entry == {"enabled": False, "config": {"existing": "kept"}}
 
 
@@ -274,3 +276,56 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_dashboard_ships_the_visual_trial_ui_not_the_json_fallback() -> None:
+    from aetnamem.trial.web import dashboard_html
+
+    html = dashboard_html()
+
+    assert "Observed trial funnel" in html
+    assert 'data-section="memory"' in html
+    assert 'id="funnelBars"' in html
+    assert 'id="memoryList"' in html
+    assert 'get("/api/status")' in html
+    assert 'JSON.stringify(v,null,2)' not in html
+    # Mockup-only comparison figures must never be presented as live evidence.
+    assert "112,480" not in html
+    assert "35/42" not in html
+
+
+def test_trial_rollback_defaults_to_human_output_and_keeps_json_opt_in(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from aetnamem.cli import _print_trial
+
+    result = {
+        "host": "openclaw",
+        "mode": "off",
+        "changes_model_context": False,
+        "makes_extra_provider_calls": False,
+        "trial_id": "trial_customer",
+        "trial_dir": "/tmp/trial_customer",
+        "host_restore": {
+            "host": "openclaw",
+            "restored": True,
+            "verified": True,
+            "plugin_present": True,
+            "plugin_enabled": True,
+            "safe_switch_enabled": False,
+        },
+    }
+
+    _print_trial("rollback", result, json_output=False)
+    human = capsys.readouterr().out
+    assert "AetnaMem rollback complete" in human
+    assert "Host configuration   restored" in human
+    assert "Verification         PASSED" in human
+    assert "Safe Switch trial    off" in human
+    assert "AetnaMem plugin      enabled (restored pre-trial state)" in human
+    assert "AetnaMem itself is still enabled" in human
+    assert not human.lstrip().startswith("{")
+
+    _print_trial("rollback", result, json_output=True)
+    machine = capsys.readouterr().out
+    assert json.loads(machine)["host_restore"]["verified"] is True

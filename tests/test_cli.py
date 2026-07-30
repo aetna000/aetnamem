@@ -18,6 +18,15 @@ def _run(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+def test_cli_version_reports_installed_distribution_version() -> None:
+    from importlib.metadata import version
+
+    result = _run("--version")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"aetnamem {version('aetnamem')}"
+
+
 def test_cli_remember_recall_forget_roundtrip(tmp_path: Path) -> None:
     db = str(tmp_path / "mem.db")
 

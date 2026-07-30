@@ -35,6 +35,16 @@ export class AetnamemClient {
 
   constructor(private readonly options: AetnamemClientOptions) {}
 
+  /** Verify that the engine starts and completes the MCP handshake. */
+  async connect(): Promise<void> {
+    try {
+      this.cancelIdleClose();
+      await this.ensureInitialized();
+    } finally {
+      this.scheduleIdleClose();
+    }
+  }
+
   /** Call an MCP tool; returns the parsed JSON payload of the text block. */
   async callTool(
     name: string,
@@ -133,8 +143,20 @@ export class AetnamemClient {
       this.teardown(new Error(`aetnamem server exited (code ${code})`));
     });
     child.on("error", (error) => {
-      this.options.logError?.(`[aetnamem] spawn failed: ${error.message}`);
-      this.teardown(error instanceof Error ? error : new Error(String(error)));
+      const spawnError = error as NodeJS.ErrnoException;
+      const actionable =
+        spawnError.code === "ENOENT"
+          ? new Error(
+              `AetnaMem engine executable '${command}' was not found. ` +
+                "Install the engine first with `python3 -m pip install aetnamem`, " +
+                "verify `aetnamem --version`, or set the plugin `command` option " +
+                "to the executable's absolute path.",
+            )
+          : error instanceof Error
+            ? error
+            : new Error(String(error));
+      this.options.logError?.(`[aetnamem] spawn failed: ${actionable.message}`);
+      this.teardown(actionable);
     });
   }
 
@@ -142,7 +164,10 @@ export class AetnamemClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "openclaw-memory-aetnamem", version: "0.4.0" },
+      clientInfo: {
+        name: "openclaw-memory-aetnamem",
+        version: "0.4.1-experimental.1",
+      },
     });
     this.notify("notifications/initialized", {});
   }

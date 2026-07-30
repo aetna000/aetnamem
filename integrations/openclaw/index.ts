@@ -151,7 +151,7 @@ function register(api: OpenClawPluginApi): void {
   // The client's bounded idle shutdown also covers one-shot local runners.
   api.registerService?.({
     id: "memory-aetnamem-mcp",
-    start: () => undefined,
+    start: () => client.connect(),
     stop: () => client.close(),
   });
 

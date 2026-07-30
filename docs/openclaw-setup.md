@@ -1,7 +1,8 @@
 # Wiring aetnamem into OpenClaw via MCP
 
-This page covers the public legacy surface and the opt-in Python `v0.6.1` /
-npm `v0.4.0` four-memory runtime. New users who want to observe before
+This page covers the public legacy surface and the experimental Python
+`v0.6.1.1a1` / npm `v0.4.1-experimental.1` installer preview. New users who
+want to observe before
 enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
 
@@ -14,9 +15,21 @@ and auto-capture hooks, use the plugin in
 
 For a single-user OpenClaw instance, the native plugin is the shortest path:
 
+The Python engine owns installation of its npm bridge:
+
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+# 1. Install the engine.
+python -m pip install --pre aetnamem==0.6.1.1a1
+
+# 2. Verify it, then install and verify the matching bridge.
+aetnamem --version
+aetnamem openclaw install
+
+# 3. Evaluate capture, preview, and a bounded canary.
+aetnamem trial dashboard
+
+# 4. For the advanced direct four-memory runtime, restore the trial baseline.
+aetnamem trial rollback
 aetnamem setup
 openclaw aetnamem setup --single-user --subject you \
   --orchestrated --runtime-config ~/.aetnamem/runtime.json

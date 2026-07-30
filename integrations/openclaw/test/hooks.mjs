@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import plugin from "../dist/index.js";
+import { AetnamemClient } from "../dist/src/rpc-client.js";
 
 
 function fakeApi(config) {
@@ -31,7 +32,7 @@ function fakeApi(config) {
 }
 
 function trialCli(...args) {
-  const result = spawnSync("aetnamem", ["trial", ...args], {
+  const result = spawnSync("aetnamem", ["trial", ...args, "--json"], {
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -52,6 +53,17 @@ const base = {
   cacheAware: { enabled: true, compactReferences: true },
   tools: { enabled: true },
 };
+
+const missingEngine = new AetnamemClient({
+  command: `aetnamem-deliberately-missing-${process.pid}`,
+  args: ["mcp"],
+  defaultTimeoutMs: 1000,
+});
+await assert.rejects(
+  missingEngine.hasTool("memory_recall"),
+  /engine executable .* was not found.*Install the engine first.*pip install aetnamem/s,
+);
+missingEngine.close();
 
 const runtime = fakeApi(base);
 const beforePrompt = runtime.hooks.get("before_prompt_build");

@@ -1,6 +1,6 @@
 # Safe Switch: try AetnaMem beside your agent
 
-Status: **beta in AetnaMem 0.6.1**
+Status: **experimental installer preview in AetnaMem 0.6.1.1a1**
 
 Safe Switch answers a practical adoption question:
 
@@ -10,26 +10,29 @@ It is a reversible integration path for a local, single-user OpenClaw or
 Hermes installation. It is not a claim that every agent becomes cheaper or
 more accurate.
 
-## Five commands to the first preview
+## Four steps to the first preview
 
 ```bash
-# 1. Install the Python package. No snapshot/sudo package is required.
-python3 -m pip install --upgrade aetnamem
+# 1. Install the engine. No snapshot/sudo package is required.
+python -m pip install --pre aetnamem==0.6.1.1a1
 
-# 2. OpenClaw only: install the matching lifecycle-hook plugin.
-openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+# 2. Verify it, then let AetnaMem install and verify its OpenClaw bridge.
+aetnamem --version
+aetnamem openclaw install
 
-# 3. Detect one supported local host, snapshot its AetnaMem plugin config,
-#    install the trial hook, and start candidate-only capture.
-aetnamem trial start --host auto
-
-# 4. Keep using the agent, then inspect normalized candidate memories.
+# 3. Keep using the agent, then inspect normalized candidate memories.
 aetnamem trial candidates
 
-# 5. Approve selected candidates and enter observer-only preview mode.
+# 4. Approve selected candidates and enter observer-only preview mode.
 aetnamem trial approve tc_example
 aetnamem trial preview
 ```
+
+The OpenClaw plugin is an internal bridge dependency, not a second customer
+installation step. `aetnamem openclaw install` pins the matching bridge,
+records the exact engine executable, restarts and probes the gateway, and
+starts capture-only mode. It restores the prior OpenClaw configuration if
+verification fails.
 
 Open the local review surface at any time:
 
@@ -55,7 +58,8 @@ It does not inspect your conversations to choose a host.
 ### Subject
 
 The simple trial commands do not ask for `--subject`. They use the internal
-scope `local-user` because Safe Switch 0.6.1 is a local, single-user beta.
+scope `local-user` because Safe Switch 0.6.1.1a1 is a local, single-user
+experimental preview.
 
 In the generic MCP and Python APIs, `subject_id` is a storage partition
 provided by the host—not proof of authenticated identity. Multi-user
@@ -90,7 +94,7 @@ Use `aetnamem trial off` for an immediate stop without host restoration.
 The plugin uses the host's existing model call. AetnaMem does not mirror
 traffic or call a second model in these modes.
 
-In 0.6.1, `active` means AetnaMem's approved context is enabled on eligible
+In 0.6.1.1a1, `active` means AetnaMem's approved context is enabled on eligible
 turns. It does not silently delete or disable `MEMORY.md`, `USER.md`, or an
 existing Hermes memory provider. Removing duplicated native memory is a
 separate, reviewed migration after the user has verified their own results.

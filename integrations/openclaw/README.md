@@ -2,7 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes npm `0.4.0`, compatible with Python `v0.6.1`.
+This README describes experimental npm `0.4.1-experimental.1`, compatible with
+Python prerelease `v0.6.1.1a1`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -55,25 +56,32 @@ that evidence and quarantines the text. See the repository
 
 ## Install
 
-To observe first without changing model context:
+### Supported customer installation
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
-aetnamem trial start --host openclaw
+# 1. Install and verify the engine.
+python -m pip install --pre aetnamem==0.6.1.1a1
+aetnamem --version
+
+# 2. Let the engine install, configure, restart, and verify this bridge.
+aetnamem openclaw install
+
+# 3. Review the capture-only trial. Model context is unchanged.
 aetnamem trial dashboard
 ```
 
-`trial start` refuses plugin versions older than 0.4.0, snapshots the existing
-AetnaMem plugin entry, writes the fail-closed Safe Switch configuration before
-enabling hooks, and verifies what OpenClaw retained. It does not rewrite
-`MEMORY.md`.
+The installer records the absolute engine path, so the OpenClaw service does
+not have to inherit the interactive shell's Python `PATH`. It installs npm
+`0.4.1-experimental.1` internally, starts capture-only Safe Switch mode,
+restarts the gateway,
+requires a successful RPC probe, and verifies the retained configuration. On
+failure it stops the trial and restores the prior plugin configuration.
 
-For the direct four-memory setup without a trial:
+For an advanced direct four-memory setup, finish evaluating the trial and
+restore its baseline first:
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+aetnamem trial rollback
 aetnamem setup
 openclaw aetnamem setup --single-user --subject you \
   --orchestrated --runtime-config ~/.aetnamem/runtime.json
@@ -86,8 +94,20 @@ command enables the required conversation-hook permission, applies bounded
 recall defaults, and restarts the gateway. It deliberately does not rewrite
 OpenClaw's `MEMORY.md`; verify recall before removing duplicated native memory.
 
-For repository development, run `npm ci && npm run build`. Register the local
-directory with `openclaw plugins install "$PWD"`.
+For repository development, install the Python worktree first, verify its
+command, then build and register the local bridge:
+
+```bash
+python3 -m pip install -e ../..
+aetnamem --version
+npm ci
+npm run build
+openclaw plugins install "$PWD"
+```
+
+Direct `openclaw plugins install` is a development/manual recovery path. It
+installs only this JavaScript bridge and cannot prove that the Python engine is
+available. Customer instructions therefore use `aetnamem openclaw install`.
 
 Register the plugin with OpenClaw (plugin dir or config, per your OpenClaw
 version), then configure:

@@ -38,8 +38,15 @@ server behavior.
 
 ## Connect OpenClaw
 
+Use the verified installer first. It begins in capture-only Safe Switch mode;
+after evaluating that path, restore its baseline before enabling the direct
+four-memory runtime:
+
 ```bash
-openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+aetnamem openclaw install
+aetnamem trial dashboard
+# After evaluation:
+aetnamem trial rollback
 openclaw aetnamem setup --single-user --subject you \
   --orchestrated --runtime-config ~/.aetnamem/runtime.json
 ```

@@ -1,6 +1,6 @@
 # Hermes Agent integration
 
-AetnaMem 0.6.1 supports two distinct Hermes paths:
+AetnaMem stable 0.6.1 supports two distinct Hermes paths:
 
 - generic MCP memory tools; and
 - a Safe Switch beta general plugin for capture, preview, canary and active

@@ -1,3 +1,25 @@
+# 1. Install the AetnaMem Python engine.
+python3 -m pip install --upgrade aetnamem
+
+# 2. Verify the engine is accessible.
+aetnamem --version
+
+# 3. Only then install the OpenClaw bridge.
+openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
+
+# 4. Start the trial.
+aetnamem trial start --host openclaw
+aetnamem trial dashboard
+
+
+
+
+
+
+
+
+
+
 The closest honest pitch for AetnaMem 6.0 is:
 
 > Give OpenClaw memory without trusting it blindly.

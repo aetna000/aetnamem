@@ -1,12 +1,14 @@
 # AetnaMem Safe Switch — CLI and dashboard UX specification
 
-Target release: v0.6.1 · Status: visual/interaction contract.
-The [Safe Switch guide](safe-switch.md) is the implementation truth. Items
-explicitly described here as future comparison/report work are not public CLI
+Current implemented subset: v0.6.1.1a1 experimental · Status: design contract with future
+comparison/report sections.
+
+The [Safe Switch guide](safe-switch.md) and
+[current capability status](current-status.md) are the implementation truth.
+The shipped dashboard provides live mode, candidate review, evidence and
+transition controls. Comparison charts, exported readiness reports and paid
+paired evaluation described below remain design targets, not public product
 claims.
-Pairs with the clickable HTML mockup (see "Mockup" at the end). This document
-is written so an implementing model or engineer can build the CLI and
-dashboard without further design decisions.
 
 ## Design principles
 
@@ -80,6 +82,7 @@ Two renames from the draft plan, for safety-in-language:
 like full activation), and emergency stop is its own verb.
 
 ```
+aetnamem openclaw install                         # verified OpenClaw setup
 aetnamem trial start [--host auto|openclaw|hermes]
 aetnamem trial status
 aetnamem trial candidates
@@ -94,13 +97,12 @@ aetnamem trial dashboard
 ```
 
 Paid paired comparison, exported readiness reports, and receipt-backed purge
-are the next beta milestones; they are not accepted commands in 0.6.1.
+are later milestones; they are not accepted commands in 0.6.1.1a1.
 
 ### Output conventions
 
-- The 0.6.1 CLI prints structured JSON for lifecycle operations. A later
-  presentation layer may add the `State`/`Next` human view without changing
-  the underlying result.
+- The 0.6.1.1a1 CLI prints a human-readable `State`/`Next` view by default.
+  Automation receives the same underlying result with `--json`.
 - Respect `NO_COLOR`. Never encode meaning in color alone — state words are
   always printed.
 - Privileged commands (`canary`, `activate`, `rollback`)
@@ -286,11 +288,8 @@ mode banner is `role="status"` so screen readers announce transitions.
    dashboard, CLI, and exported report.html.
 7. Both themes pass the palette validator; charts re-validated per theme.
 
-## Mockup
+## Visual source
 
-A self-contained clickable mockup of all six sections, both themes, the
-state simulator, and the activation ceremony accompanies this spec (HTML,
-no dependencies): https://claude.ai/code/artifact/0626b6fe-c8e2-41ad-8370-7f87cc80dbbe Treat the mockup as the visual source of truth and this
-document as the behavioral source of truth. The mockup's "state simulator"
-strip is a design-communication device only — it is not part of the
-product.
+The implemented UI in `aetnamem/trial/ui.py` is the product source. Earlier
+clickable mockups and their state simulators were design communication only
+and must not be presented as working product behavior.

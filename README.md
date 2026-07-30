@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.6.1" src="https://img.shields.io/badge/version-0.6.1-315A7D?style=flat-square">
+  <img alt="Version 0.6.1.1a1 experimental" src="https://img.shields.io/badge/version-0.6.1.1a1--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,14 +28,17 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.6.1** adds **Safe Switch (beta)**: install it beside an existing OpenClaw
-or Hermes setup, collect candidate memories without changing the model's
-context, inspect exactly what AetnaMem would recall, try a limited canary, and
-turn it off through one local state file.
+**0.6.1.1a1** is an **experimental preview** of a verified two-command OpenClaw
+installation: install the engine, then let AetnaMem install and verify its
+matching bridge. It runs beside an existing OpenClaw
+or Hermes setup, collects candidate memories without changing the model's
+context, lets you inspect exactly what AetnaMem would recall, supports a
+limited canary, and turns off through one local state file.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
-plugin is **0.4.0**.
+plugin is **0.4.1-experimental.1**. These are prereleases, not the final
+`0.6.1.1` / `0.4.1` packages.
 
 ## Adopt AetnaMem without a blind switch
 
@@ -56,15 +59,26 @@ AetnaMem:
 7. **Activate or restore.** Switch on when your evidence is good enough, or
    roll back the saved host configuration without deleting the trial record.
 
-Start the side-by-side trial:
+Start the side-by-side OpenClaw trial:
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
-aetnamem trial start --host openclaw
+# 1. Install the AetnaMem engine.
+python -m pip install --pre aetnamem==0.6.1.1a1
+aetnamem --version
+
+# 2. Let AetnaMem install and verify the matching OpenClaw bridge.
+aetnamem openclaw install
+
+# The verified installer leaves you in capture-only mode.
 aetnamem trial status
 aetnamem trial candidates
 ```
+
+`aetnamem openclaw install` records the exact engine executable, installs the
+matching npm bridge internally, restarts and probes the gateway, and starts a
+capture-only trial. If verification fails, it restores the prior OpenClaw
+plugin configuration. It does not change model context or make provider calls.
+Users do not need to run npm directly.
 
 Then approve a candidate, inspect the preview, and allow one canary turn:
 
@@ -124,9 +138,10 @@ for trust boundaries, example conversations, wrapper commands, and validation.
 For OpenClaw:
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@0.4.0 --pin
-aetnamem trial start --host auto
+# Install the engine, then let it own the bridge installation.
+python -m pip install --pre aetnamem==0.6.1.1a1
+aetnamem --version
+aetnamem openclaw install
 aetnamem trial dashboard
 ```
 
@@ -188,12 +203,12 @@ improve every agent.”
 
 ## Give OpenClaw four kinds of memory
 
-You do not need to understand memory databases. Install AetnaMem and its
-OpenClaw plugin, run the wizard, and enable the configuration it creates:
+You do not need to understand memory databases. First complete the Safe Switch
+trial. If you then want the advanced direct four-memory runtime, roll the trial
+back to its verified baseline before enabling the wizard configuration:
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+aetnamem trial rollback
 aetnamem setup
 openclaw aetnamem setup --single-user --subject you \
   --orchestrated --runtime-config ~/.aetnamem/runtime.json
@@ -749,8 +764,12 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python3 -m pip install --upgrade aetnamem
-openclaw plugins install npm:openclaw-memory-aetnamem@latest --pin
+python -m pip install --pre aetnamem==0.6.1.1a1
+aetnamem --version
+aetnamem openclaw install
+
+# After evaluating the capture/preview/canary path:
+aetnamem trial rollback
 aetnamem setup
 openclaw aetnamem setup --single-user --subject you \
   --orchestrated --runtime-config ~/.aetnamem/runtime.json
@@ -945,8 +964,10 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
-- **[0.6.1 release notes](./docs/releases/v0.6.1.md):** package versions,
-  compatibility, validation, and known limits.
+- **[0.6.1.1a1 experimental notes](./docs/releases/v0.6.1.1a1.md):**
+  verified engine-owned OpenClaw installation preview;
+- **[0.6.1 release notes](./docs/releases/v0.6.1.md):** Safe Switch package
+  versions, compatibility, validation, and known limits.
 
 ### Released memory and audit surfaces
 
