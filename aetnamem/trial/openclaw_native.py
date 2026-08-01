@@ -506,6 +506,7 @@ def activate_takeover(
         base = "plugins.entries.memory-aetnamem"
         _set_json(executable, f"{base}.config.safeSwitch", {"enabled": False})
         _set_json(executable, f"{base}.config.takeoverActive", True)
+        _set_json(executable, f"{base}.config.nativeWorkspace", str(workspace))
         _set_json(executable, f"{base}.config.dbPath", status["mirror_db"])
         _set_json(executable, f"{base}.config.subject", state.subject_id)
         _set_json(executable, f"{base}.hooks.allowConversationAccess", True)
@@ -563,18 +564,29 @@ def activate_takeover(
             "before_prompt_build",
             "agent_end",
             "before_message_write",
+            "before_tool_call",
         }
+        protected_workspace = _optional_json(
+            [
+                executable,
+                "config",
+                "get",
+                f"{base}.config.nativeWorkspace",
+                "--json",
+            ]
+        )
         if (
             not isinstance(plugin, dict)
             or plugin.get("status") != "loaded"
             or not required_tools.issubset(tool_names)
             or not required_hooks.issubset(typed_hooks)
+            or protected_workspace != str(workspace)
         ):
             raise ValueError(
                 "AetnaMem OpenClaw runtime did not verify the standard "
-                "memory tools and capture/injection hooks"
+                "memory tools, capture/injection hooks, and native-path guard"
             )
-        report(8, total_steps, "Verified memory tools and capture hooks")
+        report(8, total_steps, "Verified memory tools, capture, and native write guard")
         cutover.update(
             {
                 "status": "active",
@@ -587,6 +599,7 @@ def activate_takeover(
                 "compatibility_tools": ["memory_search", "memory_get"],
                 "compatibility_tools_verified": True,
                 "capture_hooks_verified": True,
+                "native_write_guard_verified": True,
             }
         )
         _private_json(cutover_path, cutover)
@@ -1112,6 +1125,7 @@ def _cutover_public(value: dict[str, Any]) -> dict[str, Any]:
             "compatibility_tools",
             "compatibility_tools_verified",
             "capture_hooks_verified",
+            "native_write_guard_verified",
             "native_capability_report",
         )
         if key in value

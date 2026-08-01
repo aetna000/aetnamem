@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.7.0a3 experimental" src="https://img.shields.io/badge/version-0.7.0a3--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.7.0a4 experimental" src="https://img.shields.io/badge/version-0.7.0a4--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,7 +28,7 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.7.0a3** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.7.0a4** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
 recall internally, and activate only after the mirror and rollback evidence
@@ -36,7 +36,7 @@ verify.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
-plugin is **0.5.0-experimental.1**. These are prereleases, not the final
+plugin is **0.5.0-experimental.2**. These are prereleases, not the final
 stable `0.6.1` / `0.4.0` packages.
 
 ## Adopt AetnaMem without a blind switch
@@ -59,6 +59,10 @@ Your current OpenClaw memory remains authoritative during evaluation:
    memory retrieval and session-memory writing, and becomes the bounded
    supplemental-memory path without changing the agent-facing
    `memory_search` / `memory_get` names.
+   A tool-call guard then enforces that OpenClaw cannot read, recreate, or
+   patch the frozen `MEMORY.md` and `memory/*` paths through its normal Bash
+   and file tools. Activation fails and restores the prior setup unless that
+   guard is verified in the live plugin runtime.
 6. **Roll back exactly.** Restore native files, memory slot, session-memory
    hook and the prior plugin configuration without deleting trial evidence.
    Memories captured while AetnaMem was active are exported into a
@@ -70,7 +74,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -196,7 +200,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -814,7 +818,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 aetnamem --version
 aetnamem openclaw install
 
@@ -1016,9 +1020,9 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
-- **[0.7.0a3 experimental notes](./docs/releases/v0.7.0a3.md):**
-  fixes activation after a completed rollback or legacy `off` trial by
-  allowing a readiness-checked direct transition to AetnaMem active.
+- **[0.7.0a4 experimental notes](./docs/releases/v0.7.0a4.md):**
+  enforces the frozen OpenClaw memory boundary through a verified tool-call
+  guard and recognizes common first-person preference statements.
 - **[0.7.0a2 experimental notes](./docs/releases/v0.7.0a2.md):**
   reliable daemon-lifetime access, direct system-browser launch, and
   fail-closed daemon startup when no protected URL is available; verified

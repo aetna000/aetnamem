@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "OpenClaw bridge for the separately installed AetnaMem Python engine. Requires `pip install aetnamem` first. Adds auditable auto-recall and auto-capture.",
-  "version": "0.5.0-experimental.1",
+  "version": "0.5.0-experimental.2",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -45,6 +45,10 @@
         "type": "boolean",
         "default": false,
         "description": "Set only by verified native-memory takeover. Adds system guidance requiring memory_search/memory_get and forbidding direct MEMORY.md or memory/* filesystem access."
+      },
+      "nativeWorkspace": {
+        "type": "string",
+        "description": "Absolute OpenClaw workspace path protected during verified takeover. Set by `aetnamem trial activate`; do not configure manually."
       },
       "recall": {
         "type": "object",

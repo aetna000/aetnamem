@@ -1,7 +1,7 @@
 # Wiring aetnamem into OpenClaw via MCP
 
 This page covers the public legacy surface and the experimental Python
-`v0.7.0a3` / npm `v0.5.0-experimental.1` shadow-and-takeover preview. New users who
+`v0.7.0a4` / npm `v0.5.0-experimental.2` shadow-and-takeover preview. New users who
 want to observe before
 enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
@@ -21,7 +21,7 @@ searchable mirror:
 
 ```bash
 # 1. Install the engine.
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 
 # 2. Verify it, then install and verify the matching bridge.
 aetnamem --version
@@ -43,7 +43,9 @@ bounded runtime connection, plus post-turn outcome capture. The
 ready-made presets. During shadow mode it does not alter `MEMORY.md`. On
 activation it creates and verifies a second complete switch-time snapshot,
 deactivates the live native supplemental-memory paths, disables the duplicate
-native memory slot/writer, and uses bounded AetnaMem recall. Rollback restores
+native memory slot/writer, verifies a tool-call guard that blocks normal
+OpenClaw Bash/file access to the frozen paths, and uses bounded AetnaMem recall.
+Rollback restores
 and hash-verifies the switch-time tree. It keeps identity, safety, tools and
 executable skills pinned in OpenClaw. Do not use one fixed subject for multiple
 authenticated users.

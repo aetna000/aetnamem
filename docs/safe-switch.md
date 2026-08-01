@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.7.0a3**
+Status: **experimental preview in AetnaMem 0.7.0a4**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -31,10 +31,14 @@ aetnamem dashboard
 ```
 
 The installer pins the exact engine executable, installs npm
-`0.5.0-experimental.1` internally, takes and verifies a complete byte-for-byte
+`0.5.0-experimental.2` internally, takes and verifies a complete byte-for-byte
 baseline of the existing native memory, builds the searchable mirror, restarts
 and probes the gateway, and enters shadow mode. If any step fails, it restores
 the prior plugin configuration. Users do not install the npm package directly.
+
+On activation, the matching bridge also registers a tool-call guard for the
+exact frozen `MEMORY.md` and `memory/*` paths. The switch fails and restores the
+prior setup unless OpenClaw reports the hook and retained workspace path.
 
 Shadow mode copies these native sources into an isolated AetnaMem database:
 
@@ -202,6 +206,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.7.0a3 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a4 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

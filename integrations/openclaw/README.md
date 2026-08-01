@@ -2,8 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes experimental npm `0.5.0-experimental.1`, compatible with
-Python prerelease `v0.7.0a3`.
+This README describes experimental npm `0.5.0-experimental.2`, compatible with
+Python prerelease `v0.7.0a4`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -29,6 +29,7 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 | `before_prompt_build` | `memory_recall_block` | adds query-specific `<relevant_memories>` through `appendContext`; a lexical match is required and the audit retains full record IDs even when the model sees compact references |
 | `agent_end` | `memory_capture` | the clean user turn runs the full write pipeline; the assistant reply is logged as a **digest only** (never becomes memory) |
 | `before_message_write` | — | strips injected blocks from persisted history so recalls don't feed back |
+| `before_tool_call` | — | during verified takeover, blocks normal OpenClaw tools from reading or recreating the exact frozen `MEMORY.md` and `memory/*` paths |
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
 | tool `aetnamem_forget` | `memory_forget` | deletion on user request, returns the receipt |
 | tool `aetnamem_observe` | `memory_observe` | submits a typed, quarantined text observation after OpenClaw analyzes host-controlled media |
@@ -61,7 +62,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.7.0a3
+python -m pip install --pre aetnamem==0.7.0a4
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.
@@ -74,7 +75,7 @@ aetnamem dashboard
 
 The installer records the absolute engine path, so the OpenClaw service does
 not have to inherit the interactive shell's Python `PATH`. It installs npm
-`0.5.0-experimental.1` internally, starts shadow Safe Switch mode, synchronizes
+`0.5.0-experimental.2` internally, starts shadow Safe Switch mode, synchronizes
 native Markdown memory into an isolated evidence database, restarts the gateway,
 requires a successful RPC probe, and verifies the retained configuration. On
 failure it stops the trial and restores the prior plugin configuration.
@@ -96,7 +97,9 @@ command enables the required conversation-hook permission, applies bounded
 recall defaults, and restarts the gateway. The supported customer takeover is
 instead `aetnamem trial activate`: it freezes and relocates native supplemental
 memory, disables duplicate native recall/writing, and preserves an exact
-rollback journal.
+rollback journal. Activation also verifies the live native-path tool guard; if
+the matching bridge does not expose it, the switch fails and restores the prior
+configuration.
 
 For repository development, install the Python worktree first, verify its
 command, then build and register the local bridge:

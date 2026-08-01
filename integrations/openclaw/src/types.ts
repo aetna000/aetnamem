@@ -31,6 +31,17 @@ export interface BeforeMessageWriteEvent {
   message: { role?: string; content?: unknown };
 }
 
+export interface BeforeToolCallEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+  derivedPaths?: readonly string[];
+}
+
+export interface BeforeToolCallResult {
+  block?: boolean;
+  blockReason?: string;
+}
+
 export interface ToolResultBlock {
   content: Array<{ type: "text"; text: string }>;
   details?: Record<string, unknown>;
@@ -94,5 +105,12 @@ export interface OpenClawPluginApi {
     handler: (
       event: BeforeMessageWriteEvent,
     ) => { message: BeforeMessageWriteEvent["message"] } | void,
+  ): void;
+  on(
+    event: "before_tool_call",
+    handler: (
+      event: BeforeToolCallEvent,
+      ctx: OpenClawHookCtx,
+    ) => BeforeToolCallResult | void | Promise<BeforeToolCallResult | void>,
   ): void;
 }

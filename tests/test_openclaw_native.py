@@ -159,6 +159,8 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
         lambda arguments: (
             {"enabled": True}
             if "hooks.internal.entries.session-memory" in arguments
+            else str(workspace)
+            if any(str(value).endswith("config.nativeWorkspace") for value in arguments)
             else None
         ),
     )
@@ -185,6 +187,7 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
                     {"name": "before_prompt_build"},
                     {"name": "agent_end"},
                     {"name": "before_message_write"},
+                    {"name": "before_tool_call"},
                 ],
             }
             if "plugins" in arguments
@@ -197,6 +200,7 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
     assert active["native_snapshot_verified"] is True
     assert active["compatibility_tools_verified"] is True
     assert active["capture_hooks_verified"] is True
+    assert active["native_write_guard_verified"] is True
     assert not (workspace / "MEMORY.md").exists()
     assert not (workspace / "memory").exists()
     assert configured["plugins.slots.memory"] == "none"
@@ -207,6 +211,10 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
     assert (
         configured["plugins.entries.memory-aetnamem.config.dbPath"]
         == mirror["mirror_db"]
+    )
+    assert (
+        configured["plugins.entries.memory-aetnamem.config.nativeWorkspace"]
+        == str(workspace)
     )
     assert (
         configured["plugins.entries.memory-aetnamem.hooks.allowConversationAccess"]
@@ -282,6 +290,8 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
         lambda arguments: (
             {"enabled": True}
             if "hooks.internal.entries.session-memory" in arguments
+            else str(workspace)
+            if any(str(value).endswith("config.nativeWorkspace") for value in arguments)
             else None
         ),
     )
@@ -307,6 +317,7 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
                     {"name": "before_prompt_build"},
                     {"name": "agent_end"},
                     {"name": "before_message_write"},
+                    {"name": "before_tool_call"},
                 ],
             }
             if "plugins" in arguments

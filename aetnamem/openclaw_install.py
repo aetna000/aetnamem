@@ -14,7 +14,7 @@ from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "0.5.0-experimental.1"
+OPENCLAW_PLUGIN_VERSION = "0.5.0-experimental.2"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 

@@ -169,9 +169,13 @@ jobs:
         run: |
           node -e '
             const pkg = require("./package.json");
-            const expected = "v0.6.1";
-            if (process.env.RELEASE_TAG !== expected || pkg.version !== "0.4.0") {
-              throw new Error(`release ${process.env.RELEASE_TAG} must publish plugin 0.4.0`);
+            const releases = {
+              "v0.6.1": "0.4.0",
+              "v0.7.0a4": "0.5.0-experimental.2",
+            };
+            const expected = releases[process.env.RELEASE_TAG];
+            if (!expected || pkg.version !== expected) {
+              throw new Error(`release ${process.env.RELEASE_TAG} does not match plugin ${pkg.version}`);
             }
           '
       - run: python -m pip install -e ../..
@@ -207,6 +211,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/releases/v0.6.1.md
+          body_path: docs/releases/${{ github.ref_name }}.md
+          prerelease: ${{ contains(github.ref_name, 'a') }}
           files: |
             dist/*

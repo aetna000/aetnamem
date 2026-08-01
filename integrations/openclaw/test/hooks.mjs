@@ -251,6 +251,7 @@ try {
   const takeover = fakeApi({
     ...base,
     takeoverActive: true,
+    nativeWorkspace: path.join(dataDir, "openclaw-workspace"),
   });
   const takeoverBefore = takeover.hooks.get("before_prompt_build");
   const guided = await takeoverBefore(
@@ -264,6 +265,35 @@ try {
   assert.ok(guided.appendSystemContext.includes("Never call Bash"));
   assert.ok(takeover.tools.has("memory_search"));
   assert.ok(takeover.tools.has("memory_get"));
+  const beforeTool = takeover.hooks.get("before_tool_call");
+  assert.equal(typeof beforeTool, "function");
+  const workspace = path.join(dataDir, "openclaw-workspace");
+  const blockedShell = await beforeTool({
+    toolName: "Bash",
+    params: { command: "sed -n '1,200p' MEMORY.md", cwd: workspace },
+  }, {});
+  assert.equal(blockedShell.block, true);
+  assert.match(blockedShell.blockReason, /captured automatically/);
+  const blockedWrite = await beforeTool({
+    toolName: "write_file",
+    params: { path: path.join(workspace, "memory", "today.md"), content: "note" },
+    derivedPaths: [path.join(workspace, "memory", "today.md")],
+  }, {});
+  assert.equal(blockedWrite.block, true);
+  const blockedPatch = await beforeTool({
+    toolName: "apply_patch",
+    params: { patch: "*** Update File: MEMORY.md\n+preference" },
+  }, {});
+  assert.equal(blockedPatch.block, true);
+  assert.equal(await beforeTool({
+    toolName: "Bash",
+    params: { command: "pwd && git status", cwd: workspace },
+  }, {}), undefined);
+  assert.equal(await beforeTool({
+    toolName: "write_file",
+    params: { path: "/tmp/unrelated/MEMORY.md", content: "project notes" },
+    derivedPaths: ["/tmp/unrelated/MEMORY.md"],
+  }, {}), undefined);
   for (const service of takeover.services) await service.stop?.();
 
   const trialState = path.join(dataDir, "safe-switch.json");

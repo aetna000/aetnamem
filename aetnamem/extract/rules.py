@@ -64,6 +64,14 @@ _AVOID_RE = re.compile(
     re.I,
 )
 
+# Common first-person preferences: "I like red apples", "I prefer dark mode".
+# These are accumulating facts rather than single-valued slots, so they do not
+# implicitly supersede a previous preference.
+_PREFERENCE_RE = re.compile(
+    r"\bI\s+(?P<verb>like|love|prefer|enjoy)\s+(?P<what>[^.?!\n]+)",
+    re.I,
+)
+
 _EMBEDDED_BLOCK_RE = re.compile(
     r"<(?P<tag>webpage|web_page|tool_output|tool(?:_[a-z]+)*)\b[^>]*>"
     r"(?P<body>.*?)(?:</(?P=tag)>|$)",
@@ -139,6 +147,19 @@ def _parse_statement(text: str) -> tuple[str, str | None, float] | None:
         what = _clean(avoid.group("what")).rstrip(" .?!")
         if what:
             return f"User avoids {what}.", None, 0.8
+
+    preference = _PREFERENCE_RE.search(text)
+    if preference:
+        what = _clean(preference.group("what")).rstrip(" .?!")
+        verb = preference.group("verb").lower()
+        third_person = {
+            "like": "likes",
+            "love": "loves",
+            "prefer": "prefers",
+            "enjoy": "enjoys",
+        }[verb]
+        if what:
+            return f"User {third_person} {what}.", None, 0.85
 
     return None
 

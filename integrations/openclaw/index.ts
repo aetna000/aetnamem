@@ -12,6 +12,7 @@
  * - before_prompt_build → memory_recall_block (bounded, audited injection)
  * - agent_end           → memory_capture for the user turn + assistant digest
  * - before_message_write → strip injected <relevant_memories> from history
+ * - before_tool_call    → enforce the native-memory write boundary in takeover
  * Tools:
  * - aetnamem_search, aetnamem_forget
  * - aetnamem_observe, aetnamem_forget_artifact
@@ -24,6 +25,7 @@ import type {
   OpenClawPluginApi,
   BeforePromptBuildEvent,
   AgentEndEvent,
+  BeforeToolCallEvent,
 } from "./src/types.js";
 import { runSetup } from "./src/setup.js";
 
@@ -46,6 +48,7 @@ interface PluginConfig {
   dbPath: string;
   subject: string;
   takeoverActive: boolean;
+  nativeWorkspace: string;
   recall: {
     enabled: boolean;
     maxRecords: number;
@@ -102,6 +105,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
     dbPath,
     subject,
     takeoverActive: cfg.takeoverActive === true,
+    nativeWorkspace: expandHome(String(cfg.nativeWorkspace ?? "")),
     recall: {
       enabled: cfg.recall?.enabled !== false,
       maxRecords: Number(cfg.recall?.maxRecords ?? 3),
@@ -126,6 +130,74 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
     orchestration,
     safeSwitch,
   };
+}
+
+const FILE_TOOL_HINTS = [
+  "bash", "shell", "exec", "write", "edit", "patch", "file", "filesystem",
+  "read", "delete", "move", "copy", "search",
+];
+
+function isFileLikeTool(toolName: string): boolean {
+  const normalized = toolName.toLowerCase();
+  return FILE_TOOL_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function isProtectedNativePath(candidate: string, workspace: string): boolean {
+  if (!candidate || !workspace) return false;
+  const root = path.resolve(workspace);
+  const resolved = path.isAbsolute(candidate)
+    ? path.resolve(candidate)
+    : path.resolve(root, candidate);
+  const memoryFile = path.join(root, "MEMORY.md");
+  const memoryDir = path.join(root, "memory");
+  return (
+    resolved === memoryFile ||
+    resolved === memoryDir ||
+    resolved.startsWith(memoryDir + path.sep)
+  );
+}
+
+function collectStrings(value: unknown, output: string[] = []): string[] {
+  if (typeof value === "string") output.push(value);
+  else if (Array.isArray(value)) {
+    for (const item of value) collectStrings(item, output);
+  } else if (value && typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      collectStrings(item, output);
+    }
+  }
+  return output;
+}
+
+function commandMentionsNativeMemory(command: string, workspace: string): boolean {
+  const normalizedWorkspace = path.resolve(workspace);
+  if (command.includes(path.join(normalizedWorkspace, "MEMORY.md"))) return true;
+  if (command.includes(path.join(normalizedWorkspace, "memory"))) return true;
+  // OpenClaw's agent tools normally execute relative paths from its workspace.
+  // Match path tokens, not prose such as "tell me about memory".
+  return /(?:^|[\s'"`=;|&:(])(?:\.\/)?MEMORY\.md(?=$|[\s'"`;|&:)])/i.test(command) ||
+    /(?:^|[\s'"`=;|&:(])(?:\.\/)?memory(?:\/[^\s'"`;|&)]*)?(?=$|[\s'"`;|&:)])/i.test(command);
+}
+
+function touchesNativeMemory(event: BeforeToolCallEvent, workspace: string): boolean {
+  if (!workspace) return false;
+  if ((event.derivedPaths ?? []).some((candidate) =>
+    isProtectedNativePath(candidate, workspace))) return true;
+  if (!isFileLikeTool(event.toolName)) return false;
+
+  const params = event.params ?? {};
+  const cwdValue = typeof params.cwd === "string" ? params.cwd : workspace;
+  const cwd = path.isAbsolute(cwdValue)
+    ? path.resolve(cwdValue)
+    : path.resolve(workspace, cwdValue);
+  const workspaceRoot = path.resolve(workspace);
+  const runsInWorkspace = cwd === workspaceRoot || cwd.startsWith(workspaceRoot + path.sep);
+  for (const value of collectStrings(params)) {
+    if (path.isAbsolute(value) && isProtectedNativePath(value, workspace)) return true;
+    if (runsInWorkspace && isProtectedNativePath(value, workspace)) return true;
+    if (runsInWorkspace && commandMentionsNativeMemory(value, workspace)) return true;
+  }
+  return false;
 }
 
 function expandHome(filePath: string): string {
@@ -407,6 +479,19 @@ function register(api: OpenClawPluginApi): void {
     if (takeoverGuidance) result.appendSystemContext = takeoverGuidance;
     if (Object.keys(result).length) return result;
   });
+
+  // ---- enforce takeover: native OpenClaw memory must stay frozen --------
+  if (cfg.takeoverActive) {
+    api.on("before_tool_call", (event: BeforeToolCallEvent) => {
+      if (!touchesNativeMemory(event, cfg.nativeWorkspace)) return;
+      const reason =
+        "AetnaMem takeover blocked access to OpenClaw's frozen native memory " +
+        "(MEMORY.md or memory/*). The user's statement is captured automatically; " +
+        "use memory_search and memory_get for durable memory.";
+      api.logger.warn(`${TAG} ${reason} Tool: ${event.toolName}`);
+      return { block: true, blockReason: reason };
+    });
+  }
 
   // ---- auto-capture: user turn through the pipeline, assistant as digest -
   api.on("agent_end", async (event: AgentEndEvent, ctx) => {

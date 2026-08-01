@@ -36,6 +36,12 @@ def test_avoid_statement_is_not_overgeneralized() -> None:
     assert fact.content == "User avoids shellfish at team lunches."
 
 
+def test_common_first_person_preference_is_recallable() -> None:
+    [fact] = extract_facts("I like red apple.")
+    assert fact.content == "User likes red apple."
+    assert fact.fact_key is None
+
+
 def test_questions_yield_no_facts() -> None:
     assert extract_facts("Am I vegetarian?") == []
     assert extract_facts("Which airport should you use for me?") == []
