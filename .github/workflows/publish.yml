@@ -191,7 +191,7 @@ jobs:
           if npm view "openclaw-memory-aetnamem@$version" version >/dev/null 2>&1; then
             echo "openclaw-memory-aetnamem@$version is already published"
           else
-            npm publish --access public --provenance --tag next
+            npm publish --access public --provenance --tag experimental
           fi
       - name: Report registry authorization requirement
         if: steps.npm-publish.outcome == 'failure'
