@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -80,15 +80,23 @@ class SQLiteStore:
             ).fetchone()
             if action_table is not None:
                 self._conn.execute(
-                    "DELETE FROM action_transactions WHERE subject_id = ?", (subject_id,)
+                    "DELETE FROM action_transactions WHERE subject_id = ?",
+                    (subject_id,),
                 )
             if self._fts_enabled:
                 self._delete_records_fts_subject(subject_id)
             if self._graph_fts_enabled:
                 self._delete_graph_fts_subject(subject_id)
-            self._conn.execute("DELETE FROM graph_merge_proposals WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM graph_archive_members WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM graph_archive_partitions WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM graph_merge_proposals WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM graph_archive_members WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM graph_archive_partitions WHERE subject_id = ?",
+                (subject_id,),
+            )
             self._conn.execute(
                 "DELETE FROM media_observations WHERE subject_id = ?", (subject_id,)
             )
@@ -96,20 +104,154 @@ class SQLiteStore:
                 "DELETE FROM media_artifacts WHERE subject_id = ?", (subject_id,)
             )
             self._conn.execute("DELETE FROM edges WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM entity_aliases WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM entities WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM records WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM episodes WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM retrieval_events WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM entity_aliases WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM entities WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM records WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM episodes WHERE subject_id = ?", (subject_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM retrieval_events WHERE subject_id = ?", (subject_id,)
+            )
             self._conn.execute(
                 "DELETE FROM investigation_access_log WHERE subject_id = ?",
                 (subject_id,),
             )
-            self._conn.execute("DELETE FROM audit_verification_state WHERE subject_id = ?", (subject_id,))
-            self._conn.execute("DELETE FROM audit_log WHERE subject_id = ?", (subject_id,))
+            self._conn.execute(
+                "DELETE FROM audit_verification_state WHERE subject_id = ?",
+                (subject_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM audit_log WHERE subject_id = ?", (subject_id,)
+            )
             self._conn.execute(
                 "DELETE FROM record_generations WHERE subject_id = ?", (subject_id,)
             )
+            self._conn.execute(
+                "DELETE FROM pending_user_messages WHERE subject_id = ?", (subject_id,)
+            )
+
+    def stage_user_message(
+        self,
+        *,
+        subject_id: str,
+        aliases: list[str],
+        message: str,
+        run_id: str | None = None,
+        ttl_seconds: int = 600,
+    ) -> str:
+        """Temporarily bind one typed host message to runtime session aliases."""
+        clean_aliases = list(
+            dict.fromkeys(value.strip() for value in aliases if value.strip())
+        )
+        if not clean_aliases:
+            raise ValueError("at least one session alias is required")
+        if len(clean_aliases) > 8 or any(len(value) > 1_024 for value in clean_aliases):
+            raise ValueError("session aliases exceed the bounded handoff contract")
+        if not message.strip():
+            raise ValueError("staged user message must not be empty")
+        if len(message) > 100_000:
+            raise ValueError("staged user message exceeds 100,000 characters")
+        source_id = _new_id("src")
+        created_at = utc_now()
+        expires_at = (
+            datetime.now(timezone.utc)
+            + timedelta(seconds=max(30, min(ttl_seconds, 600)))
+        ).isoformat()
+        placeholders = ",".join("?" for _ in clean_aliases)
+        with self.transaction():
+            self._conn.execute(
+                "DELETE FROM pending_user_messages WHERE expires_at <= ?", (created_at,)
+            )
+            old_rows = self._conn.execute(
+                f"""
+                SELECT DISTINCT source_id FROM pending_user_messages
+                WHERE subject_id = ? AND alias IN ({placeholders})
+                """,
+                (subject_id, *clean_aliases),
+            ).fetchall()
+            for row in old_rows:
+                self._conn.execute(
+                    "DELETE FROM pending_user_messages WHERE source_id = ?",
+                    (row["source_id"],),
+                )
+            self._conn.executemany(
+                """
+                INSERT INTO pending_user_messages (
+                  source_id, subject_id, alias, message, run_id, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        source_id,
+                        subject_id,
+                        alias,
+                        message,
+                        run_id,
+                        created_at,
+                        expires_at,
+                    )
+                    for alias in clean_aliases
+                ],
+            )
+        return source_id
+
+    def resolve_user_message(
+        self, *, subject_id: str, aliases: list[str]
+    ) -> dict[str, Any] | None:
+        clean_aliases = list(
+            dict.fromkeys(value.strip() for value in aliases if value.strip())
+        )
+        if not clean_aliases:
+            return None
+        if len(clean_aliases) > 8 or any(len(value) > 1_024 for value in clean_aliases):
+            raise ValueError("session aliases exceed the bounded handoff contract")
+        now = utc_now()
+        placeholders = ",".join("?" for _ in clean_aliases)
+        with self.transaction():
+            self._conn.execute(
+                "DELETE FROM pending_user_messages WHERE expires_at <= ?", (now,)
+            )
+            row = self._conn.execute(
+                f"""
+                SELECT source_id, message, run_id, created_at, expires_at
+                FROM pending_user_messages
+                WHERE subject_id = ? AND alias IN ({placeholders})
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (subject_id, *clean_aliases),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def clear_user_message(self, *, subject_id: str, aliases: list[str]) -> int:
+        clean_aliases = list(
+            dict.fromkeys(value.strip() for value in aliases if value.strip())
+        )
+        if not clean_aliases:
+            return 0
+        if len(clean_aliases) > 8 or any(len(value) > 1_024 for value in clean_aliases):
+            raise ValueError("session aliases exceed the bounded handoff contract")
+        placeholders = ",".join("?" for _ in clean_aliases)
+        with self.transaction():
+            rows = self._conn.execute(
+                f"""
+                SELECT DISTINCT source_id FROM pending_user_messages
+                WHERE subject_id = ? AND alias IN ({placeholders})
+                """,
+                (subject_id, *clean_aliases),
+            ).fetchall()
+            for row in rows:
+                self._conn.execute(
+                    "DELETE FROM pending_user_messages WHERE source_id = ?",
+                    (row["source_id"],),
+                )
+        return len(rows)
 
     def insert_episode(
         self,
@@ -221,9 +363,7 @@ class SQLiteStore:
                 """,
                 (subject_id, *batch),
             ).fetchall()
-            records.update(
-                (str(row["id"]), _record_from_row(row)) for row in rows
-            )
+            records.update((str(row["id"]), _record_from_row(row)) for row in rows)
         return records
 
     def record_generation(self, subject_id: str) -> int:
@@ -543,9 +683,7 @@ class SQLiteStore:
                 observation["media_sha256"] = row["media_sha256"]
                 observation["modality"] = row["modality"]
                 observation["host_reference"] = row["host_reference"]
-                observation["host_reference_sha256"] = row[
-                    "host_reference_sha256"
-                ]
+                observation["host_reference_sha256"] = row["host_reference_sha256"]
                 observation["artifact_status"] = row["artifact_status"]
                 result[str(row["record_id"])] = observation
         return result
@@ -576,9 +714,7 @@ class SQLiteStore:
         observations = self.list_media_observations(
             subject_id, artifact_id=artifact_id, include_tombstoned=True
         )
-        artifact = self.get_media_artifact(
-            subject_id, artifact_id=artifact_id
-        )
+        artifact = self.get_media_artifact(subject_id, artifact_id=artifact_id)
         return {
             "artifact_tombstoned": bool(
                 artifact
@@ -814,7 +950,13 @@ class SQLiteStore:
                         raw = ?
                     WHERE subject_id = ? AND id = ?
                     """,
-                    (deleted_at, deleted_at, _json({"purged": True}), subject_id, record_id),
+                    (
+                        deleted_at,
+                        deleted_at,
+                        _json({"purged": True}),
+                        subject_id,
+                        record_id,
+                    ),
                 )
                 self._delete_fts(record_id)
                 changed.append(record_id)
@@ -1086,7 +1228,9 @@ class SQLiteStore:
         ).fetchone()
         return _audit_from_row(row) if row else None
 
-    def event_at_sequence(self, subject_id: str, sequence: int) -> dict[str, Any] | None:
+    def event_at_sequence(
+        self, subject_id: str, sequence: int
+    ) -> dict[str, Any] | None:
         row = self._conn.execute(
             "SELECT * FROM audit_log WHERE subject_id = ? AND sequence = ?",
             (subject_id, sequence),
@@ -1096,8 +1240,7 @@ class SQLiteStore:
     def chain_heads(self) -> dict[str, dict[str, Any]]:
         """Latest audit event per subject: {subject_id: {sequence, event_hash,
         event_count}}. This is what a checkpoint anchors."""
-        rows = self._conn.execute(
-            """
+        rows = self._conn.execute("""
             SELECT a.subject_id, a.sequence, a.event_hash,
                    (SELECT COUNT(*) FROM audit_log b
                     WHERE b.subject_id = a.subject_id) AS event_count
@@ -1106,8 +1249,7 @@ class SQLiteStore:
               SELECT MAX(c.sequence) FROM audit_log c
               WHERE c.subject_id = a.subject_id
             )
-            """
-        ).fetchall()
+            """).fetchall()
         return {
             row["subject_id"]: {
                 "sequence": row["sequence"],
@@ -1154,10 +1296,14 @@ class SQLiteStore:
                     "DELETE FROM audit_verification_state WHERE subject_id = ?",
                     (subject_id,),
                 )
-        state = None if reset else self._conn.execute(
-            "SELECT * FROM audit_verification_state WHERE subject_id = ?",
-            (subject_id,),
-        ).fetchone()
+        state = (
+            None
+            if reset
+            else self._conn.execute(
+                "SELECT * FROM audit_verification_state WHERE subject_id = ?",
+                (subject_id,),
+            ).fetchone()
+        )
         previous_hash: str | None = None
         start_sequence = 0
         if state is not None:
@@ -1423,8 +1569,7 @@ class SQLiteStore:
 
     def _migrate(self) -> None:
         with self.transaction():
-            self._conn.executescript(
-                """
+            self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS episodes (
                   id TEXT PRIMARY KEY,
                   subject_id TEXT NOT NULL,
@@ -1435,6 +1580,23 @@ class SQLiteStore:
                   created_at TEXT NOT NULL,
                   raw TEXT NOT NULL DEFAULT '{}'
                 );
+
+                CREATE TABLE IF NOT EXISTS pending_user_messages (
+                  source_id TEXT NOT NULL,
+                  subject_id TEXT NOT NULL,
+                  alias TEXT NOT NULL,
+                  message TEXT NOT NULL,
+                  run_id TEXT,
+                  created_at TEXT NOT NULL,
+                  expires_at TEXT NOT NULL,
+                  PRIMARY KEY (subject_id, alias)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pending_user_messages_source
+                  ON pending_user_messages(source_id);
+
+                CREATE INDEX IF NOT EXISTS idx_pending_user_messages_expiry
+                  ON pending_user_messages(expires_at);
 
                 CREATE TABLE IF NOT EXISTS records (
                   id TEXT PRIMARY KEY,
@@ -1822,8 +1984,7 @@ class SQLiteStore:
                   DELETE FROM audit_verification_state
                   WHERE subject_id = OLD.subject_id;
                 END;
-                """
-            )
+                """)
             self._ensure_column("records", "fact_key", "TEXT")
             self._ensure_column("records", "content_normalized", "TEXT")
             self._ensure_column("retrieval_events", "query_sha256", "TEXT")
@@ -1832,12 +1993,10 @@ class SQLiteStore:
             )
             self._migrate_alias_status()
             self._backfill_record_normalization()
-            self._conn.execute(
-                """
+            self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_records_subject_normalized
                 ON records(subject_id, status, content_normalized)
-                """
-            )
+                """)
             self._migrate_fts()
             self._migrate_graph_fts()
 
@@ -1850,12 +2009,10 @@ class SQLiteStore:
             self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
 
     def _backfill_record_normalization(self) -> None:
-        rows = self._conn.execute(
-            """
+        rows = self._conn.execute("""
             SELECT id, content FROM records
             WHERE content_normalized IS NULL AND status != 'tombstoned'
-            """
-        ).fetchall()
+            """).fetchall()
         for row in rows:
             self._conn.execute(
                 "UPDATE records SET content_normalized = ? WHERE id = ?",
@@ -1869,8 +2026,7 @@ class SQLiteStore:
         if schema is None or "'superseded'" in str(schema["sql"]):
             return
         self._conn.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_legacy")
-        self._conn.execute(
-            """
+        self._conn.execute("""
             CREATE TABLE entity_aliases (
               id TEXT PRIMARY KEY,
               entity_id TEXT NOT NULL,
@@ -1887,10 +2043,8 @@ class SQLiteStore:
               FOREIGN KEY (entity_id) REFERENCES entities(id),
               FOREIGN KEY (source_record) REFERENCES records(id)
             )
-            """
-        )
-        self._conn.execute(
-            """
+            """)
+        self._conn.execute("""
             INSERT INTO entity_aliases (
               id, entity_id, subject_id, surface, normalized, source_record,
               trust_tier, status, created_at
@@ -1898,15 +2052,12 @@ class SQLiteStore:
             SELECT id, entity_id, subject_id, surface, normalized, source_record,
                    trust_tier, status, created_at
             FROM entity_aliases_legacy
-            """
-        )
+            """)
         self._conn.execute("DROP TABLE entity_aliases_legacy")
-        self._conn.execute(
-            """
+        self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_aliases_subject_surface
             ON entity_aliases(subject_id, normalized, status)
-            """
-        )
+            """)
 
     def _migrate_fts(self) -> None:
         try:
@@ -1916,72 +2067,66 @@ class SQLiteStore:
             if existing is not None and "porter" not in (existing["sql"] or ""):
                 self._conn.execute("DROP TABLE records_fts")
                 existing = None
-            self._conn.execute(
-                """
+            self._conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS records_fts
                 USING fts5(
                   record_id UNINDEXED, subject_id UNINDEXED, content,
                   tokenize='porter unicode61'
                 )
-                """
-            )
+                """)
             self._fts_enabled = True
             if existing is None:
                 self._rebuild_fts()
-            elif self._conn.execute(
-                "SELECT 1 FROM records_fts LIMIT 1"
-            ).fetchone() is not None and self._conn.execute(
-                "SELECT 1 FROM records_fts_map LIMIT 1"
-            ).fetchone() is None:
+            elif (
+                self._conn.execute("SELECT 1 FROM records_fts LIMIT 1").fetchone()
+                is not None
+                and self._conn.execute(
+                    "SELECT 1 FROM records_fts_map LIMIT 1"
+                ).fetchone()
+                is None
+            ):
                 self._rebuild_fts()
         except sqlite3.OperationalError:
             self._fts_enabled = False
 
     def _migrate_graph_fts(self) -> None:
         try:
-            self._conn.execute(
-                """
+            self._conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS graph_fts
                 USING fts5(
                   object_type UNINDEXED, object_id UNINDEXED,
                   subject_id UNINDEXED, text,
                   tokenize='porter unicode61'
                 )
-                """
-            )
+                """)
             self._graph_fts_enabled = True
-            if self._conn.execute(
-                "SELECT 1 FROM graph_fts LIMIT 1"
-            ).fetchone() is not None and self._conn.execute(
-                "SELECT 1 FROM graph_fts_map LIMIT 1"
-            ).fetchone() is None:
-                self._conn.execute(
-                    """
+            if (
+                self._conn.execute("SELECT 1 FROM graph_fts LIMIT 1").fetchone()
+                is not None
+                and self._conn.execute("SELECT 1 FROM graph_fts_map LIMIT 1").fetchone()
+                is None
+            ):
+                self._conn.execute("""
                     INSERT INTO graph_fts_map (
                       object_type, object_id, subject_id, fts_rowid
                     )
                     SELECT object_type, object_id, subject_id, rowid
                     FROM graph_fts
-                    """
-                )
+                    """)
         except sqlite3.OperationalError:
             self._graph_fts_enabled = False
 
     def _rebuild_fts(self) -> None:
         self._conn.execute("DELETE FROM records_fts_map")
         self._conn.execute("DELETE FROM records_fts")
-        self._conn.execute(
-            """
+        self._conn.execute("""
             INSERT INTO records_fts(record_id, subject_id, content)
             SELECT id, subject_id, content FROM records WHERE status = 'active'
-            """
-        )
-        self._conn.execute(
-            """
+            """)
+        self._conn.execute("""
             INSERT INTO records_fts_map(record_id, subject_id, fts_rowid)
             SELECT record_id, subject_id, rowid FROM records_fts
-            """
-        )
+            """)
 
     def _upsert_fts(self, record_id: str, subject_id: str, content: str) -> None:
         if not self._fts_enabled:
@@ -2180,9 +2325,7 @@ def _episode_from_row(row: sqlite3.Row) -> dict[str, Any]:
 def _media_observation_from_row(row: sqlite3.Row) -> dict[str, Any]:
     value = dict(row)
     value["segment"] = _load_json(value.pop("segment_json"), {})
-    value["extractor"] = _load_json(
-        value.pop("extractor_identity_json"), {}
-    )
+    value["extractor"] = _load_json(value.pop("extractor_identity_json"), {})
     return value
 
 

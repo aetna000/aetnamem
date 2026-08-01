@@ -13,6 +13,7 @@ export interface OpenClawLogger {
 }
 
 export interface OpenClawHookCtx {
+  runId?: string;
   sessionKey?: string;
   sessionId?: string;
 }
@@ -25,6 +26,21 @@ export interface BeforePromptBuildEvent {
 export interface AgentEndEvent {
   success?: boolean;
   messages?: unknown[];
+}
+
+export interface BeforeModelResolveEvent {
+  prompt: string;
+  historyMessages: unknown[];
+  imagesCount: number;
+  tools?: unknown[];
+}
+
+export interface OpenClawPluginToolContext {
+  agentId?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  senderIsOwner?: boolean;
+  activeModel?: { provider?: string; modelId?: string; modelRef?: string };
 }
 
 export interface BeforeMessageWriteEvent {
@@ -70,8 +86,15 @@ export interface OpenClawPluginApi {
     options?: { commands: string[] },
   ) => void;
   registerTool(
-    spec: OpenClawToolSpec,
+    spec: OpenClawToolSpec | ((ctx: OpenClawPluginToolContext) => OpenClawToolSpec),
     options?: { name?: string; names?: string[] },
+  ): void;
+  on(
+    event: "before_model_resolve",
+    handler: (
+      event: BeforeModelResolveEvent,
+      ctx: OpenClawHookCtx,
+    ) => Promise<void> | void,
   ): void;
   registerService?: (service: {
     id: string;

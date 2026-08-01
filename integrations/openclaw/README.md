@@ -2,8 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes experimental npm `0.5.0-experimental.2`, compatible with
-Python prerelease `v0.7.0a4`.
+This README describes experimental npm `0.5.0-experimental.3`, compatible with
+Python prerelease `v0.7.0a5`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -27,7 +27,10 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 |---|---|---|
 | `before_prompt_build` | `memory_persona` | in cache-aware mode, adds a stable `<user_persona>` through `appendSystemContext`; correction, capture, and plugin-driven forgetting invalidate it |
 | `before_prompt_build` | `memory_recall_block` | adds query-specific `<relevant_memories>` through `appendContext`; a lexical match is required and the audit retains full record IDs even when the model sees compact references |
-| `agent_end` | `memory_capture` | the clean user turn runs the full write pipeline; the assistant reply is logged as a **digest only** (never becomes memory) |
+| `before_model_resolve` | private typed-source handoff | in active takeover, temporarily binds OpenClaw's current raw user prompt to its session aliases; it does not scan history or extract keywords, and the handoff is cleared after the turn |
+| tool `memory_remember` | `memory_remember` | in active takeover, OpenClaw's current model semantically interprets a durable user fact and submits the concise fact; AetnaMem resolves the exact typed source, stores the fact, and audits the model identity plus source/fact digests |
+| `agent_end` | `memory_capture` | in compatibility mode, the clean user turn runs the deterministic write pipeline; the assistant reply is logged as a **digest only** (never becomes memory). Active takeover disables this transcript capture and clears the temporary typed source instead |
+| `agent_end` after active recall | `memory_log_action` | binds the IDs actually injected to a SHA-256 fingerprint of the later assistant response; response content is not stored and the receipt proves sequence, not that memory caused the answer |
 | `before_message_write` | — | strips injected blocks from persisted history so recalls don't feed back |
 | `before_tool_call` | — | during verified takeover, blocks normal OpenClaw tools from reading or recreating the exact frozen `MEMORY.md` and `memory/*` paths |
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
@@ -45,6 +48,9 @@ without injection.
 
 With `safeSwitch.enabled`, the plugin instead uses the private trial protocol.
 While OpenClaw is active, internal shadow recall never returns model context.
+After each successful turn, AetnaMem refreshes its isolated copy from the
+native Markdown that OpenClaw itself chose to write. It does not parse the
+conversation transcript or run AetnaMem keyword extraction over the turn.
 After the verified switch, AetnaMem returns bounded governed context.
 Agent-callable AetnaMem tools are not registered in the side-by-side state. A
 missing or tampered state fails closed to no injection.
@@ -62,7 +68,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.7.0a4
+python -m pip install --pre aetnamem==0.7.0a5
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.
@@ -75,7 +81,7 @@ aetnamem dashboard
 
 The installer records the absolute engine path, so the OpenClaw service does
 not have to inherit the interactive shell's Python `PATH`. It installs npm
-`0.5.0-experimental.2` internally, starts shadow Safe Switch mode, synchronizes
+`0.5.0-experimental.3` internally, starts shadow Safe Switch mode, synchronizes
 native Markdown memory into an isolated evidence database, restarts the gateway,
 requires a successful RPC probe, and verifies the retained configuration. On
 failure it stops the trial and restores the prior plugin configuration.
@@ -148,6 +154,11 @@ through a trusted UI, CLI, or another host control.
 
 In active takeover mode the plugin bounds supplemental memory context and the
 native `MEMORY.md`/daily-memory paths are no longer loaded or written.
+Durable capture is model-semantic, not keyword based: the already selected
+OpenClaw model interprets the user's intent and calls `memory_remember`. No
+second provider call is made. AetnaMem accepts the write only when it can bind
+the call to OpenClaw's typed current-prompt event for the same session, and the
+agent may claim success only after receiving `stored: true`.
 OpenClaw skills remain procedures; AetnaMem stores and selects the user/project
 facts and outcomes that make those procedures task-specific. The dashboard
 reports a context-budget projection, not a guaranteed token saving.

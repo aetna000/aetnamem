@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "OpenClaw bridge for the separately installed AetnaMem Python engine. Requires `pip install aetnamem` first. Adds auditable auto-recall and auto-capture.",
-  "version": "0.5.0-experimental.2",
+  "version": "0.5.0-experimental.3",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -11,6 +11,7 @@
     "tools": [
       "memory_search",
       "memory_get",
+      "memory_remember",
       "aetnamem_search",
       "aetnamem_forget",
       "aetnamem_observe",

@@ -92,6 +92,74 @@ def test_tool_roundtrip_with_default_subject() -> None:
     assert verified["valid"] is True
 
 
+def test_semantic_admission_uses_typed_cross_process_source_handoff(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "shared-memory.db"
+    hook_memory = Memory(db_path)
+    tool_memory = Memory(db_path)
+    hook_server = MCPServer(hook_memory, default_subject="user-1")
+    tool_server = MCPServer(tool_memory, default_subject="user-1")
+    aliases = ["agent:main:semantic-1", "runtime-uuid-1"]
+    try:
+        staged = _call(
+            hook_server,
+            1,
+            "memory_stage_user_message",
+            {
+                "message": "The seat beside the fuselage works best when I sleep.",
+                "source_aliases": aliases,
+                "run_id": "run-1",
+            },
+        )
+        assert staged["staged"] is True
+
+        stored = _call(
+            tool_server,
+            2,
+            "memory_remember",
+            {
+                "source_aliases": ["runtime-uuid-1"],
+                "interpreted_fact": "User prefers window seats on overnight flights.",
+                "interpreted_fact_key": "overnight_flight_seat_preference",
+                "interpreter": "openai/gpt-test",
+                "source_type": "user_message",
+                "session_id": "agent:main:semantic-1",
+            },
+        )
+        assert stored["records"][0]["content"] == (
+            "User prefers window seats on overnight flights."
+        )
+        audit = _call(tool_server, 3, "memory_audit", {})
+        event = next(
+            row
+            for row in audit["audit_log"]
+            if row["event_type"] == "memory.semantic_interpretation_received"
+        )
+        assert event["payload"]["interpreter"] == "openai/gpt-test"
+        assert event["payload"]["interpretation_assurance"] == "host_asserted"
+        assert event["payload"]["source_binding"] == "typed_session_handoff"
+        assert event["payload"]["source_message_sha256"] == hashlib.sha256(
+            b"The seat beside the fuselage works best when I sleep."
+        ).hexdigest()
+        assert "window" not in json.dumps(event["payload"]).lower()
+
+        cleared = _call(
+            hook_server,
+            4,
+            "memory_clear_user_message",
+            {"source_aliases": ["agent:main:semantic-1"]},
+        )
+        assert cleared["cleared"] == 1
+        assert (
+            tool_memory.store.resolve_user_message(subject_id="user-1", aliases=aliases)
+            is None
+        )
+    finally:
+        hook_memory.close()
+        tool_memory.close()
+
+
 def test_scored_recall_and_audited_exact_record_read() -> None:
     server = _server()
     stored = _call(

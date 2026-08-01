@@ -1,7 +1,7 @@
 """Private Safe Switch protocol used by host integrations.
 
 This is intentionally a separate MCP server from the agent-facing memory
-tools. It exposes only trial capture, preview/injection preparation, exposure
+tools. It exposes only host-side mirror/capture, preview preparation, exposure
 confirmation, and status. The host plugin calls it; the agent cannot promote
 candidate memories or change trial mode.
 """
@@ -9,6 +9,7 @@ candidate memories or change trial mode.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import sys
 from typing import Any, TextIO
 
@@ -84,6 +85,26 @@ class TrialMCPServer:
                 session_id=arguments.get("session_id"),
                 authenticated_user=bool(arguments.get("authenticated_user", False)),
             )
+        elif name == "trial_sync_openclaw_memory":
+            state = self.manager.state()
+            if state.host != "openclaw":
+                raise ValueError("native memory sync is available only for OpenClaw")
+            from aetnamem.trial.openclaw_native import (
+                MIRROR_MANIFEST_NAME,
+                mirror_status,
+            )
+
+            if not (Path(state.trial_dir) / MIRROR_MANIFEST_NAME).is_file():
+                raise ValueError(
+                    "the OpenClaw mirror has not been initialized; run "
+                    "`aetnamem openclaw install` or refresh it from the dashboard"
+                )
+            value = mirror_status(state, refresh=True)
+            if not value.get("synced"):
+                raise ValueError(
+                    "the OpenClaw mirror has not been initialized; run "
+                    "`aetnamem openclaw install` or refresh it from the dashboard"
+                )
         elif name == "trial_prepare":
             value = self.manager.prepare(
                 str(arguments["query"]),
@@ -121,6 +142,15 @@ def _tools() -> list[dict[str, Any]]:
                     "authenticated_user": {"type": "boolean"},
                 },
                 "required": ["message", "authenticated_user"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "trial_sync_openclaw_memory",
+            "description": "Refresh the isolated mirror from OpenClaw's native memory files without reading the conversation transcript.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },
@@ -164,9 +194,7 @@ def _result(request_id: Any, result: Any) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
-def _error(
-    request_id: Any, code: int, message: str
-) -> dict[str, Any]:
+def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": request_id,

@@ -26,7 +26,7 @@ try:
 
     SERVER_VERSION = _pkg_version("aetnamem")
 except Exception:  # not installed (e.g. run from a checkout)
-    SERVER_VERSION = "0.7.0a4"
+    SERVER_VERSION = "0.7.0a5"
 
 _SUBJECT_PROPERTY = {
     "subject_id": {
@@ -131,6 +131,8 @@ class MCPServer:
     ) -> dict[str, Any]:
         handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "memory_remember": self._tool_remember,
+            "memory_stage_user_message": self._tool_stage_user_message,
+            "memory_clear_user_message": self._tool_clear_user_message,
             "memory_observe": self._tool_observe,
             "memory_recall": self._tool_recall,
             "memory_get_record": self._tool_get_record,
@@ -188,14 +190,82 @@ class MCPServer:
     def _subject(self, arguments: dict[str, Any]) -> str:
         return str(arguments.get("subject_id") or self.default_subject)
 
+    @staticmethod
+    def _source_aliases(arguments: dict[str, Any]) -> list[str]:
+        value = arguments.get("source_aliases") or []
+        if not isinstance(value, list):
+            raise ValueError("source_aliases must be an array of strings")
+        if any(not isinstance(item, str) for item in value):
+            raise ValueError("source_aliases must contain only strings")
+        return value
+
     def _tool_remember(self, arguments: dict[str, Any]) -> Any:
+        subject_id = self._subject(arguments)
+        message = arguments.get("message")
+        source_aliases = self._source_aliases(arguments)
+        staged = None
+        if arguments.get("interpreted_fact") is not None and source_aliases:
+            staged = self.memory.store.resolve_user_message(
+                subject_id=subject_id,
+                aliases=source_aliases,
+            )
+            if staged is None:
+                raise ValueError(
+                    "no current typed user message matches this OpenClaw session; memory was not stored"
+                )
+            message = staged["message"]
+        if message is None:
+            raise ValueError(
+                "memory_remember requires message or staged source_aliases"
+            )
         return self.memory.remember(
-            self._subject(arguments),
-            arguments["message"],
-            session_id=arguments.get("session_id"),
+            subject_id,
+            message,
+            session_id=arguments.get("session_id") or (staged or {}).get("run_id"),
             turn_id=arguments.get("turn_id"),
             source_type=arguments.get("source_type"),
+            interpreted_fact=arguments.get("interpreted_fact"),
+            interpreted_fact_key=arguments.get("interpreted_fact_key"),
+            actor=(
+                "host-agent-semantic"
+                if arguments.get("interpreted_fact") is not None
+                else "user"
+            ),
+            raw=(
+                {
+                    "format": "aetnamem-host-semantic-memory-v1",
+                    "interpreter": arguments.get("interpreter"),
+                    "interpretation_assurance": (
+                        "host_asserted" if staged is not None else "caller_asserted"
+                    ),
+                    "source_binding": (
+                        "typed_session_handoff"
+                        if staged is not None
+                        else "caller_supplied"
+                    ),
+                }
+                if arguments.get("interpreted_fact") is not None
+                else None
+            ),
         )
+
+    def _tool_stage_user_message(self, arguments: dict[str, Any]) -> Any:
+        aliases = self._source_aliases(arguments)
+        source_id = self.memory.store.stage_user_message(
+            subject_id=self._subject(arguments),
+            aliases=aliases,
+            message=str(arguments["message"]),
+            run_id=(str(arguments["run_id"]) if arguments.get("run_id") else None),
+            ttl_seconds=int(arguments.get("ttl_seconds") or 600),
+        )
+        return {"staged": True, "source_id": source_id, "aliases": len(set(aliases))}
+
+    def _tool_clear_user_message(self, arguments: dict[str, Any]) -> Any:
+        aliases = self._source_aliases(arguments)
+        cleared = self.memory.store.clear_user_message(
+            subject_id=self._subject(arguments), aliases=aliases
+        )
+        return {"cleared": cleared}
 
     def _tool_observe(self, arguments: dict[str, Any]) -> Any:
         envelope = {
@@ -472,7 +542,24 @@ class MCPServer:
                     **_SUBJECT_PROPERTY,
                     "message": {
                         "type": "string",
-                        "description": "The user message or fact.",
+                        "description": "The exact authenticated user message.",
+                    },
+                    "source_aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Typed host session aliases for a staged current user message.",
+                    },
+                    "interpreted_fact": {
+                        "type": "string",
+                        "description": "Optional concise fact semantically interpreted by the host agent.",
+                    },
+                    "interpreted_fact_key": {
+                        "type": "string",
+                        "description": "Optional stable semantic slot used to supersede an older value.",
+                    },
+                    "interpreter": {
+                        "type": "string",
+                        "description": "Host model identity that produced interpreted_fact.",
                     },
                     "source_type": {
                         "type": "string",
@@ -481,7 +568,6 @@ class MCPServer:
                     },
                     **_SESSION_PROPERTIES,
                 },
-                required=["message"],
             ),
             _tool(
                 "memory_observe",

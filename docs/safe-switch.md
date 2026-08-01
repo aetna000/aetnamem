@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.7.0a4**
+Status: **experimental preview in AetnaMem 0.7.0a5**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.7.0a4
+python -m pip install --pre aetnamem==0.7.0a5
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -31,7 +31,7 @@ aetnamem dashboard
 ```
 
 The installer pins the exact engine executable, installs npm
-`0.5.0-experimental.2` internally, takes and verifies a complete byte-for-byte
+`0.5.0-experimental.3` internally, takes and verifies a complete byte-for-byte
 baseline of the existing native memory, builds the searchable mirror, restarts
 and probes the gateway, and enters shadow mode. If any step fails, it restores
 the prior plugin configuration. Users do not install the npm package directly.
@@ -83,6 +83,14 @@ sessions. The local state and startup log files containing access metadata are
 both forced to mode `0600`. HttpOnly session cookies, CSRF and Origin checks
 remain enforced. `remove` deletes the daemon service record, not memory or
 trial evidence.
+
+Dashboard memory results are auditor entry points. Select a record ID to see
+the source-message digest, host interpreting model (or native-import source),
+creation/supersession/deletion lifecycle, every scored retrieval, recorded
+context injection and any digest-only agent response bound after delivery.
+The complete linked evidence is chronological and exportable as JSON or text;
+a verified purge also exposes its deletion receipt. Historic events that lack
+one of these receipts are shown as **not recorded**, never inferred.
 
 ## Two states: OpenClaw active or AetnaMem active
 
@@ -206,6 +214,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.7.0a4 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a5 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

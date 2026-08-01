@@ -56,7 +56,8 @@ border-radius:9px;background:var(--bg);color:var(--ink);padding:10px 12px}
 .results{margin-top:14px}.result{border-top:1px solid var(--line);padding:13px 2px}
 .result:first-child{border-top:0}.result p{margin:0 0 6px;white-space:pre-wrap}.meta{font-size:11px;
 color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}.pill{background:var(--brand-soft);
-color:var(--brand);border-radius:99px;padding:2px 7px}.empty{color:var(--muted);padding:16px 2px}
+color:var(--brand);border-radius:99px;padding:2px 7px}.recordlink{border:0;background:none;color:var(--blue);
+padding:0;text-decoration:underline;text-underline-offset:3px;font:inherit}.empty{color:var(--muted);padding:16px 2px}
 .source{border-top:1px solid var(--line);padding:12px 2px}.source:first-child{border-top:0}
 .sourcehead{display:flex;gap:10px;align-items:baseline}.sourcehead b{overflow-wrap:anywhere}
 .plane{margin-left:auto;border-radius:99px;background:var(--blue-soft);color:var(--blue);
@@ -79,9 +80,27 @@ background:var(--brand);animation:working 1.15s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.progressbar span{animation-duration:2.5s}}
 .foot{font-size:11px;color:var(--muted);margin-top:4px}.loading{opacity:.55;pointer-events:none}
 button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.backdrop{display:none;position:fixed;inset:0;background:#07110f99;z-index:20}.backdrop.show{display:block}
+.drawer{position:absolute;right:0;top:0;min-height:100%;width:min(720px,94vw);background:var(--bg);
+box-shadow:-20px 0 60px #0004;padding:22px;overflow:auto}.drawerhead{display:flex;gap:14px;align-items:start;
+position:sticky;top:-22px;background:var(--bg);padding:20px 0 14px;z-index:2}.drawerhead h2{font-size:22px;
+margin:2px 0}.close{margin-left:auto;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);
+background:var(--card);color:var(--ink);font-size:21px}.evidencegrid{display:grid;grid-template-columns:repeat(2,1fr);
+gap:9px}.evidence{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px;
+min-width:0}.evidence span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;
+letter-spacing:.06em}.evidence b{display:block;margin-top:3px;overflow-wrap:anywhere}.chain{display:flex;gap:5px;
+align-items:stretch;overflow:auto;padding:4px 0}.chainstep{min-width:104px;flex:1;border:1px solid var(--line);
+border-radius:9px;padding:9px;background:var(--card);font-size:11px}.chainstep b{display:block;font-size:12px}
+.chainstep.ok{border-color:var(--good);background:var(--good-soft)}.chainstep.missing{color:var(--muted)}
+.timeline{border-left:2px solid var(--line);margin-left:7px;padding-left:17px}.event{position:relative;
+padding:0 0 17px}.event:before{content:"";position:absolute;left:-23px;top:5px;width:10px;height:10px;
+border-radius:50%;background:var(--brand);border:2px solid var(--bg)}.event b{display:block}.event p{margin:2px 0;
+color:var(--muted);font-size:12px}.downloads{display:flex;gap:8px;flex-wrap:wrap}.downloads a{display:inline-flex;
+text-decoration:none}.delivery{border-top:1px solid var(--line);padding:11px 0}.delivery:first-child{border-top:0}
+.delivery b{display:block}.integrity{color:var(--good);font-weight:800}.integrity.bad{color:var(--bad)}
 @media(max-width:780px){.wrap{padding:0 14px}.hero{grid-template-columns:1fr;padding:20px}
 .actions{width:100%}.actions button{flex:1}.grid{grid-template-columns:1fr}.metrics{
-grid-template-columns:repeat(2,1fr)}header .small{display:none}}
+grid-template-columns:repeat(2,1fr)}header .small{display:none}.evidencegrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -156,6 +175,16 @@ grid-template-columns:repeat(2,1fr)}header .small{display:none}}
     </aside>
   </div>
 </main>
+<div class="backdrop" id="auditorBackdrop" aria-hidden="true">
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="auditorTitle">
+    <div class="drawerhead">
+      <div><div class="eyebrow">Auditor record history</div><h2 id="auditorTitle">Loading evidence…</h2>
+      <div class="mono small" id="auditorId"></div></div>
+      <button class="close" id="auditorClose" aria-label="Close record history">×</button>
+    </div>
+    <div id="auditorBody"><div class="empty">Loading the verified audit chain…</div></div>
+  </aside>
+</div>
 <script>
 (function(){
 "use strict";
@@ -187,6 +216,33 @@ async function post(path,body){var r=await fetch(path,{method:"POST",headers:{"C
 function element(name,className,value){var node=document.createElement(name);if(className)node.className=className;if(value!=null)node.textContent=value;return node}
 function active(){return !!(state&&state.takeover&&state.takeover.active)}
 function recovery(){return !!(state&&state.takeover&&state.takeover.requires_restore)}
+function shortDigest(value){return value?String(value).slice(0,16)+"…":"not recorded"}
+function evidence(label,value,mono){var box=element("div","evidence"),name=element("span","",label),body=element("b",mono?"mono":"",value||"not recorded");box.append(name,body);return box}
+function chainStep(label,ok,detail){var box=element("div","chainstep "+(ok?"ok":"missing"));box.append(element("b","",label),element("span","",detail));return box}
+function closeAuditor(){$("auditorBackdrop").classList.remove("show");$("auditorBackdrop").setAttribute("aria-hidden","true")}
+async function inspectRecord(recordId){
+ clearError();$("auditorBackdrop").classList.add("show");$("auditorBackdrop").setAttribute("aria-hidden","false");
+ text("auditorTitle","Loading evidence…");text("auditorId",recordId);$("auditorBody").replaceChildren(element("div","empty","Verifying the complete record history…"));
+ try{
+  var report=await get("/api/mirror/record?record_id="+encodeURIComponent(recordId)),record=report.record||{},p=report.provenance||{},life=report.lifecycle||{},deliveries=report.deliveries||[],timeline=report.timeline||[],body=$("auditorBody");body.replaceChildren();
+  text("auditorTitle",record.content||"Purged memory record");
+  var integrity=element("p","integrity"+(report.audit_chain_valid?"":" bad"),report.audit_chain_valid?"✓ Audit chain verified":"✕ Audit chain verification failed");body.appendChild(integrity);
+  var chain=element("div","chain");var delivered=deliveries.some(function(d){return !!d.context_injected_at}),responded=deliveries.some(function(d){return !!d.response_sha256});
+  chain.append(chainStep("Source",!!p.source_message_sha256,shortDigest(p.source_message_sha256)),chainStep("Interpret",!!p.interpreting_model,p.interpreting_model||"native import"),chainStep("Admit",!!life.created_at,life.created_at||"not recorded"),chainStep("Recall",deliveries.length>0,deliveries.length+" attempt"+(deliveries.length===1?"":"s")),chainStep("Inject",delivered,delivered?"context receipt":"not recorded"),chainStep("Respond",responded,responded?"digest bound":"not recorded"));
+  var chainCard=element("section","card");chainCard.append(element("h2","","Evidence chain"),element("p","sub","Source → interpretation → admission → recall → context injection → agent response"),chain);body.appendChild(chainCard);
+  var prov=element("section","card"),provGrid=element("div","evidencegrid");prov.append(element("h2","","Source and interpretation"),element("p","sub","Digests prove identity without exposing the original message."));
+  provGrid.append(evidence("Source-message SHA-256",p.source_message_sha256,true),evidence("Interpreting model",p.interpreting_model||"Native OpenClaw import",false),evidence("Source binding",p.source_binding||p.interpretation_assurance,false),evidence("Native source",p.native_path||"Not a native-file import",true),evidence("Episode",p.episode_id,true),evidence("Memory plane",p.plane,false));prov.appendChild(provGrid);body.appendChild(prov);
+  var lifecycle=element("section","card"),lifeGrid=element("div","evidencegrid");lifecycle.append(element("h2","","Record lifecycle"),element("p","sub","Canonical state changes preserved in chronological audit evidence."));lifeGrid.append(evidence("Status",report.status,false),evidence("Created",life.created_at,false),evidence("Superseded",life.superseded_at||"Not superseded",false),evidence("Deleted",life.deleted_at||"Not deleted",false));lifecycle.appendChild(lifeGrid);body.appendChild(lifecycle);
+  var deliveryCard=element("section","card");deliveryCard.append(element("h2","","Recall and agent delivery"),element("p","sub","Every candidate score is distinct from proof that the memory entered context or influenced a response."));
+  if(!deliveries.length)deliveryCard.appendChild(element("div","empty","This record has not appeared in a recorded recall."));
+  deliveries.forEach(function(d){var item=element("div","delivery");item.append(element("b","","Rank "+d.rank+" · score "+d.score+(d.returned?" · returned":" · candidate only")),element("div","small mono",d.recalled_at+" · "+(d.session_id||"no session")),element("div","small","Context injection: "+(d.context_injected_at||"not recorded")),element("div","small mono","Agent response digest: "+(d.response_sha256||"not recorded")));deliveryCard.appendChild(item)});body.appendChild(deliveryCard);
+  var timeCard=element("section","card"),timeBox=element("div","timeline");timeCard.append(element("h2","","Complete chronological history"),element("p","sub",timeline.length+" linked evidence event"+(timeline.length===1?"":"s")+"."));
+  timeline.forEach(function(e){var item=element("div","event");item.append(element("b","",e.title||e.type),element("p","",e.detail||""),element("div","small mono",(e.at||"unknown time")+" · "+(e.event_id||"no evidence ID")+(e.session_id?" · "+e.session_id:"")));timeBox.appendChild(item)});if(!timeline.length)timeBox.appendChild(element("div","empty","No linked events were retained."));timeCard.appendChild(timeBox);body.appendChild(timeCard);
+  var downloads=element("section","card"),links=element("div","downloads");downloads.append(element("h2","","Export evidence"),element("p","sub","Download a portable investigation report. A deletion receipt appears only after a verified purge."));
+  [["JSON report","json"],["Text report","text"]].forEach(function(pair){var a=element("a","secondary",pair[0]);a.href="/api/mirror/record-report?record_id="+encodeURIComponent(recordId)+"&format="+pair[1];links.appendChild(a)});
+  if(report.deletion_receipt){var receipt=element("a","secondary","Deletion receipt");receipt.href="/api/mirror/deletion-receipt?record_id="+encodeURIComponent(recordId);links.appendChild(receipt)}downloads.appendChild(links);body.appendChild(downloads)
+ }catch(error){$("auditorBody").replaceChildren(element("div","notice show",error.message||String(error)))}
+}
 function renderSources(mirror){
  var box=$("sources");box.replaceChildren();var rows=Array.isArray(mirror.sources)?mirror.sources:[];
  if(!rows.length){box.appendChild(element("div","empty","No mirrored source files were found."));return}
@@ -249,7 +305,9 @@ async function search(){
   rows.forEach(function(row){
    var p=row.openclaw_provenance||{},item=element("div","result"),body=element("p","",row.match_excerpt||row.content||"");
    var meta=element("div","meta");meta.append(element("span","pill",p.plane||row.scope||"memory"));
-   meta.append(element("span","mono",p.relative_path||row.id||""));
+   if(row.id){var recordButton=element("button","recordlink mono",row.id);recordButton.type="button";recordButton.onclick=function(){inspectRecord(row.id)};meta.append(recordButton)}
+   else meta.append(element("span","mono",p.relative_path||""));
+   if(p.relative_path)meta.append(element("span","mono",p.relative_path));
    if(p.line_start)meta.append(element("span","mono","lines "+p.line_start+"–"+(p.line_end||p.line_start)));
    item.append(body,meta);box.appendChild(item)
   })
@@ -275,6 +333,7 @@ async function switchProvider(){
 }
 $("searchBtn").onclick=search;$("query").addEventListener("keydown",function(event){if(event.key==="Enter")search()});
 $("refreshBtn").onclick=refresh;$("switchBtn").onclick=switchProvider;
+$("auditorClose").onclick=closeAuditor;$("auditorBackdrop").addEventListener("click",function(event){if(event.target===$("auditorBackdrop"))closeAuditor()});document.addEventListener("keydown",function(event){if(event.key==="Escape")closeAuditor()});
 async function init(){try{csrf=(await get("/api/session")).csrf_token;await reload()}catch(error){showError(error)}}
 init()
 })();

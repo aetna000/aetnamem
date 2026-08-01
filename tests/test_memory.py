@@ -27,6 +27,56 @@ def test_remember_recall_and_provenance() -> None:
     assert memory.audit("user-1")["audit_chain_valid"] is True
 
 
+def test_host_model_interpretation_is_stored_without_text_pattern_extraction() -> None:
+    memory = Memory(":memory:")
+
+    result = memory.remember(
+        "user-1",
+        "The vehicle with the blue paint is the one that appeals to me.",
+        interpreted_fact="User likes blue cars.",
+        session_id="openclaw-session",
+        turn_id="run-blue",
+        source_type="user_message",
+        actor="host-agent-semantic",
+        raw={"interpreter": "openai:test-model"},
+    )
+
+    assert [record["content"] for record in result["records"]] == [
+        "User likes blue cars."
+    ]
+    assert result["records"][0]["scope"] == "host_agent_interpreted"
+    assert result["records"][0]["status"] == "active"
+    audit = memory.audit("user-1")["audit_log"]
+    semantic = [
+        event
+        for event in audit
+        if event["event_type"] == "memory.semantic_interpretation_received"
+    ]
+    assert len(semantic) == 1
+    assert semantic[0]["payload"]["interpreter"] == "openai:test-model"
+    assert "The vehicle" not in str(semantic[0]["payload"])
+
+    repeated = memory.remember(
+        "user-1",
+        "Blue cars still appeal to me.",
+        interpreted_fact="User likes blue cars.",
+        session_id="openclaw-session-2",
+        source_type="user_message",
+        actor="host-agent-semantic",
+        raw={"interpreter": "openai:test-model"},
+    )
+    assert repeated["episode_id"] is None
+    assert repeated["duplicate_ids"] == [result["records"][0]["id"]]
+    assert len(memory.store.list_episodes("user-1")) == 1
+    duplicate_events = [
+        event
+        for event in memory.audit("user-1")["audit_log"]
+        if event["event_type"] == "memory.semantic_interpretation_duplicate"
+    ]
+    assert len(duplicate_events) == 1
+    assert "Blue cars" not in str(duplicate_events[0]["payload"])
+
+
 def test_webpage_is_not_promoted_to_memory() -> None:
     memory = Memory(":memory:")
 
@@ -119,7 +169,9 @@ def test_recall_ranks_by_relevance_not_keyword_tables() -> None:
 
     memory.remember("user-1", "My favorite color is teal.", session_id="s1")
     memory.remember("user-1", "My home city is Sydney.", session_id="s1")
-    memory.remember("user-1", "Remember that my dog is called Biscuit.", session_id="s1")
+    memory.remember(
+        "user-1", "Remember that my dog is called Biscuit.", session_id="s1"
+    )
 
     records = memory.recall("user-1", "Where do I live? Which city?")
     assert "Sydney" in records[0]["content"]
@@ -155,7 +207,9 @@ def test_retrieval_events_log_below_threshold_candidates() -> None:
     [event] = memory.get_retrieval_log("user-1")
     assert len(event["candidates"]) == 2
     assert event["returned_ids"] == []
-    assert all(candidate["above_threshold"] is False for candidate in event["candidates"])
+    assert all(
+        candidate["above_threshold"] is False for candidate in event["candidates"]
+    )
 
     [recall_event] = [
         item

@@ -17,6 +17,8 @@ from aetnamem.trial.openclaw_native import (
     discover_sources,
     _focused_excerpt,
     inspect_native_memory_capabilities,
+    inspect_mirror_record,
+    format_mirror_record_report,
     restore_takeover,
     search_mirror,
     sync_mirror,
@@ -63,9 +65,7 @@ def test_search_excerpt_returns_only_the_matching_sentence() -> None:
         "- JT said they like kebab for food."
     )
 
-    assert _focused_excerpt(content, "kebab") == (
-        "JT said they like kebab for food."
-    )
+    assert _focused_excerpt(content, "kebab") == ("JT said they like kebab for food.")
 
 
 def test_shadow_mirror_imports_native_planes_and_preserves_provenance(
@@ -98,6 +98,21 @@ def test_shadow_mirror_imports_native_planes_and_preserves_provenance(
 
     search = search_mirror(manager.state(), "TypeScript projects")
     assert any("TypeScript" in row["content"] for row in search["records"])
+    record_id = next(
+        row["id"] for row in search["records"] if "TypeScript" in row["content"]
+    )
+    investigation = inspect_mirror_record(manager.state(), record_id)
+    assert investigation["audit_chain_valid"] is True
+    assert investigation["provenance"]["native_path"] == "MEMORY.md"
+    assert investigation["provenance"]["native_source_sha256"]
+    assert investigation["lifecycle"]["created_at"]
+    assert investigation["deliveries"][0]["score"] is not None
+    assert investigation["deliveries"][0]["rank"] >= 1
+    assert investigation["deliveries"][0]["context_injected_at"] is None
+    assert "AetnaMem record investigation" in format_mirror_record_report(
+        investigation
+    )
+    assert investigation["report_sha256"]
 
     trace = trace_mirror(manager.state(), "TypeScript")
     assert trace["audit_chain_valid"] is True
@@ -134,6 +149,65 @@ def test_shadow_mirror_resynchronizes_when_native_memory_changes(
     assert any("PostgreSQL" in row["content"] for row in results["records"])
 
 
+def test_record_investigation_binds_model_delivery_response_and_deletion(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    status = sync_mirror(manager.state(), workspace=_workspace(tmp_path))
+    # An active cutover prevents shadow refresh from replacing the live DB.
+    (Path(manager.state().trial_dir) / CUTOVER_NAME).write_text(
+        json.dumps({"status": "active"}), encoding="utf-8"
+    )
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        remembered = memory.remember(
+            manager.state().subject_id,
+            "I love sunny days",
+            interpreted_fact="User loves sunny days.",
+            session_id="openclaw:turn-1",
+            source_type="user_message",
+            raw={
+                "interpreter": "openai/gpt-test",
+                "interpretation_assurance": "host_asserted",
+                "source_binding": "typed_session_handoff",
+            },
+        )
+        record_id = remembered["records"][0]["id"]
+        recalled = memory.build_recall_block(
+            manager.state().subject_id,
+            "What weather does the user love?",
+            session_id="openclaw:turn-2",
+            min_score=0.0,
+        )
+        assert record_id in recalled["record_ids"]
+        memory.log_action(
+            manager.state().subject_id,
+            "agent.response_after_memory",
+            {
+                "response_sha256": "a" * 64,
+                "injected_record_ids": [record_id],
+                "response_content_stored": False,
+            },
+            session_id="openclaw:turn-2",
+        )
+        forgotten = memory.forget(
+            manager.state().subject_id, {"contains": "sunny days"}
+        )
+        assert forgotten["deleted"] is True
+    finally:
+        memory.close()
+
+    report = inspect_mirror_record(manager.state(), record_id)
+    assert report["status"] == "tombstoned"
+    assert report["provenance"]["interpreting_model"] == "openai/gpt-test"
+    assert report["provenance"]["source_message_sha256"]
+    assert report["deliveries"][0]["context_injected_at"]
+    assert report["deliveries"][0]["response_sha256"] == "a" * 64
+    assert report["lifecycle"]["deleted_at"]
+    assert report["deletion_receipt"]["receipt_sha256"]
+    assert report["deletion_receipt"]["purged_record_ids"] == [record_id]
+
+
 def test_takeover_freezes_native_files_and_rollback_restores_them(
     tmp_path: Path,
     monkeypatch,
@@ -159,9 +233,13 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
         lambda arguments: (
             {"enabled": True}
             if "hooks.internal.entries.session-memory" in arguments
-            else str(workspace)
-            if any(str(value).endswith("config.nativeWorkspace") for value in arguments)
-            else None
+            else (
+                str(workspace)
+                if any(
+                    str(value).endswith("config.nativeWorkspace") for value in arguments
+                )
+                else None
+            )
         ),
     )
 
@@ -181,9 +259,14 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
             {
                 "plugin": {
                     "status": "loaded",
-                    "toolNames": ["memory_search", "memory_get"],
+                    "toolNames": [
+                        "memory_search",
+                        "memory_get",
+                        "memory_remember",
+                    ],
                 },
                 "typedHooks": [
+                    {"name": "before_model_resolve"},
                     {"name": "before_prompt_build"},
                     {"name": "agent_end"},
                     {"name": "before_message_write"},
@@ -204,22 +287,19 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
     assert not (workspace / "MEMORY.md").exists()
     assert not (workspace / "memory").exists()
     assert configured["plugins.slots.memory"] == "none"
-    assert (
-        configured["plugins.entries.memory-aetnamem.config.takeoverActive"]
-        is True
-    )
+    assert configured["plugins.entries.memory-aetnamem.config.takeoverActive"] is True
     assert (
         configured["plugins.entries.memory-aetnamem.config.dbPath"]
         == mirror["mirror_db"]
     )
-    assert (
-        configured["plugins.entries.memory-aetnamem.config.nativeWorkspace"]
-        == str(workspace)
+    assert configured["plugins.entries.memory-aetnamem.config.nativeWorkspace"] == str(
+        workspace
     )
     assert (
         configured["plugins.entries.memory-aetnamem.hooks.allowConversationAccess"]
         is True
     )
+    assert configured["tools.alsoAllow"] == ["memory_remember"]
     assert any(command[1:3] == ["hooks", "disable"] for command in commands)
 
     restored = restore_takeover(manager.state())
@@ -264,7 +344,9 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
         )
     )
     assert len(history) == 1
-    assert json.loads(history[0].read_text(encoding="utf-8"))["archive"] == first_archive
+    assert (
+        json.loads(history[0].read_text(encoding="utf-8"))["archive"] == first_archive
+    )
     assert restore_takeover(manager.state())["native_memory_restored"] is True
 
 
@@ -290,9 +372,13 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
         lambda arguments: (
             {"enabled": True}
             if "hooks.internal.entries.session-memory" in arguments
-            else str(workspace)
-            if any(str(value).endswith("config.nativeWorkspace") for value in arguments)
-            else None
+            else (
+                str(workspace)
+                if any(
+                    str(value).endswith("config.nativeWorkspace") for value in arguments
+                )
+                else None
+            )
         ),
     )
     monkeypatch.setattr(
@@ -301,9 +387,7 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
     )
     monkeypatch.setattr(
         "aetnamem.trial.openclaw_native._run",
-        lambda arguments, **_kwargs: subprocess.CompletedProcess(
-            arguments, 0, "", ""
-        ),
+        lambda arguments, **_kwargs: subprocess.CompletedProcess(arguments, 0, "", ""),
     )
     monkeypatch.setattr(
         "aetnamem.trial.openclaw_native._json_command",
@@ -311,9 +395,10 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
             {
                 "plugin": {
                     "status": "loaded",
-                    "toolNames": ["memory_search", "memory_get"],
+                    "toolNames": ["memory_search", "memory_get", "memory_remember"],
                 },
                 "typedHooks": [
+                    {"name": "before_model_resolve"},
                     {"name": "before_prompt_build"},
                     {"name": "agent_end"},
                     {"name": "before_message_write"},
@@ -358,17 +443,15 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
     }
     preservation_root = Path(
         json.loads(
-            (Path(manager.state().trial_dir) / CUTOVER_NAME).read_text(
-                encoding="utf-8"
-            )
+            (Path(manager.state().trial_dir) / CUTOVER_NAME).read_text(encoding="utf-8")
         )["post_switch_native_preservation_root"]
     )
-    assert "Post-switch fact" in (
-        preservation_root / "MEMORY.md"
-    ).read_text(encoding="utf-8")
-    assert (
-        preservation_root / "memory" / "during-active.md"
-    ).read_text(encoding="utf-8") == "This appeared after takeover.\n"
+    assert "Post-switch fact" in (preservation_root / "MEMORY.md").read_text(
+        encoding="utf-8"
+    )
+    assert (preservation_root / "memory" / "during-active.md").read_text(
+        encoding="utf-8"
+    ) == "This appeared after takeover.\n"
     active_export = restored["active_memory_export"]
     assert active_export["record_count"] == 1
     assert "saffron" in Path(active_export["path"]).read_text(encoding="utf-8")

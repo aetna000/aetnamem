@@ -95,6 +95,63 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 trace_mirror(self.server.manager.state(), query, limit=100),
             )
             return
+        if parsed.path in {
+            "/api/mirror/record",
+            "/api/mirror/record-report",
+            "/api/mirror/deletion-receipt",
+        }:
+            from aetnamem.trial.openclaw_native import (
+                format_mirror_record_report,
+                inspect_mirror_record,
+            )
+
+            params = parse_qs(parsed.query)
+            record_id = (params.get("record_id") or [""])[0].strip()
+            if not record_id:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "record_id is required"})
+                return
+            try:
+                report = inspect_mirror_record(self.server.manager.state(), record_id)
+            except ValueError as exc:
+                self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                return
+            if parsed.path == "/api/mirror/record":
+                self._json(HTTPStatus.OK, report)
+                return
+            if parsed.path == "/api/mirror/deletion-receipt":
+                receipt = report.get("deletion_receipt")
+                if not receipt:
+                    self._json(
+                        HTTPStatus.NOT_FOUND,
+                        {"error": "this record has no deletion receipt"},
+                    )
+                    return
+                self._download(
+                    json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                    filename=f"aetnamem-deletion-{record_id}.json",
+                    content_type="application/json; charset=utf-8",
+                )
+                return
+            output_format = (params.get("format") or ["json"])[0]
+            if output_format == "text":
+                self._download(
+                    format_mirror_record_report(report),
+                    filename=f"aetnamem-investigation-{record_id}.txt",
+                    content_type="text/plain; charset=utf-8",
+                )
+                return
+            if output_format != "json":
+                self._json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "format must be json or text"},
+                )
+                return
+            self._download(
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                filename=f"aetnamem-investigation-{record_id}.json",
+                content_type="application/json; charset=utf-8",
+            )
+            return
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -242,6 +299,16 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self._security_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _download(self, value: str, *, filename: str, content_type: str) -> None:
+        body = value.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self._security_headers()
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

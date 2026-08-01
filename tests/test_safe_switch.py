@@ -14,7 +14,9 @@ from http.cookiejar import CookieJar
 
 import pytest
 
+from aetnamem import Memory
 from aetnamem.trial import TrialManager, TrialMode
+from aetnamem.trial.openclaw_native import sync_mirror
 from aetnamem.trial.server import TrialMCPServer
 
 
@@ -120,11 +122,52 @@ def test_private_mcp_exposes_no_approval_or_mode_change_tools(
     }
     assert names == {
         "trial_capture",
+        "trial_sync_openclaw_memory",
         "trial_prepare",
         "trial_exposure_shown",
         "trial_status",
     }
     assert not any("approve" in name or "mode" in name for name in names)
+
+
+def test_private_mcp_refreshes_openclaw_native_memory_without_chat_capture(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    workspace = tmp_path / "openclaw-workspace"
+    workspace.mkdir()
+    memory_file = workspace / "MEMORY.md"
+    memory_file.write_text("# Memory\n\n- User likes blue cars.\n", encoding="utf-8")
+    initial = sync_mirror(manager.state(), workspace=workspace)
+    assert initial["synced"] is True
+
+    memory_file.write_text(
+        "# Memory\n\n- User likes blue cars.\n- User prefers diagrams.\n",
+        encoding="utf-8",
+    )
+    response = TrialMCPServer(manager).handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "trial_sync_openclaw_memory",
+                "arguments": {},
+            },
+        }
+    )
+    assert response is not None
+    result = response["result"]
+    assert result["isError"] is False
+    refreshed = json.loads(result["content"][0]["text"])
+    assert refreshed["synced"] is True
+
+    mirror = Memory(refreshed["mirror_db"])
+    try:
+        contents = [row["content"] for row in mirror.list("local-user")]
+    finally:
+        mirror.close()
+    assert any("prefers diagrams" in content for content in contents)
 
 
 def test_state_digest_tampering_turns_integration_off(tmp_path: Path) -> None:
@@ -173,18 +216,14 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
             if key == "plugins.entries.memory-aetnamem":
                 if entry is None:
                     return subprocess.CompletedProcess(arguments, 1, "", "missing")
-                return subprocess.CompletedProcess(
-                    arguments, 0, json.dumps(entry), ""
-                )
+                return subprocess.CompletedProcess(arguments, 0, json.dumps(entry), "")
             if key.endswith(".config.safeSwitch"):
                 value = (
                     entry.get("config", {}).get("safeSwitch")  # type: ignore[union-attr]
                     if entry
                     else None
                 )
-                return subprocess.CompletedProcess(
-                    arguments, 0, json.dumps(value), ""
-                )
+                return subprocess.CompletedProcess(arguments, 0, json.dumps(value), "")
         if operation == "set":
             value = json.loads(arguments[4])
             if key == "plugins.entries.memory-aetnamem":
@@ -228,9 +267,7 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
     from aetnamem.trial.web import TrialDashboardServer
 
     manager = _manager(tmp_path)
-    server = TrialDashboardServer(
-        ("127.0.0.1", 0), manager, html="<html>safe</html>"
-    )
+    server = TrialDashboardServer(("127.0.0.1", 0), manager, html="<html>safe</html>")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
@@ -247,9 +284,10 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
         # A second browser can use the same protected URL without restarting
         # the daemon or receiving a stale-code error.
         second_opener = build_opener(HTTPCookieProcessor(CookieJar()))
-        assert second_opener.open(
-            f"{base}/auth?code={server.login_code}"
-        ).read() == b"<html>safe</html>"
+        assert (
+            second_opener.open(f"{base}/auth?code={server.login_code}").read()
+            == b"<html>safe</html>"
+        )
         assert second_opener.open(f"{base}/api/status").status == 200
 
         unprotected = Request(
@@ -294,10 +332,14 @@ def test_dashboard_ships_the_visual_trial_ui_not_the_json_fallback() -> None:
     assert "Activate AetnaMem" in html
     assert "Restore OpenClaw" in html
     assert 'id="progress"' in html
+    assert 'id="auditorBackdrop"' in html
+    assert "/api/mirror/record?record_id=" in html
+    assert "Complete chronological history" in html
+    assert "Deletion receipt" in html
     assert "This can take a minute." in html
     assert "Refreshing the memory mirror" in html
     assert 'get("/api/status")' in html
-    assert 'JSON.stringify(v,null,2)' not in html
+    assert "JSON.stringify(v,null,2)" not in html
     assert "Canary" not in html
     assert "Emergency" not in html
     assert "Recall Preview" not in html
@@ -305,6 +347,73 @@ def test_dashboard_ships_the_visual_trial_ui_not_the_json_fallback() -> None:
     # Mockup-only comparison figures must never be presented as live evidence.
     assert "112,480" not in html
     assert "35/42" not in html
+
+
+def test_dashboard_serves_record_investigation_and_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aetnamem.trial.web import TrialDashboardServer
+
+    report = {
+        "format": "aetnamem-record-investigation-v1",
+        "record_id": "rec_abc123",
+        "record": {"content": "User prefers TypeScript."},
+        "status": "tombstoned",
+        "provenance": {"interpreting_model": "openai/gpt-test"},
+        "lifecycle": {"created_at": "2026-08-01T00:00:00+00:00"},
+        "deliveries": [],
+        "timeline": [],
+        "audit_chain_valid": True,
+        "report_sha256": "b" * 64,
+        "deletion_receipt": {
+            "format": "aetnamem-deletion-receipt-v1",
+            "purged_record_ids": ["rec_abc123"],
+            "receipt_sha256": "c" * 64,
+        },
+    }
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native.inspect_mirror_record",
+        lambda state, record_id: {**report, "record_id": record_id},
+    )
+    monkeypatch.setattr(
+        "aetnamem.trial.openclaw_native.format_mirror_record_report",
+        lambda value: f"AetnaMem record investigation\nRecord: {value['record_id']}\n",
+    )
+    server = TrialDashboardServer(
+        ("127.0.0.1", 0), _manager(tmp_path), html="<html>safe</html>"
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    try:
+        opener.open(f"{base}/auth?code={server.login_code}").read()
+        value = json.loads(
+            opener.open(
+                f"{base}/api/mirror/record?record_id=rec_abc123"
+            ).read()
+        )
+        assert value["provenance"]["interpreting_model"] == "openai/gpt-test"
+
+        text_response = opener.open(
+            f"{base}/api/mirror/record-report?record_id=rec_abc123&format=text"
+        )
+        assert text_response.headers["Content-Disposition"].endswith(
+            '"aetnamem-investigation-rec_abc123.txt"'
+        )
+        assert b"AetnaMem record investigation" in text_response.read()
+
+        receipt_response = opener.open(
+            f"{base}/api/mirror/deletion-receipt?record_id=rec_abc123"
+        )
+        assert receipt_response.headers["Content-Disposition"].endswith(
+            '"aetnamem-deletion-rec_abc123.json"'
+        )
+        assert json.loads(receipt_response.read())["receipt_sha256"] == "c" * 64
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_trial_rollback_defaults_to_human_output_and_keeps_json_opt_in(

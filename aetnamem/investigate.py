@@ -676,6 +676,8 @@ def _links(value: Any, *, parent_key: str = "") -> dict[str, str]:
                 _add_link(links, key, child)
             elif key in {
                 "returned_ids",
+                "record_ids",
+                "injected_record_ids",
                 "memory_ids",
                 "item_ids",
                 "receipt_digests",

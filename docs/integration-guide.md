@@ -1,7 +1,7 @@
 # Integration guide: CLI and MCP
 
-Repository preview boundary: Python `v0.7.0a4` and OpenClaw npm
-`v0.5.0-experimental.2` are matching experimental prereleases. Stable
+Repository preview boundary: Python `v0.7.0a5` and OpenClaw npm
+`v0.5.0-experimental.3` are matching experimental prereleases. Stable
 `v0.6.1` / npm `v0.4.0` remain the public releases. Safe Switch is opt-in;
 Memory Impact/CML measurement modes remain research surfaces and default off.
 See [current capability status](current-status.md).
@@ -18,8 +18,8 @@ four-memory runtime. Pick by what your host can do:
 | memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
 | four-memory Python runtime (`from aetnamem.runtime import MemoryRuntime`) | your host wants one coordinator for all four memory types | v0.5 |
 | runtime MCP server (`aetnamem runtime mcp`) | your MCP host wants the complete prepare/outcome loop | v0.5 |
-| Verified OpenClaw installer (`aetnamem openclaw install`) | install the matching bridge, pin the engine path, start native-memory shadowing, and verify gateway RPC | v0.7.0a4 experimental |
-| OpenClaw memory takeover (`aetnamem trial activate`) | freeze native supplemental memory, verify a guard against normal tool access to those paths, use bounded AetnaMem recall, and preserve exact rollback | v0.7.0a4 experimental |
+| Verified OpenClaw installer (`aetnamem openclaw install`) | install the matching bridge, pin the engine path, start native-memory shadowing, and verify gateway RPC | v0.7.0a5 experimental |
+| OpenClaw memory takeover (`aetnamem trial activate`) | freeze native supplemental memory, verify a guard against normal tool access to those paths, use bounded AetnaMem recall, and preserve exact rollback | v0.7.0a5 experimental |
 | Safe Switch (`aetnamem trial`) | a local OpenClaw/Hermes user wants capture and preview before context injection | v0.6.1 beta |
 
 Collaborative decisions are an opt-in Python SDK and add nothing to the
@@ -395,7 +395,7 @@ not as protocol errors, so the agent can read and recover.
 
 | tool | required args | optional args | returns |
 |---|---|---|---|
-| `memory_remember` | `message` | `subject_id`, `source_type`, `session_id`, `turn_id` | `{episode_id, records, duplicate_ids}` |
+| `memory_remember` | `message` for ordinary MCP callers, or an engine-staged typed source for the OpenClaw bridge | `subject_id`, `source_type`, `session_id`, `turn_id`, `interpreted_fact`, `interpreted_fact_key`, `interpreter`, `source_aliases` | `{episode_id, records, duplicate_ids}` |
 | `memory_observe` | `text`, `modality`, `media_sha256`, `host_reference`, `extractor` | `subject_id`, `segment`, `confidence`, `observed_at`, `artifact_id`, `session_id`, `turn_id` | one typed artifact observation and one quarantined record; generic MCP evidence is `caller_asserted` |
 | `memory_recall` | `query` | `subject_id`, `limit` (10), `min_score`, `session_id`, `use_graph` (false), `include_scores` (false) | array of records, best first; graph hits include path evidence; opt-in scores support compatible host tools |
 | `memory_get_record` | `record_id` | `subject_id`, `session_id` | one active record plus stored source provenance; access is audited |
@@ -424,6 +424,14 @@ Suggested system-prompt guidance for the calling agent:
 > them the receipt's `purged_record_ids` count. If `memory_remember`
 > returns a record with status `quarantined`, tell the user what was
 > extracted and call `memory_promote` only if they confirm.
+
+The active OpenClaw takeover uses a stricter semantic path. OpenClaw's existing
+model interprets the current user's durable intent and calls `memory_remember`
+with one concise fact. A private short-lived database handoff binds that call
+to OpenClaw's typed current-prompt event across plugin runtimes. AetnaMem does
+not scan the rendered conversation, run keyword extraction on it, or make a
+second model call. The temporary source is cleared after the turn; the admitted
+episode and record retain the normal governed provenance.
 
 For multimodal hosts, call `memory_observe` only after the host has computed
 the exact media-byte digest and the model has produced a text observation.

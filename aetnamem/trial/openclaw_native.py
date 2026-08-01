@@ -363,6 +363,371 @@ def trace_mirror(
         memory.close()
 
 
+def inspect_mirror_record(state: TrialState, record_id: str) -> dict[str, Any]:
+    """Build a human-facing, audit-bound history for one memory record."""
+    from aetnamem.core.canonical import canonical_json, sha256_hex
+
+    if not re.fullmatch(r"rec_[A-Za-z0-9]+", record_id):
+        raise ValueError("record_id must be an AetnaMem record ID")
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        record = memory.store.get_record(state.subject_id, record_id)
+        events = memory.store.list_audit_events(state.subject_id)
+        retrievals = memory.store.list_retrieval_events(state.subject_id)
+        related_events = [
+            event for event in events
+            if event.get("record_id") == record_id
+            or record_id in _event_record_ids(event)
+        ]
+        if record is None and not related_events:
+            raise ValueError("record was not found in memory or retained audit evidence")
+
+        episode = None
+        episode_id = (record or {}).get("episode_id") or next(
+            (
+                event.get("payload", {}).get("episode_id")
+                for event in related_events
+                if event.get("payload", {}).get("episode_id")
+            ),
+            None,
+        )
+        if episode_id:
+            episode = next(
+                (
+                    row for row in memory.store.list_episodes(state.subject_id)
+                    if row.get("id") == episode_id
+                ),
+                None,
+            )
+        if episode_id:
+            seen_event_ids = {str(event.get("event_id")) for event in related_events}
+            for event in events:
+                if (
+                    event.get("payload", {}).get("episode_id") == episode_id
+                    and str(event.get("event_id")) not in seen_event_ids
+                ):
+                    related_events.append(event)
+                    seen_event_ids.add(str(event.get("event_id")))
+        interpretation = next(
+            (
+                event for event in related_events
+                if event.get("event_type")
+                in {
+                    "memory.semantic_interpretation_received",
+                    "memory.semantic_interpretation_duplicate",
+                }
+            ),
+            None,
+        )
+        if interpretation is None and episode:
+            interpretation = next(
+                (
+                    event for event in events
+                    if event.get("event_type") == "memory.semantic_interpretation_received"
+                    and event.get("payload", {}).get("episode_id") == episode.get("id")
+                ),
+                None,
+            )
+
+        deliveries: list[dict[str, Any]] = []
+        injections = [
+            event for event in events
+            if event.get("event_type") == "memory.context_injected"
+            and record_id in (event.get("payload", {}).get("record_ids") or [])
+        ]
+        responses = [
+            event for event in events
+            if event.get("event_type") == "agent.response_after_memory"
+            and record_id
+            in (event.get("payload", {}).get("injected_record_ids") or [])
+        ]
+        for retrieval in retrievals:
+            candidate = next(
+                (
+                    item for item in retrieval.get("candidates", [])
+                    if item.get("record_id") == record_id
+                ),
+                None,
+            )
+            if not candidate:
+                continue
+            session_id = retrieval.get("session_id")
+            injection = next(
+                (
+                    event for event in injections
+                    if event.get("session_id") == session_id
+                    and str(event.get("created_at") or "")
+                    >= str(retrieval.get("created_at") or "")
+                ),
+                None,
+            )
+            response = next(
+                (
+                    event for event in responses
+                    if event.get("session_id") == session_id
+                    and str(event.get("created_at") or "")
+                    >= str((injection or retrieval).get("created_at") or "")
+                ),
+                None,
+            )
+            deliveries.append(
+                {
+                    "retrieval_id": retrieval.get("id"),
+                    "recalled_at": retrieval.get("created_at"),
+                    "session_id": session_id,
+                    "query_sha256": retrieval.get("query_sha256"),
+                    "score": candidate.get("score"),
+                    "rank": candidate.get("rank"),
+                    "text_method": candidate.get("text_method"),
+                    "returned": bool(candidate.get("returned")),
+                    "context_injected_at": injection.get("created_at") if injection else None,
+                    "context_event_id": injection.get("event_id") if injection else None,
+                    "response_sha256": (
+                        response.get("payload", {}).get("response_sha256")
+                        if response else None
+                    ),
+                    "response_event_id": response.get("event_id") if response else None,
+                }
+            )
+
+        created = next(
+            (
+                event for event in related_events
+                if event.get("event_type")
+                in {"memory.record_created", "memory.record_quarantined"}
+                and event.get("record_id") == record_id
+            ),
+            None,
+        )
+        superseded = next(
+            (
+                event for event in events
+                if record_id in (event.get("payload", {}).get("supersedes") or [])
+            ),
+            None,
+        )
+        deleted = next(
+            (
+                event for event in events
+                if event.get("event_type") == "memory.forget"
+                and record_id in (event.get("payload", {}).get("purged_record_ids") or [])
+            ),
+            None,
+        )
+        receipt = _deletion_receipt_from_event(state.subject_id, deleted) if deleted else None
+        native = episode.get("raw") if episode and isinstance(episode.get("raw"), dict) else {}
+        interpreted_payload = interpretation.get("payload", {}) if interpretation else {}
+        provenance = {
+            "source_message_sha256": (
+                interpreted_payload.get("source_message_sha256")
+                or (created or {}).get("payload", {}).get("content_sha256")
+                or native.get("source_sha256")
+            ),
+            "interpreting_model": interpreted_payload.get("interpreter"),
+            "interpretation_assurance": interpreted_payload.get(
+                "interpretation_assurance"
+            ),
+            "source_binding": interpreted_payload.get("source_binding"),
+            "episode_id": episode_id or native.get("episode_id"),
+            "source_type": (record or {}).get("source_type") or native.get("source_type"),
+            "native_path": native.get("relative_path"),
+            "native_source_sha256": native.get("source_sha256"),
+            "plane": native.get("plane") or (record or {}).get("scope"),
+        }
+
+        timeline = []
+        retrieval_by_id = {str(row["id"]): row for row in retrievals}
+        for event in related_events:
+            timeline.append(_auditor_timeline_event(event, record_id))
+        for delivery in deliveries:
+            retrieval = retrieval_by_id.get(str(delivery["retrieval_id"]))
+            if retrieval:
+                timeline.append(
+                    {
+                        "at": retrieval.get("created_at"),
+                        "type": "memory.retrieval_scored",
+                        "title": "Candidate scored for recall",
+                        "event_id": retrieval.get("id"),
+                        "session_id": retrieval.get("session_id"),
+                        "detail": (
+                            f"rank {delivery['rank']} · score {delivery['score']} · "
+                            f"{'returned' if delivery['returned'] else 'not returned'}"
+                        ),
+                    }
+                )
+        timeline.sort(key=lambda item: (str(item.get("at") or ""), str(item.get("event_id") or "")))
+        verification = memory.verify(state.subject_id)
+        subject_verification = verification.get("subjects", {}).get(state.subject_id, {})
+        result = {
+            "format": "aetnamem-record-investigation-v1",
+            "subject_id": state.subject_id,
+            "record_id": record_id,
+            "record": record,
+            "status": (record or {}).get("status") or ("deleted" if deleted else "audit-only"),
+            "provenance": provenance,
+            "lifecycle": {
+                "created_at": (record or {}).get("created_at") or (created or {}).get("created_at"),
+                "superseded_at": (superseded or {}).get("created_at"),
+                "deleted_at": (record or {}).get("deleted_at") or (deleted or {}).get("created_at"),
+            },
+            "deliveries": deliveries,
+            "timeline": timeline,
+            "deletion_receipt": receipt,
+            "audit_chain_valid": bool(subject_verification.get("chain_valid")),
+            "audit_event_count": len(related_events),
+        }
+        result["report_sha256"] = sha256_hex(canonical_json(result))
+        memory.store.append_investigation_access(
+            subject_id=state.subject_id,
+            operation="inspect-record",
+            actor="openclaw-local-operator",
+            query_digest=sha256_hex(record_id),
+            filters_digest=sha256_hex(canonical_json({"record_id": record_id})),
+            result_digest=result["report_sha256"],
+            result_count=len(timeline),
+        )
+        return result
+    finally:
+        memory.close()
+
+
+def format_mirror_record_report(report: dict[str, Any]) -> str:
+    """Render a record investigation as a portable plain-text report."""
+    record = report.get("record") or {}
+    provenance = report.get("provenance") or {}
+    lifecycle = report.get("lifecycle") or {}
+    lines = [
+        "AetnaMem record investigation",
+        f"Record: {report['record_id']}",
+        f"Status: {report.get('status', 'unknown')}",
+        f"Audit integrity: {'PASSED' if report.get('audit_chain_valid') else 'FAILED'}",
+        f"Report SHA-256: {report.get('report_sha256', 'not recorded')}",
+        "",
+        "Memory",
+        str(record.get("content") or "Content was purged; only audit evidence remains."),
+        "",
+        "Provenance",
+        f"Source message SHA-256: {provenance.get('source_message_sha256') or 'not recorded'}",
+        f"Interpreting model: {provenance.get('interpreting_model') or 'not applicable / not recorded'}",
+        f"Source binding: {provenance.get('source_binding') or 'not recorded'}",
+        f"Native source: {provenance.get('native_path') or 'not applicable'}",
+        "",
+        "Lifecycle",
+        f"Created: {lifecycle.get('created_at') or 'not recorded'}",
+        f"Superseded: {lifecycle.get('superseded_at') or 'not superseded'}",
+        f"Deleted: {lifecycle.get('deleted_at') or 'not deleted'}",
+        "",
+        "Deliveries",
+    ]
+    deliveries = report.get("deliveries") or []
+    if not deliveries:
+        lines.append("No recall of this record is recorded.")
+    for delivery in deliveries:
+        lines.append(
+            f"- {delivery.get('recalled_at')}: rank {delivery.get('rank')}, "
+            f"score {delivery.get('score')}, session {delivery.get('session_id') or 'none'}"
+        )
+        lines.append(
+            "  Context injected: "
+            + (delivery.get("context_injected_at") or "not recorded")
+        )
+        lines.append(
+            "  Agent response SHA-256: "
+            + (delivery.get("response_sha256") or "not recorded")
+        )
+    lines.extend(["", "Chronological evidence"])
+    for item in report.get("timeline") or []:
+        lines.append(
+            f"- {item.get('at') or 'unknown time'} · {item.get('title') or item.get('type')}"
+        )
+        if item.get("detail"):
+            lines.append(f"  {item['detail']}")
+        lines.append(f"  Evidence ID: {item.get('event_id') or 'not recorded'}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _event_record_ids(event: dict[str, Any]) -> set[str]:
+    ids = {str(event["record_id"])} if event.get("record_id") else set()
+    payload = event.get("payload") or {}
+    for key in (
+        "record_ids", "injected_record_ids", "returned_ids", "purged_record_ids",
+        "supersedes", "superseded_record_ids",
+    ):
+        ids.update(str(value) for value in (payload.get(key) or []))
+    return ids
+
+
+def _auditor_timeline_event(event: dict[str, Any], record_id: str) -> dict[str, Any]:
+    event_type = str(event.get("event_type") or "audit.event")
+    titles = {
+        "episode.ingested": "Source admitted",
+        "memory.semantic_interpretation_received": "Source interpreted by the host model",
+        "memory.record_created": "Memory record created",
+        "memory.record_quarantined": "Memory record quarantined",
+        "memory.recall": "Memory returned by recall",
+        "memory.context_injected": "Memory injected into agent context",
+        "agent.response_after_memory": "Agent response bound to delivered memory",
+        "memory.forget": "Memory deleted",
+    }
+    payload = event.get("payload") or {}
+    detail = event_type
+    if event_type == "memory.context_injected":
+        detail = f"context block {str(payload.get('block_sha256') or '')[:16]}…"
+    elif event_type == "agent.response_after_memory":
+        detail = f"response digest {str(payload.get('response_sha256') or '')[:16]}…"
+    elif event_type == "memory.forget":
+        detail = f"verified purge of {len(payload.get('purged_record_ids') or [])} record(s)"
+    elif event_type == "memory.recall":
+        detail = f"retrieval {payload.get('retrieval_id') or 'unknown'}"
+    elif event_type == "memory.semantic_interpretation_received":
+        detail = f"model {payload.get('interpreter') or 'not recorded'}"
+    return {
+        "at": event.get("created_at"),
+        "type": event_type,
+        "title": titles.get(event_type, event_type.replace(".", " ").title()),
+        "event_id": event.get("event_id"),
+        "session_id": event.get("session_id"),
+        "turn_id": event.get("turn_id"),
+        "actor": event.get("actor"),
+        "detail": detail,
+        "event_hash": event.get("event_hash"),
+        "record_id": record_id,
+    }
+
+
+def _deletion_receipt_from_event(
+    subject_id: str, event: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if not event:
+        return None
+    from aetnamem.core.canonical import canonical_json, sha256_hex
+
+    payload = event.get("payload") or {}
+    receipt: dict[str, Any] = {
+        "format": (
+            "aetnamem-deletion-receipt-v2"
+            if payload.get("semantic_index_cleanup") is not None
+            else "aetnamem-deletion-receipt-v1"
+        ),
+        "subject_id": subject_id,
+        "created_at": event.get("created_at"),
+        "selector_sha256": payload.get("selector_sha256"),
+        "purged_record_ids": payload.get("purged_record_ids") or [],
+        "purged_episode_ids": payload.get("purged_episode_ids") or [],
+        "purged_graph_ids": payload.get("purged_graph_ids") or [],
+        "audit_event_id": event.get("event_id"),
+        "audit_event_hash": event.get("event_hash"),
+    }
+    for key in ("semantic_index_cleanup", "media_cleanup"):
+        if payload.get(key) is not None:
+            receipt[key] = payload[key]
+    receipt["receipt_sha256"] = sha256_hex(canonical_json(receipt))
+    return receipt
+
+
 def activate_takeover(
     state: TrialState,
     state_path: str | Path,
@@ -430,6 +795,9 @@ def activate_takeover(
             "--json",
         ]
     )
+    prior_tools_also_allow = _optional_json(
+        [executable, "config", "get", "tools.alsoAllow", "--json"]
+    )
     cutover: dict[str, Any] = {
         "format": "aetnamem-openclaw-cutover-v1",
         "trial_id": state.trial_id,
@@ -441,6 +809,7 @@ def activate_takeover(
         "prior_memory_slot": prior_slot,
         "prior_session_memory_hook": prior_session_hook,
         "prior_plugin_entry": prior_plugin_entry,
+        "prior_tools_also_allow": prior_tools_also_allow,
         "relocated": [],
         "approved_candidates_merged": 0,
         "native_capability_report": capability_report,
@@ -530,6 +899,16 @@ def activate_takeover(
             },
         )
         _set_json(executable, f"{base}.enabled", True)
+        existing_tools = (
+            [str(value) for value in prior_tools_also_allow]
+            if isinstance(prior_tools_also_allow, list)
+            else []
+        )
+        _set_json(
+            executable,
+            "tools.alsoAllow",
+            list(dict.fromkeys([*existing_tools, "memory_remember"])),
+        )
         report(7, total_steps, "Restarting OpenClaw")
         _run([executable, "gateway", "restart"])
         gateway = _json_command(
@@ -554,13 +933,14 @@ def activate_takeover(
         tool_names = (
             set(plugin.get("toolNames") or []) if isinstance(plugin, dict) else set()
         )
-        required_tools = {"memory_search", "memory_get"}
+        required_tools = {"memory_search", "memory_get", "memory_remember"}
         typed_hooks = {
             str(row.get("name"))
             for row in plugin_runtime.get("typedHooks", [])
             if isinstance(row, dict)
         }
         required_hooks = {
+            "before_model_resolve",
             "before_prompt_build",
             "agent_end",
             "before_message_write",
@@ -596,7 +976,11 @@ def activate_takeover(
                 "native_memory_slot": "none",
                 "session_memory_hook": "disabled",
                 "gateway_verified": True,
-                "compatibility_tools": ["memory_search", "memory_get"],
+                "compatibility_tools": [
+                    "memory_search",
+                    "memory_get",
+                    "memory_remember",
+                ],
                 "compatibility_tools_verified": True,
                 "capture_hooks_verified": True,
                 "native_write_guard_verified": True,
@@ -646,9 +1030,7 @@ def restore_takeover(
         "native_memory_restored": True,
         "manifest_sha256": cutover.get("manifest_sha256"),
         "active_memory_export": active_export,
-        "post_switch_native_preserved": cutover.get(
-            "post_switch_native_preserved", []
-        ),
+        "post_switch_native_preserved": cutover.get("post_switch_native_preserved", []),
     }
 
 
@@ -779,7 +1161,7 @@ def inspect_native_memory_capabilities(
             "MEMORY.md and memory/*.md imported with provenance",
             "standard memory_search tool",
             "standard memory_get tool",
-            "continuous authenticated-user capture",
+            "model-interpreted memory_remember tool",
             "pre-switch native files and configuration rollback",
         ],
         "configured": configured,
@@ -845,6 +1227,14 @@ def _restore_cutover(cutover: dict[str, Any], *, executable: str) -> None:
     prior_plugin = cutover.get("prior_plugin_entry")
     if isinstance(prior_plugin, dict):
         _set_json(executable, "plugins.entries.memory-aetnamem", prior_plugin)
+    prior_tools = cutover.get("prior_tools_also_allow")
+    if isinstance(prior_tools, list):
+        _set_json(executable, "tools.alsoAllow", prior_tools)
+    elif "prior_tools_also_allow" in cutover:
+        _run(
+            [executable, "config", "unset", "tools.alsoAllow"],
+            allow_missing=True,
+        )
 
 
 def _new_preservation_root(trial_dir: Path) -> Path:
@@ -929,10 +1319,7 @@ def _export_active_memories_to_native(
         lines = [
             "# Memories captured while AetnaMem was active",
             "",
-            (
-                "These memories were returned by AetnaMem during verified "
-                "rollback."
-            ),
+            ("These memories were returned by AetnaMem during verified " "rollback."),
             "",
         ]
         for row in records:

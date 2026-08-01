@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.7.0a4 experimental" src="https://img.shields.io/badge/version-0.7.0a4--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.7.0a5 experimental" src="https://img.shields.io/badge/version-0.7.0a5--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,7 +28,7 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.7.0a4** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.7.0a5** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
 recall internally, and activate only after the mirror and rollback evidence
@@ -36,7 +36,7 @@ verify.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
-plugin is **0.5.0-experimental.2**. These are prereleases, not the final
+plugin is **0.5.0-experimental.3**. These are prereleases, not the final
 stable `0.6.1` / `0.4.0` packages.
 
 ## Adopt AetnaMem without a blind switch
@@ -53,7 +53,11 @@ Your current OpenClaw memory remains authoritative during evaluation:
 3. **Shadow real prompts.** AetnaMem computes bounded recall without injecting
    it or making an extra model call.
 4. **Inspect the copy.** Search ordinary words, follow a trace, verify the
-   audit chain, and review the exact source manifest in the dashboard.
+   audit chain, and review the exact source manifest in the dashboard. Click
+   any record ID to see its source digest, interpreting model, lifecycle,
+   recall scores, context deliveries, response fingerprints and chronological
+   evidence. Download the investigation as JSON/text or retrieve its deletion
+   receipt after a verified purge.
 5. **Activate with a verified freeze.** AetnaMem takes a second complete
    switch-time snapshot, verifies every byte digest, disables duplicate native
    memory retrieval and session-memory writing, and becomes the bounded
@@ -74,7 +78,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.7.0a4
+python -m pip install --pre aetnamem==0.7.0a5
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -200,7 +204,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.7.0a4
+python -m pip install --pre aetnamem==0.7.0a5
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -806,9 +810,12 @@ provenance and deletion receipts. xAI Remote MCP is the deployment path once
 the local stdio MCP server is exposed behind an HTTP/SSE gateway.
 
 **OpenClaw users**: the [native integration](https://github.com/aetna000/aetnamem/tree/main/integrations/openclaw) is a
-native plugin that adds automatic memory — auto-recall injection before
-every prompt and auto-capture after every turn — on top of the same engine
-and audit chain. The policy gates run server-side, so a hostile webpage
+native plugin that adds automatic recall on top of the same engine and audit
+chain. During active takeover, OpenClaw's existing model—not a keyword parser
+or transcript scraper—interprets durable user intent and calls a typed
+`memory_remember` tool. AetnaMem accepts it only when the tool call is bound to
+OpenClaw's typed current-user event for that session; it makes no second model
+call. The policy gates run server-side, so a hostile webpage
 summarized by the agent still cannot plant durable memory, deletion still
 returns receipts, and you can independently audit the same SQLite file with
 `aetnamem verify` or `tools/verify_audit.py` while the agent uses it.
@@ -818,7 +825,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.7.0a4
+python -m pip install --pre aetnamem==0.7.0a5
 aetnamem --version
 aetnamem openclaw install
 
@@ -988,9 +995,12 @@ aetnamem graph-inspect ./memories.db user-1
 
 ## What the released core is and is not
 
-Semantic extraction is deterministic (generic sentence patterns: "my X is Y",
+Core semantic extraction is deterministic (generic sentence patterns: "my X is Y",
 "use Y as my X", "remember that …", "I avoid …") so that policy failures are
-debuggable, not probabilistic. The embedded four-memory runtime, setup
+debuggable, not probabilistic. A trusted host may explicitly provide a
+model-interpreted fact; that path records the interpreter and binds the fact to
+the exact typed source instead of pretending AetnaMem performed the inference.
+The embedded four-memory runtime, setup
 presets, local Python API, CLI, MCP server,
 deterministic consolidation, persona snapshots, scenes, checkpoints, and
 independent memory verifier are implemented. An optional, deterministic graph
@@ -1020,9 +1030,13 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
+- **[0.7.0a5 experimental notes](./docs/releases/v0.7.0a5.md):**
+  model-semantic OpenClaw memory admission plus a clickable auditor history
+  from source and interpretation through recall, context delivery, response
+  fingerprint and deletion receipt.
 - **[0.7.0a4 experimental notes](./docs/releases/v0.7.0a4.md):**
   enforces the frozen OpenClaw memory boundary through a verified tool-call
-  guard and recognizes common first-person preference statements.
+  guard.
 - **[0.7.0a2 experimental notes](./docs/releases/v0.7.0a2.md):**
   reliable daemon-lifetime access, direct system-browser launch, and
   fail-closed daemon startup when no protected URL is available; verified

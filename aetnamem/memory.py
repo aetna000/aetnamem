@@ -13,8 +13,10 @@ from aetnamem.core.policy import (
     forget_needle,
     initial_status,
     normalize_content,
+    trust_tier_for_source,
 )
 from aetnamem.extract import extract_facts
+from aetnamem.extract.rules import CandidateFact
 from aetnamem.graph import GRAPH_EXTRACTOR_VERSION, GraphIndex
 from aetnamem.media import MediaObservationEnvelope, normalize_media_sha256
 from aetnamem.retrieve import (
@@ -51,7 +53,10 @@ def _atomic(method: Callable[..., _T]) -> Callable[..., _T]:
 class Memory:
     """Embedded auditable memory engine.
 
-    v0 keeps extraction deterministic. The invariants that matter:
+    Core extraction stays deterministic. A trusted host may instead submit an
+    explicit model-interpreted fact together with the exact typed user source;
+    AetnaMem records that interpreter and the source/fact digests rather than
+    running a hidden model of its own. The invariants that matter:
 
     - every semantic record derives from an episode and points back to it,
     - untrusted extractions are quarantined until explicitly promoted,
@@ -94,12 +99,62 @@ class Memory:
         source_type: str | None = None,
         actor: str = "user",
         raw: dict[str, Any] | None = None,
+        interpreted_fact: str | None = None,
+        interpreted_fact_key: str | None = None,
     ) -> dict[str, Any]:
         text = message if message is not None else fact
         if text is None:
             raise ValueError("remember() requires message or fact")
         turn = _turn_id(turn_id)
         source = source_type or classify_source(text)
+        interpreted_candidate: CandidateFact | None = None
+        if interpreted_fact is not None:
+            if source != "user_message":
+                raise ValueError("interpreted facts require a trusted user message")
+            content = _explicit_note(interpreted_fact)
+            if len(content) > 2_000:
+                raise ValueError("interpreted fact exceeds 2,000 characters")
+            interpreted_candidate = CandidateFact(
+                content=content,
+                confidence=1.0,
+                source_type=source,
+                trust_tier=trust_tier_for_source(source),
+                fact_key=(
+                    normalize_content(interpreted_fact_key)
+                    if interpreted_fact_key
+                    else None
+                ),
+                scope="host_agent_interpreted",
+            )
+            duplicate = self.store.find_duplicate_record(
+                subject_id, content, statuses=("active",)
+            )
+            if duplicate is not None:
+                self.store.append_audit_event(
+                    subject_id=subject_id,
+                    event_type="memory.semantic_interpretation_duplicate",
+                    actor=actor,
+                    session_id=session_id,
+                    turn_id=turn,
+                    record_id=duplicate["id"],
+                    payload={
+                        "interpreter": (raw or {}).get("interpreter"),
+                        "interpretation_assurance": (raw or {}).get(
+                            "interpretation_assurance", "caller_asserted"
+                        ),
+                        "source_binding": (raw or {}).get(
+                            "source_binding", "caller_supplied"
+                        ),
+                        "source_message_sha256": _sha256(text),
+                        "interpreted_fact_sha256": _sha256(content),
+                        "fact_key": interpreted_candidate.fact_key,
+                    },
+                )
+                return {
+                    "episode_id": None,
+                    "records": [],
+                    "duplicate_ids": [duplicate["id"]],
+                }
         episode_id = self.store.insert_episode(
             subject_id=subject_id,
             session_id=session_id,
@@ -121,11 +176,33 @@ class Memory:
             },
         )
 
-        candidates = extract_facts(text, source_type=source)
+        if interpreted_fact is not None:
+            assert interpreted_candidate is not None
+            content = interpreted_candidate.content
+            candidates = [interpreted_candidate]
+            self.store.append_audit_event(
+                subject_id=subject_id,
+                event_type="memory.semantic_interpretation_received",
+                actor=actor,
+                session_id=session_id,
+                turn_id=turn,
+                payload={
+                    "episode_id": episode_id,
+                    "interpreter": (raw or {}).get("interpreter"),
+                    "interpretation_assurance": (raw or {}).get(
+                        "interpretation_assurance", "caller_asserted"
+                    ),
+                    "source_binding": (raw or {}).get(
+                        "source_binding", "caller_supplied"
+                    ),
+                    "source_message_sha256": _sha256(text),
+                    "interpreted_fact_sha256": _sha256(content),
+                    "fact_key": interpreted_candidate.fact_key,
+                },
+            )
+        else:
+            candidates = extract_facts(text, source_type=source)
         if force and not candidates and source == "user_message":
-            from aetnamem.core.policy import trust_tier_for_source
-            from aetnamem.extract.rules import CandidateFact
-
             candidates = [
                 CandidateFact(
                     content=_explicit_note(text),

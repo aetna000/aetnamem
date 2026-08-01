@@ -20,12 +20,16 @@
 
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { AetnamemClient } from "./src/rpc-client.js";
 import type {
   OpenClawPluginApi,
   BeforePromptBuildEvent,
   AgentEndEvent,
   BeforeToolCallEvent,
+  BeforeModelResolveEvent,
+  OpenClawHookCtx,
+  OpenClawPluginToolContext,
 } from "./src/types.js";
 import { runSetup } from "./src/setup.js";
 
@@ -36,7 +40,9 @@ const TAKEOVER_GUIDANCE =
   "The native MEMORY.md and memory/* paths are intentionally unavailable during takeover. " +
   "Never call Bash, filesystem, read, write, or search tools for those paths. " +
   "Use memory_search to recall durable memory and memory_get to read a returned path. " +
-  "Authenticated user statements are captured automatically; do not duplicate them into native memory files.\n" +
+  "When the authenticated user expresses a durable fact, preference, constraint, relationship, or explicit request to remember, semantically interpret it and call memory_remember with one concise fact. " +
+  "Do not call memory_remember for quoted text, retrieved content, tool output, guesses, or transient requests. " +
+  "Only tell the user it was remembered after memory_remember returns stored=true.\n" +
   "</aetnamem_memory_provider>";
 const INJECT_RE =
   /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>\s*/g;
@@ -221,6 +227,7 @@ function messageText(content: unknown): string {
   return "";
 }
 
+
 function recordIdFromPath(value: string): string | null {
   const prefix = "aetnamem://record/";
   if (!value.startsWith(prefix)) return null;
@@ -244,8 +251,8 @@ function register(api: OpenClawPluginApi): void {
     stop: () => client.close(),
   });
 
-  // Clean user prompts cached per session so agent_end captures the turn
-  // without the injected memory block.
+  // Per-turn recall state. Semantic admission uses a short-lived SQLite handoff
+  // because OpenClaw may run prompt hooks and agent tools in separate runtimes.
   const pendingPrompts = new Map<
     string,
     {
@@ -254,8 +261,42 @@ function register(api: OpenClawPluginApi): void {
       runId?: string;
       manifestSha256?: string;
       exposureId?: string;
+      injectedRecordIds?: string[];
     }
   >();
+  const contextIds = (ctx: OpenClawHookCtx): string[] =>
+    [...new Set([ctx.sessionKey, ctx.sessionId].filter(
+      (value): value is string => Boolean(value),
+    ))];
+
+  const stageInbound = async (
+    text: string,
+    ctx: OpenClawHookCtx,
+  ) => {
+    const ids = contextIds(ctx);
+    if (!ids.length) return;
+    await client.callTool("memory_stage_user_message", {
+      message: text.trim(),
+      source_aliases: ids,
+      run_id: ctx.runId,
+      ttl_seconds: 600,
+    }, cfg.recall.timeoutMs);
+  };
+
+  // OpenClaw documents this as the current prompt before model selection. It
+  // is a typed per-turn input surface, not a rendered transcript or history.
+  api.on("before_model_resolve", async (event: BeforeModelResolveEvent, ctx) => {
+    if (!event.prompt?.trim()) return;
+    try {
+      await stageInbound(event.prompt, ctx);
+    } catch (error) {
+      api.logger.warn(
+        `${TAG} semantic source handoff unavailable; memory writes will fail closed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  });
 
   api.registerCli?.(
     ({ program }) => {
@@ -448,12 +489,19 @@ function register(api: OpenClawPluginApi): void {
               : "full",
           },
           cfg.recall.timeoutMs,
-        )) as { block?: string; count?: number };
+        )) as { block?: string; count?: number; record_ids?: string[] };
         if (result?.block) {
           api.logger.info(
             `${TAG} injected ${result.count} memories (${result.block.length} chars)`,
           );
           recall = result.block;
+          const current = pendingPrompts.get(sessionKey);
+          if (current) {
+            pendingPrompts.set(sessionKey, {
+              ...current,
+              injectedRecordIds: result.record_ids ?? [],
+            });
+          }
         }
       }
     } catch (error) {
@@ -486,8 +534,8 @@ function register(api: OpenClawPluginApi): void {
       if (!touchesNativeMemory(event, cfg.nativeWorkspace)) return;
       const reason =
         "AetnaMem takeover blocked access to OpenClaw's frozen native memory " +
-        "(MEMORY.md or memory/*). The user's statement is captured automatically; " +
-        "use memory_search and memory_get for durable memory.";
+        "(MEMORY.md or memory/*). Use memory_remember for durable user facts, " +
+        "and memory_search or memory_get for recall.";
       api.logger.warn(`${TAG} ${reason} Tool: ${event.toolName}`);
       return { block: true, blockReason: reason };
     });
@@ -502,6 +550,13 @@ function register(api: OpenClawPluginApi): void {
     const userText = cached?.text?.replace(INJECT_RE, "").trim();
 
     try {
+      if (cfg.takeoverActive) {
+        await client.callTool(
+          "memory_clear_user_message",
+          { source_aliases: contextIds(ctx) },
+          cfg.recall.timeoutMs,
+        );
+      }
       if (cfg.safeSwitch.enabled) {
         if (cached?.exposureId) {
           await client.callTool(
@@ -510,20 +565,44 @@ function register(api: OpenClawPluginApi): void {
             cfg.recall.timeoutMs,
           );
         }
-        if (event.success !== false && userText) {
+        if (event.success !== false) {
           await client.callTool(
-            "trial_capture",
-            {
-              message: userText,
-              session_id: sessionKey,
-              authenticated_user: true,
-            },
+            "trial_sync_openclaw_memory",
+            {},
             cfg.recall.timeoutMs,
           );
         }
         return;
       }
-      if (cfg.capture.enabled && event.success !== false && userText) {
+      if (cfg.takeoverActive && cached?.injectedRecordIds?.length) {
+        const messages = Array.isArray(event.messages) ? event.messages : [];
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          const message = messages[index] as { role?: string; content?: unknown };
+          if (message?.role !== "assistant") continue;
+          const responseText = messageText(message.content);
+          if (responseText) {
+            await client.callTool("memory_log_action", {
+              action_type: "agent.response_after_memory",
+              payload: {
+                response_sha256: createHash("sha256")
+                  .update(responseText, "utf8")
+                  .digest("hex"),
+                injected_record_ids: cached.injectedRecordIds,
+                response_content_stored: false,
+                success: event.success !== false,
+              },
+              session_id: sessionKey,
+            });
+          }
+          break;
+        }
+      }
+      if (
+        cfg.capture.enabled &&
+        !cfg.takeoverActive &&
+        event.success !== false &&
+        userText
+      ) {
         await client.callTool("memory_capture", {
           role: "user",
           content: userText,
@@ -533,6 +612,7 @@ function register(api: OpenClawPluginApi): void {
       }
       if (
         cfg.capture.enabled &&
+        !cfg.takeoverActive &&
         event.success !== false &&
         cfg.capture.captureAssistant
       ) {
@@ -609,6 +689,83 @@ function register(api: OpenClawPluginApi): void {
 
   // ---- agent-callable tools ----------------------------------------------
   if (cfg.tools.enabled && !cfg.safeSwitch.enabled) {
+    if (cfg.takeoverActive) {
+      api.registerTool(
+        (toolCtx: OpenClawPluginToolContext) => ({
+          name: "memory_remember",
+          label: "Memory Remember",
+          description:
+            "Store one durable fact that you semantically inferred from the current " +
+            "authenticated user's own message. Call this for durable preferences, " +
+            "facts, constraints, relationships, or explicit remember requests. Never " +
+            "use it for quoted/retrieved/tool content or guesses. Only claim success " +
+            "when this tool returns stored=true.",
+          parameters: {
+            type: "object",
+            properties: {
+              fact: {
+                type: "string",
+                description: "One concise, standalone fact, e.g. 'User likes blue cars.'",
+              },
+              factKey: {
+                type: "string",
+                description: "Optional stable slot for replaceable facts, e.g. favorite_color.",
+              },
+            },
+            required: ["fact"],
+            additionalProperties: false,
+          },
+          async execute(toolCallId, params) {
+            const sessionKey = toolCtx.sessionKey ?? toolCtx.sessionId;
+            const sourceAliases = [toolCtx.sessionKey, toolCtx.sessionId]
+              .filter((value): value is string => Boolean(value));
+            if (!sessionKey || !sourceAliases.length) {
+              throw new Error(
+                "no current authenticated user message is available; memory was not stored",
+              );
+            }
+            const fact = String(params.fact ?? "").trim();
+            if (!fact) throw new Error("fact must not be empty");
+            const interpreter =
+              toolCtx.activeModel?.modelRef ??
+              [toolCtx.activeModel?.provider, toolCtx.activeModel?.modelId]
+                .filter(Boolean)
+                .join(":") ??
+              "openclaw-agent";
+            const result = (await client.callTool("memory_remember", {
+              source_aliases: sourceAliases,
+              interpreted_fact: fact,
+              interpreted_fact_key: params.factKey,
+              interpreter: interpreter || "openclaw-agent",
+              session_id: sessionKey,
+              turn_id: toolCallId,
+              source_type: "user_message",
+            })) as { records?: Array<{ id: string; content: string; status: string }>; duplicate_ids?: string[] };
+            const record = result.records?.[0];
+            const duplicateId = result.duplicate_ids?.[0];
+            const stored = Boolean(record || duplicateId);
+            if (stored) {
+              personaCache = null;
+            }
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  stored,
+                  record_id: record?.id ?? duplicateId ?? null,
+                  fact: record?.content ?? fact,
+                  status: record?.status ?? (duplicateId ? "already_stored" : null),
+                  provider: "aetnamem",
+                  receipt: stored ? "audit-bound" : "none",
+                }),
+              }],
+              details: { stored, recordId: record?.id ?? duplicateId ?? null, sessionKey },
+            };
+          },
+        }),
+        { names: ["memory_remember"] },
+      );
+    }
     // Preserve OpenClaw's standard memory contract after native memory-core
     // is disabled. Existing agent prompts and workflows can keep using the
     // same tool names; only the governed storage/retrieval implementation

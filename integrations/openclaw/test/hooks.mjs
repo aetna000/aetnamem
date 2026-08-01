@@ -24,7 +24,18 @@ function fakeApi(config) {
     pluginConfig: config,
     logger,
     on(name, handler) { hooks.set(name, handler); },
-    registerTool(spec) { tools.set(spec.name, spec); },
+    registerTool(spec) {
+      if (typeof spec === "function") {
+        const tool = spec({
+          sessionKey: "takeover-1",
+          senderIsOwner: true,
+          activeModel: { provider: "openai", modelId: "test-model" },
+        });
+        tools.set(tool.name, tool);
+        return;
+      }
+      tools.set(spec.name, spec);
+    },
     registerService(service) { services.push(service); },
   };
   plugin.register(api);
@@ -265,6 +276,28 @@ try {
   assert.ok(guided.appendSystemContext.includes("Never call Bash"));
   assert.ok(takeover.tools.has("memory_search"));
   assert.ok(takeover.tools.has("memory_get"));
+  assert.ok(takeover.tools.has("memory_remember"));
+  assert.equal(typeof takeover.hooks.get("before_model_resolve"), "function");
+  await takeover.hooks.get("before_model_resolve")(
+    { prompt: "I like blue cars", messages: [], queuedInjections: [] },
+    {
+      sessionKey: "agent:main:takeover-1",
+      sessionId: "takeover-1",
+      runId: "run-blue",
+    },
+  );
+  const remembered = await takeover.tools.get("memory_remember").execute(
+    "remember-blue",
+    { fact: "User likes blue cars." },
+  );
+  const rememberedPayload = JSON.parse(remembered.content[0].text);
+  assert.equal(rememberedPayload.stored, true);
+  assert.equal(rememberedPayload.fact, "User likes blue cars.");
+  const blueGet = await takeover.tools.get("memory_get").execute(
+    "get-blue",
+    { path: `aetnamem://record/${rememberedPayload.record_id}` },
+  );
+  assert.match(blueGet.content[0].text, /User likes blue cars\./);
   const beforeTool = takeover.hooks.get("before_tool_call");
   assert.equal(typeof beforeTool, "function");
   const workspace = path.join(dataDir, "openclaw-workspace");
@@ -273,7 +306,7 @@ try {
     params: { command: "sed -n '1,200p' MEMORY.md", cwd: workspace },
   }, {});
   assert.equal(blockedShell.block, true);
-  assert.match(blockedShell.blockReason, /captured automatically/);
+  assert.match(blockedShell.blockReason, /memory_remember/);
   const blockedWrite = await beforeTool({
     toolName: "write_file",
     params: { path: path.join(workspace, "memory", "today.md"), content: "note" },
