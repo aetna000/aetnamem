@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.7.0a2**
+Status: **experimental preview in AetnaMem 0.7.0a3**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.7.0a2
+python -m pip install --pre aetnamem==0.7.0a3
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -105,7 +105,9 @@ the earlier cutover receipt and snapshot in the trial evidence, then creates a
 new verified snapshot for the new switch. If the dashboard detects a genuinely
 interrupted cutover, it changes the primary action to **Restore OpenClaw** and
 shows the recorded cutover status; restoration must verify before activation
-is offered again.
+is offered again. A legacy trial whose internal mode is `off` can move directly
+to active only after the same mirror-readiness checks pass; users do not need
+to discover or run an internal capture-mode transition.
 
 Activation is a guarded cutover:
 
@@ -200,6 +202,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.7.0a2 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a3 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

@@ -1,11 +1,11 @@
 # OpenClaw shadow-and-takeover implementation plan
 
-Current experimental implementation: Python `0.7.0a2`, matching OpenClaw
+Current experimental implementation: Python `0.7.0a3`, matching OpenClaw
 bridge `0.5.0-experimental.1`.
 
 ```bash
 # 1. Install the AetnaMem Python engine.
-python -m pip install --pre --upgrade aetnamem==0.7.0a2
+python -m pip install --pre --upgrade aetnamem==0.7.0a3
 
 # 2. Verify the engine is accessible.
 aetnamem --version
@@ -54,7 +54,7 @@ The closest honest pitch for AetnaMem 6.0 was:
 1. Install AetnaMem and the OpenClaw plugin.
 
    ```bash
-   python -m pip install --pre aetnamem==0.7.0a2
+   python -m pip install --pre aetnamem==0.7.0a3
    aetnamem openclaw install
    ```
 

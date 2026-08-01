@@ -20,7 +20,10 @@ DEFAULT_STATE_PATH = Path.home() / ".aetnamem" / "safe-switch.json"
 DEFAULT_SUBJECT = "local-user"
 
 _ALLOWED_TRANSITIONS: dict[TrialMode, frozenset[TrialMode]] = {
-    TrialMode.OFF: frozenset({TrialMode.CAPTURE}),
+    # A restored legacy trial may be OFF while its verified mirror and
+    # cutover evidence remain usable. The customer-facing two-state flow may
+    # activate it directly; transition() still enforces full readiness.
+    TrialMode.OFF: frozenset({TrialMode.CAPTURE, TrialMode.ACTIVE}),
     # Customer-facing adoption is deliberately two-state: OpenClaw remains
     # authoritative while AetnaMem mirrors, or AetnaMem is active. Legacy
     # preview/canary states stay readable so existing trial files still load.

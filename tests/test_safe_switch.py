@@ -50,6 +50,13 @@ def test_mirror_then_active_is_the_customer_transition(
     assert prepared["inject"] is True
     assert "Neovim" in prepared["context"]
 
+    # A verified rollback used to leave the legacy trial mode OFF, even
+    # though the customer dashboard still had a ready mirror. That state must
+    # be able to activate again without an invisible CAPTURE transition.
+    assert manager.transition(TrialMode.OFF).mode is TrialMode.OFF
+    reactivated = manager.transition(TrialMode.ACTIVE)
+    assert reactivated.mode is TrialMode.ACTIVE
+
 
 def test_capture_rejects_non_user_and_does_not_store_raw_prompt(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
@@ -361,3 +368,28 @@ def test_active_trial_status_does_not_tell_user_to_activate_again(
     assert "AetnaMem is active" in human
     assert "trial rollback" in human
     assert "Ready: inspect/search" not in human
+
+
+def test_ready_off_trial_status_offers_activation_instead_of_starting_over(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from aetnamem.cli import _print_trial
+
+    _print_trial(
+        "status",
+        {
+            "host": "openclaw",
+            "mode": "off",
+            "changes_model_context": False,
+            "makes_extra_provider_calls": False,
+            "readiness": {
+                "ready_for_active": True,
+                "reasons": [],
+            },
+        },
+        json_output=False,
+    )
+
+    human = capsys.readouterr().out
+    assert "preserved mirror verified" in human
+    assert "start a new trial" not in human

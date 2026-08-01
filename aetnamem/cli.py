@@ -1385,7 +1385,12 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
         readiness = result.get("readiness")
         readiness = readiness if isinstance(readiness, dict) else {}
         reasons = readiness.get("reasons")
-        if result.get("mode") == "off":
+        if result.get("mode") == "off" and readiness.get("ready_for_active"):
+            print(
+                "\nReady: the preserved mirror verified. Inspect/search it, "
+                "then activate when satisfied."
+            )
+        elif result.get("mode") == "off":
             print(
                 "\nNext: start a new trial with "
                 "`aetnamem trial start --host openclaw`."
