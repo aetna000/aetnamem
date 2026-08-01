@@ -186,6 +186,7 @@ async function get(path){var r=await fetch(path,{headers:{"Accept":"application/
 async function post(path,body){var r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body||{})});var v=await r.json();if(!r.ok)throw new Error(v.error||"Request failed");return v}
 function element(name,className,value){var node=document.createElement(name);if(className)node.className=className;if(value!=null)node.textContent=value;return node}
 function active(){return !!(state&&state.takeover&&state.takeover.active)}
+function recovery(){return !!(state&&state.takeover&&state.takeover.requires_restore)}
 function renderSources(mirror){
  var box=$("sources");box.replaceChildren();var rows=Array.isArray(mirror.sources)?mirror.sources:[];
  if(!rows.length){box.appendChild(element("div","empty","No mirrored source files were found."));return}
@@ -203,21 +204,23 @@ function addCheck(label,ok,detail){
  if(detail)body.appendChild(element("span","", " — "+detail));row.append(icon,body);$("checks").appendChild(row)
 }
 function render(){
- if(!state)return;var mirror=state.mirror||{},takeover=state.takeover||{},isActive=active(),readiness=state.readiness||{};
+ if(!state)return;var mirror=state.mirror||{},takeover=state.takeover||{},isActive=active(),needsRecovery=recovery(),readiness=state.readiness||{};
  $("stateChip").className="state"+(isActive?" active":"");
- text("stateChip",isActive?"AetnaMem active":"OpenClaw active");
- text("eyebrow",isActive?"Current memory provider":"Safe side-by-side copy");
- text("title",isActive?"AetnaMem is managing OpenClaw memory":"OpenClaw memory is still active");
+ text("stateChip",isActive?"AetnaMem active":needsRecovery?"Restore required":"OpenClaw active");
+ text("eyebrow",isActive?"Current memory provider":needsRecovery?"Interrupted switch detected":"Safe side-by-side copy");
+ text("title",isActive?"AetnaMem is managing OpenClaw memory":needsRecovery?"Restore OpenClaw before activating":"OpenClaw memory is still active");
  text("summary",isActive
   ?"AetnaMem now serves bounded, governed memory. Your original OpenClaw memory is preserved for restoration."
+  :needsRecovery
+  ?(takeover.recovery_message||"AetnaMem preserved the switch evidence and must verify restoration before another activation.")
   :"AetnaMem mirrors and verifies your existing memory without changing what OpenClaw uses.");
  text("sourceCount",mirror.source_count);text("recordCount",mirror.record_count);text("sourceBytes",number(mirror.source_bytes));
  text("verified",mirror.audit_verified?"PASSED":"CHECK");
- text("switchBtn",isActive?"Restore OpenClaw":"Activate AetnaMem");
- $("refreshBtn").style.display=isActive?"none":"inline-block";
- $("switchBtn").disabled=isActive?false:!readiness.ready_for_active;
- text("switchTitle",isActive?"Restore OpenClaw":"Ready to activate?");
- text("switchCopy",isActive
+ text("switchBtn",isActive||needsRecovery?"Restore OpenClaw":"Activate AetnaMem");
+ $("refreshBtn").style.display=isActive||needsRecovery?"none":"inline-block";
+ $("switchBtn").disabled=isActive||needsRecovery?false:!readiness.ready_for_active;
+ text("switchTitle",isActive||needsRecovery?"Restore OpenClaw":"Ready to activate?");
+ text("switchCopy",isActive||needsRecovery
   ?"Restore the verified native files and make OpenClaw memory authoritative again."
   :"One switch freezes the current native state, verifies the AetnaMem runtime, and rolls back automatically if anything fails.");
  text("identity",(state.host||"openclaw")+" · "+(state.subject_id||"local-user")+" · "+(state.trial_id||""));
@@ -227,6 +230,9 @@ function render(){
   addCheck("OpenClaw gateway",!!takeover.gateway_verified,"running");
   addCheck("Memory tools",!!takeover.compatibility_tools_verified,"memory_search and memory_get");
   addCheck("Capture hooks",!!takeover.capture_hooks_verified,"verified");
+ }else if(needsRecovery){
+  addCheck("Interrupted switch",false,"status: "+(takeover.status||"unknown"));
+  addCheck("Recovery action",false,"Restore OpenClaw verifies the preserved files");
  }else{
   addCheck("Mirror synchronized",!!mirror.synced,number(mirror.source_count)+" sources");
   addCheck("Mirror audit",!!mirror.audit_verified,mirror.audit_error||"verified");
@@ -255,7 +261,7 @@ async function refresh(){
 }
 async function switchProvider(){
  if(!state)return;clearError();
- if(active()){
+ if(active()||recovery()){
   if(!confirm("Restore the verified OpenClaw memory and stop AetnaMem memory takeover?"))return;
   try{await working("Restoring OpenClaw memory","Restoring and verifying the frozen native files, then restarting OpenClaw. This can take a minute.",async function(){await post("/api/rollback",{});await reload()})}
   catch(error){showError(error)}

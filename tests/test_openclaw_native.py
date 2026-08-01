@@ -240,6 +240,25 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
     )
     assert cutover["status"] == "rolled_back"
 
+    # A completed rollback is a safe terminal state, not an incomplete
+    # cutover. A later activation keeps the prior receipt and snapshot as
+    # evidence while using a new archive.
+    first_archive = cutover["archive"]
+    reactivated = activate_takeover(manager.state(), manager.state_path)
+    assert reactivated["active"] is True
+    second_cutover = json.loads(
+        (Path(manager.state().trial_dir) / CUTOVER_NAME).read_text(encoding="utf-8")
+    )
+    assert second_cutover["archive"] != first_archive
+    history = list(
+        (Path(manager.state().trial_dir) / "openclaw-cutover-history").glob(
+            "rolled_back-*.json"
+        )
+    )
+    assert len(history) == 1
+    assert json.loads(history[0].read_text(encoding="utf-8"))["archive"] == first_archive
+    assert restore_takeover(manager.state())["native_memory_restored"] is True
+
 
 def test_rollback_preserves_post_switch_native_files_before_restore(
     tmp_path: Path,

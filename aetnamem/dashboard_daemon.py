@@ -26,6 +26,24 @@ def manage_dashboard_daemon(
     state_path = Path(daemon_state_path).expanduser().resolve(strict=False)
     if action == "status":
         return _status(state_path)
+    if action == "open":
+        current = _status(state_path)
+        if not current.get("running"):
+            raise ValueError(
+                "AetnaMem dashboard daemon is not running; use "
+                "`aetnamem dashboard daemon start`"
+            )
+        login_url = str(current.get("login_url") or "")
+        if not login_url:
+            raise ValueError(
+                "dashboard access URL is unavailable; restart the daemon"
+            )
+        if not _open_default_browser(login_url):
+            raise ValueError(
+                "the default browser did not accept the dashboard URL; "
+                "copy the Access URL shown by `aetnamem dashboard daemon status`"
+            )
+        return {**current, "opened": True}
     if action == "start":
         return _start(
             state_path,
@@ -78,10 +96,13 @@ def _start(
             f"{current.get('port')}; use `aetnamem dashboard daemon restart`"
         )
     state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state_path.parent.chmod(0o700)
     log_path = state_path.parent / DEFAULT_DAEMON_LOG.name
+    log_path.touch(mode=0o600, exist_ok=True)
+    log_path.chmod(0o600)
     # The log is append-only across restarts. Remember its current end so
-    # startup cannot mistake a previously consumed login URL for the new
-    # daemon's code.
+    # startup cannot mistake an earlier daemon's access URL for the new
+    # daemon's key.
     log_offset = log_path.stat().st_size if log_path.exists() else 0
     command = [
         sys.executable,
@@ -130,6 +151,13 @@ def _start(
             _write(state_path, value)
             break
         time.sleep(0.1)
+    if not value.get("login_url"):
+        detail = _tail(log_path)
+        _stop(state_path)
+        raise ValueError(
+            "AetnaMem dashboard daemon did not publish a usable access URL "
+            f"during startup: {detail}"
+        )
     return {**value, "running": process.poll() is None, "installed": True}
 
 
@@ -177,6 +205,39 @@ def _alive(pid: int) -> bool:
     except (ProcessLookupError, PermissionError):
         return False
     return True
+
+
+def _open_default_browser(url: str) -> bool:
+    """Open a URL with the operating system, bypassing editor link handlers."""
+    try:
+        if sys.platform == "darwin":
+            completed = subprocess.run(
+                ["/usr/bin/open", url],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            return completed.returncode == 0
+        if os.name == "nt":
+            os.startfile(url)  # type: ignore[attr-defined]
+            return True
+        for command in (["xdg-open", url], ["gio", "open", url]):
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                )
+            except FileNotFoundError:
+                continue
+            if completed.returncode == 0:
+                return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return False
 
 
 def _write(path: Path, value: dict[str, Any]) -> None:

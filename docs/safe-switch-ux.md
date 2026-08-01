@@ -76,6 +76,7 @@ aetnamem trial activate
 aetnamem trial rollback
 aetnamem dashboard
 aetnamem dashboard daemon start --port 8766
+aetnamem dashboard daemon open
 ```
 
 The installer normally starts the mirror, so customers should not need to run
@@ -86,9 +87,12 @@ and audit-chain health. Machine-readable output remains available with
 
 ## Security and truthfulness
 
-The dashboard binds only to loopback, uses a one-time login URL, an HttpOnly
-same-site cookie, CSRF tokens, and Origin checks. It renders all memory text
-with `textContent`, not HTML.
+The dashboard binds only to loopback. Its protected access URL remains valid
+for the daemon lifetime and rotates on restart; `daemon open` launches it via
+the operating system's browser handler. Local state and log files containing
+access metadata are mode `0600`. HttpOnly same-site cookies, CSRF tokens, and
+Origin checks remain enforced. It renders all memory text with `textContent`,
+not HTML.
 
 The dashboard reports local facts only. It does not claim improved answer
 quality, token savings, or provider cost. Those require a separate controlled

@@ -1,7 +1,7 @@
 # Wiring aetnamem into OpenClaw via MCP
 
 This page covers the public legacy surface and the experimental Python
-`v0.7.0a1` / npm `v0.5.0-experimental.1` shadow-and-takeover preview. New users who
+`v0.7.0a2` / npm `v0.5.0-experimental.1` shadow-and-takeover preview. New users who
 want to observe before
 enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
@@ -21,7 +21,7 @@ searchable mirror:
 
 ```bash
 # 1. Install the engine.
-python -m pip install --pre aetnamem==0.7.0a1
+python -m pip install --pre aetnamem==0.7.0a2
 
 # 2. Verify it, then install and verify the matching bridge.
 aetnamem --version

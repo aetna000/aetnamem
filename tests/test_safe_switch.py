@@ -236,6 +236,15 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
         assert opener.open(f"{base}/api/status").status == 200
         session = json.loads(opener.open(f"{base}/api/session").read())
 
+        # A daemon advertises one stable local access URL for its lifetime.
+        # A second browser can use the same protected URL without restarting
+        # the daemon or receiving a stale-code error.
+        second_opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        assert second_opener.open(
+            f"{base}/auth?code={server.login_code}"
+        ).read() == b"<html>safe</html>"
+        assert second_opener.open(f"{base}/api/status").status == 200
+
         unprotected = Request(
             f"{base}/api/mode",
             data=json.dumps({"mode": "off"}).encode(),

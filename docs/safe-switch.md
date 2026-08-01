@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.7.0a1**
+Status: **experimental preview in AetnaMem 0.7.0a2**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.7.0a1
+python -m pip install --pre aetnamem==0.7.0a2
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -64,15 +64,21 @@ persistent memory sources when shadowing starts and when cutover occurs.
 
 ```bash
 aetnamem dashboard daemon start --port 8766
+aetnamem dashboard daemon open
 aetnamem dashboard daemon status
 aetnamem dashboard daemon restart
 aetnamem dashboard daemon stop
 aetnamem dashboard daemon remove
 ```
 
-The dashboard binds only to `127.0.0.1`. It uses a one-time login URL, an
-HttpOnly session cookie, CSRF and Origin checks. `remove` deletes the daemon
-service record, not memory or trial evidence.
+The dashboard binds only to `127.0.0.1`. The daemon's high-entropy access URL
+remains valid while that daemon is running, so `status` never advertises a
+consumed code. `open` launches it through the operating system instead of an
+editor link handler. Restarting rotates the key and invalidates prior
+sessions. The local state and startup log files containing access metadata are
+both forced to mode `0600`. HttpOnly session cookies, CSRF and Origin checks
+remain enforced. `remove` deletes the daemon service record, not memory or
+trial evidence.
 
 ## Two states: OpenClaw active or AetnaMem active
 
@@ -93,6 +99,13 @@ activation, internal shadow retrieval is recorded but never reaches the model.
 After activation, AetnaMem is the memory provider. Rollback is the single
 supported way back because it restores a usable, verified OpenClaw state
 instead of merely turning one bridge off.
+
+A completed rollback does not prevent a later activation. AetnaMem preserves
+the earlier cutover receipt and snapshot in the trial evidence, then creates a
+new verified snapshot for the new switch. If the dashboard detects a genuinely
+interrupted cutover, it changes the primary action to **Restore OpenClaw** and
+shows the recorded cutover status; restoration must verify before activation
+is offered again.
 
 Activation is a guarded cutover:
 
@@ -187,6 +200,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.7.0a1 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a2 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

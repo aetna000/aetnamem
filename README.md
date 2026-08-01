@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.7.0a1 experimental" src="https://img.shields.io/badge/version-0.7.0a1--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.7.0a2 experimental" src="https://img.shields.io/badge/version-0.7.0a2--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -28,7 +28,7 @@
 </p>
 
 AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.7.0a1** is an **experimental OpenClaw shadow-and-takeover preview**:
+**0.7.0a2** is an **experimental OpenClaw shadow-and-takeover preview**:
 install it beside an existing OpenClaw agent, mirror the native Markdown memory
 without changing prompts, search and trace the governed copy, try bounded
 recall internally, and activate only after the mirror and rollback evidence
@@ -70,7 +70,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.7.0a1
+python -m pip install --pre aetnamem==0.7.0a2
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -96,11 +96,20 @@ Run the friendly dashboard in the foreground or as a background process:
 aetnamem dashboard
 
 aetnamem dashboard daemon start --port 8766
+aetnamem dashboard daemon open    # launch the protected URL in your system browser
 aetnamem dashboard daemon status
 aetnamem dashboard daemon restart
 aetnamem dashboard daemon stop
 aetnamem dashboard daemon remove  # service record only; memory is preserved
 ```
+
+The daemon creates a high-entropy local access key and keeps that protected
+URL valid for the lifetime of the process. `daemon open` avoids editor link
+handlers and launches the operating system's browser directly. A restart
+rotates the key and invalidates earlier sessions. The local state and log files
+that contain access metadata are mode `0600`; the server remains loopback-only
+and also requires an HttpOnly session cookie, CSRF token, and valid Origin for
+changes.
 
 There are only two customer-visible states:
 
@@ -187,7 +196,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.7.0a1
+python -m pip install --pre aetnamem==0.7.0a2
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -805,7 +814,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.7.0a1
+python -m pip install --pre aetnamem==0.7.0a2
 aetnamem --version
 aetnamem openclaw install
 
@@ -1007,6 +1016,11 @@ benchmark scenario.
   identity boundaries.
 - **[Integration guide](./docs/integration-guide.md):** complete CLI and MCP
   reference.
+- **[0.7.0a2 experimental notes](./docs/releases/v0.7.0a2.md):**
+  reliable daemon-lifetime access, direct system-browser launch, and
+  fail-closed daemon startup when no protected URL is available; verified
+  rollbacks can be activated again and interrupted switches surface a clear
+  Restore OpenClaw recovery action.
 - **[0.7.0a1 experimental notes](./docs/releases/v0.7.0a1.md):**
   staged CLI installation progress and visible dashboard progress during
   mirror refresh, activation, and restore.

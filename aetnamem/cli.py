@@ -111,7 +111,7 @@ def main() -> None:
     dashboard_daemon_commands = dashboard_daemon.add_subparsers(
         dest="dashboard_daemon_command", required=True
     )
-    for name in ("start", "stop", "restart", "status", "remove"):
+    for name in ("start", "open", "stop", "restart", "status", "remove"):
         command_parser = dashboard_daemon_commands.add_parser(name)
         command_parser.add_argument("--state", default=None)
         command_parser.add_argument("--port", type=int, default=8766)
@@ -2089,11 +2089,13 @@ def _run_dashboard(args: argparse.Namespace) -> None:
         if result.get("port"):
             print(f"  Port         {result['port']}")
         if result.get("login_url"):
-            print(f"  Open         {result['login_url']}")
+            print(f"  Access       {result['login_url']}")
         elif result.get("url"):
             print(f"  Dashboard    {result['url']}")
         if result.get("log_path"):
             print(f"  Log          {result['log_path']}")
+        if result.get("opened"):
+            print("\nOpened the dashboard in the default browser.")
         if result.get("removed"):
             print("\nThe background service record was removed. Memory and trial data were preserved.")
         return

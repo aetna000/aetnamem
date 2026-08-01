@@ -42,7 +42,6 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
             if not secrets.compare_digest(code, self.server.login_code):
                 self._json(HTTPStatus.UNAUTHORIZED, {"error": "invalid login code"})
                 return
-            self.server.login_code = secrets.token_urlsafe(24)
             self.send_response(HTTPStatus.SEE_OTHER)
             self._security_headers()
             self.send_header(

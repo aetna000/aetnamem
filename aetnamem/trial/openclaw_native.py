@@ -395,12 +395,20 @@ def activate_takeover(
         current = _read_json(cutover_path) or {}
         if current.get("status") == "active":
             return _cutover_public(current)
-        raise ValueError(
-            "an incomplete OpenClaw cutover already exists; roll back first"
-        )
+        if current.get("status") in {"rolled_back", "rolled_back_after_failure"}:
+            _archive_completed_cutover(trial_dir, current)
+        else:
+            status_name = str(current.get("status") or "unknown")
+            raise ValueError(
+                "AetnaMem found an interrupted OpenClaw switch "
+                f"(status: {status_name}). Native memory may already be "
+                "frozen. Choose Restore OpenClaw in the dashboard or run "
+                "`aetnamem trial rollback`; restoration verifies the saved "
+                "files before another activation is allowed."
+            )
 
     workspace = Path(str(status["workspace"]))
-    archive = trial_dir / "openclaw-native-frozen"
+    archive = _new_cutover_archive(trial_dir)
     prior_slot = _optional_json(
         [executable, "config", "get", "plugins.slots.memory", "--json"]
     )
@@ -837,6 +845,28 @@ def _new_preservation_root(trial_dir: Path) -> Path:
     return candidate
 
 
+def _new_cutover_archive(trial_dir: Path) -> Path:
+    base = trial_dir / "openclaw-native-frozen"
+    candidate = base
+    suffix = 1
+    while candidate.exists():
+        suffix += 1
+        candidate = trial_dir / f"{base.name}-{suffix}"
+    return candidate
+
+
+def _archive_completed_cutover(
+    trial_dir: Path,
+    cutover: dict[str, Any],
+) -> None:
+    """Preserve terminal cutover evidence before beginning another attempt."""
+    history = trial_dir / "openclaw-cutover-history"
+    digest = sha256_hex(canonical_json(cutover))
+    target = history / f"{cutover.get('status', 'completed')}-{digest[:16]}.json"
+    if not target.exists():
+        _private_json(target, cutover)
+
+
 def _export_active_memories_to_native(
     cutover: dict[str, Any],
     *,
@@ -1061,6 +1091,8 @@ def _mirror_status_from_manifest(
 
 
 def _cutover_public(value: dict[str, Any]) -> dict[str, Any]:
+    status = str(value.get("status") or "unknown")
+    terminal = {"rolled_back", "rolled_back_after_failure"}
     public = {
         key: value.get(key)
         for key in (
@@ -1083,7 +1115,15 @@ def _cutover_public(value: dict[str, Any]) -> dict[str, Any]:
             "native_capability_report",
         )
         if key in value
-    } | {"active": value.get("status") == "active"}
+    } | {
+        "active": status == "active",
+        "requires_restore": status not in terminal | {"active"},
+    }
+    if public["requires_restore"]:
+        public["recovery_message"] = (
+            "A previous OpenClaw switch did not reach a verified terminal "
+            "state. Restore OpenClaw before trying activation again."
+        )
     snapshot = value.get("native_snapshot")
     if isinstance(snapshot, dict):
         public["native_snapshot"] = {
