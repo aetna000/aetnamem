@@ -141,6 +141,8 @@ jobs:
           path: dist
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   npm:
     name: Publish OpenClaw plugin to npm
