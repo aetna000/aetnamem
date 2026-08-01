@@ -41,7 +41,7 @@ The required order is:
 | Working | Current conversation/context | `~/.openclaw/agents/main/sessions/sessions.json` and session `.jsonl` files in the same directory | One active session, approximately 58k tokens |
 | Semantic | Durable facts, preferences and decisions | `/Users/javadtaghia/.openclaw/workspace/MEMORY.md` | **Does not exist yet** |
 | Episodic | Daily experiences, observations and session summaries | `/Users/javadtaghia/.openclaw/workspace/memory/YYYY-MM-DD.md` | **Directory does not exist yet** |
-| Procedural | Agent instructions, tool guidance and skills | [AGENTS.md](/Users/javadtaghia/.openclaw/workspace/AGENTS.md), [TOOLS.md](/Users/javadtaghia/.openclaw/workspace/TOOLS.md), `/opt/homebrew/lib/node_modules/openclaw/skills/*/SKILL.md` | Available; 43 of 54 skills ready |
+| Procedural | Agent instructions, tool guidance and skills | `~/.openclaw/workspace/AGENTS.md`, `~/.openclaw/workspace/TOOLS.md`, and the installed OpenClaw `skills/*/SKILL.md` files | Available; 43 of 54 skills ready |
 
 The remaining material below records how the product direction was developed.
 Where it conflicts with the contract above, the implemented contract and

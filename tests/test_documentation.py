@@ -29,6 +29,9 @@ def test_documentation_structure_and_local_links() -> None:
             target = target.split("#", 1)[0]
             if not target or target.startswith(("https://", "http://")):
                 continue
+            assert not target.startswith("/"), (
+                f"machine-local absolute link in {path}: {target}"
+            )
             assert (path.parent / target).exists(), f"broken link in {path}: {target}"
 
 
