@@ -38,7 +38,7 @@ The required order is:
 
 | Memory type | Native OpenClaw equivalent | Location on your machine | Current state |
 |---|---|---|---|
-| Working | Current conversation/context | [sessions.json](/Users/javadtaghia/.openclaw/agents/main/sessions/sessions.json) and session `.jsonl` files in `/Users/javadtaghia/.openclaw/agents/main/sessions/` | One active session, approximately 58k tokens |
+| Working | Current conversation/context | `~/.openclaw/agents/main/sessions/sessions.json` and session `.jsonl` files in the same directory | One active session, approximately 58k tokens |
 | Semantic | Durable facts, preferences and decisions | `/Users/javadtaghia/.openclaw/workspace/MEMORY.md` | **Does not exist yet** |
 | Episodic | Daily experiences, observations and session summaries | `/Users/javadtaghia/.openclaw/workspace/memory/YYYY-MM-DD.md` | **Directory does not exist yet** |
 | Procedural | Agent instructions, tool guidance and skills | [AGENTS.md](/Users/javadtaghia/.openclaw/workspace/AGENTS.md), [TOOLS.md](/Users/javadtaghia/.openclaw/workspace/TOOLS.md), `/opt/homebrew/lib/node_modules/openclaw/skills/*/SKILL.md` | Available; 43 of 54 skills ready |
