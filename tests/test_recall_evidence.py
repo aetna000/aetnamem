@@ -53,6 +53,47 @@ def test_recall_evidence_digest_binds_row_identity_parameters_and_scores() -> No
     )
 
 
+def test_context_injection_is_bound_to_exact_retrieval_id() -> None:
+    memory = Memory(":memory:")
+    record = memory.remember("u1", "My favorite vehicle is a blue car.")["records"][0]
+
+    block = memory.build_recall_block(
+        "u1", "Which vehicle do I like?", session_id="session-1", min_score=0.0
+    )
+
+    assert block["retrieval_id"].startswith("ret_")
+    assert block["context_event_id"].startswith("aud_")
+    context = memory.store.get_audit_event("u1", block["context_event_id"])
+    assert context["payload"]["retrieval_id"] == block["retrieval_id"]
+    assert context["payload"]["record_ids"] == [record["id"]]
+
+
+def test_audit_query_combines_filters_and_paginates_without_overlap() -> None:
+    memory = Memory(":memory:")
+    first = memory.remember("u1", "My favorite color is teal.", session_id="s1")["records"][0]
+    memory.remember("u1", "My favorite editor is Neovim.", session_id="s2")
+    memory.build_recall_block("u1", "favorite color", session_id="s1", min_score=0.0)
+
+    page_one = memory.store.query_audit_events("u1", limit=2, direction="asc")
+    page_two = memory.store.query_audit_events(
+        "u1", limit=2, direction="asc", cursor=page_one["next_cursor"]
+    )
+    assert page_one["matched_total"] >= 4
+    assert page_one["has_more"] is True
+    assert {row["event_id"] for row in page_one["events"]}.isdisjoint(
+        {row["event_id"] for row in page_two["events"]}
+    )
+    record_events = memory.store.query_audit_events(
+        "u1", record_id=first["id"], limit=100
+    )["events"]
+    assert any(row["event_type"] == "memory.context_injected" for row in record_events)
+    assert all(
+        row.get("record_id") == first["id"]
+        or first["id"] in str(row.get("payload"))
+        for row in record_events
+    )
+
+
 def test_every_returned_result_is_logged_when_limit_exceeds_diagnostic_window() -> None:
     memory = Memory(":memory:")
     for index in range(60):

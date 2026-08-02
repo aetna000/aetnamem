@@ -21,6 +21,9 @@
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { lstat, realpath } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { AetnamemClient } from "./src/rpc-client.js";
 import type {
   OpenClawPluginApi,
@@ -28,6 +31,7 @@ import type {
   AgentEndEvent,
   BeforeToolCallEvent,
   BeforeModelResolveEvent,
+  MessageReceivedEvent,
   OpenClawHookCtx,
   OpenClawPluginToolContext,
 } from "./src/types.js";
@@ -227,6 +231,66 @@ function messageText(content: unknown): string {
   return "";
 }
 
+type InboundAttachmentEvidence = {
+  mediaSha256: string;
+  hostReference: string;
+  modality: "image" | "audio" | "video" | "document";
+  mimeType: string;
+  bytes: number;
+  capturedAt: number;
+};
+
+function modalityFromMime(mimeType: string): InboundAttachmentEvidence["modality"] | null {
+  const mime = mimeType.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  if (mime === "application/pdf" || mime.startsWith("text/") || mime.includes("document")) {
+    return "document";
+  }
+  return null;
+}
+
+function withinPath(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
+}
+
+async function hashInboundAttachment(
+  filePath: string,
+  mimeType: string,
+): Promise<InboundAttachmentEvidence> {
+  const mediaRoot = await realpath(
+    process.env.AETNAMEM_OPENCLAW_MEDIA_ROOT
+      ? expandHome(process.env.AETNAMEM_OPENCLAW_MEDIA_ROOT)
+      : path.join(os.homedir(), ".openclaw", "media"),
+  );
+  const resolved = await realpath(expandHome(filePath));
+  if (!withinPath(resolved, mediaRoot)) {
+    throw new Error("OpenClaw attachment path is outside the managed media directory");
+  }
+  const before = await lstat(resolved);
+  if (!before.isFile() || before.size > 512 * 1024 * 1024) {
+    throw new Error("OpenClaw attachment is not a bounded regular file");
+  }
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(resolved)) hash.update(chunk as Buffer);
+  const after = await lstat(resolved);
+  if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+    throw new Error("OpenClaw attachment changed while its digest was computed");
+  }
+  const mediaSha256 = hash.digest("hex");
+  const modality = modalityFromMime(mimeType);
+  if (!modality) throw new Error(`unsupported attachment MIME type: ${mimeType || "unknown"}`);
+  return {
+    mediaSha256,
+    hostReference: `openclaw-media://sha256/${mediaSha256}`,
+    modality,
+    mimeType,
+    bytes: before.size,
+    capturedAt: Date.now(),
+  };
+}
+
 
 function recordIdFromPath(value: string): string | null {
   const prefix = "aetnamem://record/";
@@ -262,8 +326,16 @@ function register(api: OpenClawPluginApi): void {
       manifestSha256?: string;
       exposureId?: string;
       injectedRecordIds?: string[];
+      retrievalId?: string;
+      contextEventId?: string;
     }
   >();
+  const inboundAttachments = new Map<
+    string,
+    { items: InboundAttachmentEvidence[]; ts: number }
+  >();
+  const inboundAttachmentGeneration = new Map<string, number>();
+  let nextAttachmentGeneration = 0;
   const contextIds = (ctx: OpenClawHookCtx): string[] =>
     [...new Set([ctx.sessionKey, ctx.sessionId].filter(
       (value): value is string => Boolean(value),
@@ -282,6 +354,50 @@ function register(api: OpenClawPluginApi): void {
       ttl_seconds: 600,
     }, cfg.recall.timeoutMs);
   };
+
+  api.on("message_received", async (event: MessageReceivedEvent, ctx) => {
+    const metadata = event.metadata ?? {};
+    const paths = Array.isArray(metadata.mediaPaths)
+      ? metadata.mediaPaths.filter((value): value is string => typeof value === "string")
+      : typeof metadata.mediaPath === "string"
+        ? [metadata.mediaPath]
+        : [];
+    const types = Array.isArray(metadata.mediaTypes)
+      ? metadata.mediaTypes.filter((value): value is string => typeof value === "string")
+      : typeof metadata.mediaType === "string"
+        ? [metadata.mediaType]
+        : [];
+    const keys = [...new Set([
+      event.sessionKey,
+      event.runId,
+      ...contextIds(ctx),
+    ].filter((value): value is string => Boolean(value)))];
+    const generation = ++nextAttachmentGeneration;
+    for (const key of keys) {
+      inboundAttachments.delete(key);
+      inboundAttachmentGeneration.set(key, generation);
+    }
+    if (!paths.length) return;
+    try {
+      const items = await Promise.all(
+        paths.map((filePath, index) =>
+          hashInboundAttachment(filePath, types[index] ?? types[0] ?? "application/octet-stream"),
+        ),
+      );
+      for (const key of keys) {
+        if (inboundAttachmentGeneration.get(key) === generation) {
+          inboundAttachments.set(key, { items, ts: Date.now() });
+        }
+      }
+      api.logger.info(`${TAG} bound ${items.length} inbound attachment digest(s) to the turn`);
+    } catch (error) {
+      api.logger.warn(
+        `${TAG} inbound attachment provenance unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  });
 
   // OpenClaw documents this as the current prompt before model selection. It
   // is a typed per-turn input surface, not a rendered transcript or history.
@@ -303,6 +419,35 @@ function register(api: OpenClawPluginApi): void {
       const root = program
         .command("aetnamem")
         .description("Configure and inspect AetnaMem for OpenClaw");
+      root
+        .command("dashboard")
+        .description("Open the authenticated AetnaMem dashboard in your browser")
+        .action(() => {
+          const runDashboard = (action: "open" | "start") =>
+            spawnSync(
+              cfg.command,
+              ["dashboard", "daemon", action],
+              { stdio: "inherit", env: process.env },
+            );
+          let result = runDashboard("open");
+          if (result.error) throw result.error;
+          if (result.status !== 0) {
+            const started = runDashboard("start");
+            if (started.error) throw started.error;
+            if (started.status !== 0) {
+              throw new Error(
+                "AetnaMem dashboard could not be started; run `aetnamem dashboard daemon status` for details",
+              );
+            }
+            result = runDashboard("open");
+            if (result.error) throw result.error;
+          }
+          if (result.status !== 0) {
+            throw new Error(
+              "AetnaMem dashboard could not be opened; run `aetnamem dashboard daemon status` for the protected URL",
+            );
+          }
+        });
       root
         .command("setup")
         .description("Apply safe single-user defaults and enable automatic memory hooks")
@@ -341,6 +486,9 @@ function register(api: OpenClawPluginApi): void {
     const now = Date.now();
     for (const [key, value] of pendingPrompts) {
       if (now - value.ts > PROMPT_CACHE_TTL_MS) pendingPrompts.delete(key);
+    }
+    for (const [key, value] of inboundAttachments) {
+      if (now - value.ts > PROMPT_CACHE_TTL_MS) inboundAttachments.delete(key);
     }
   };
 
@@ -489,7 +637,13 @@ function register(api: OpenClawPluginApi): void {
               : "full",
           },
           cfg.recall.timeoutMs,
-        )) as { block?: string; count?: number; record_ids?: string[] };
+        )) as {
+          block?: string;
+          count?: number;
+          record_ids?: string[];
+          retrieval_id?: string;
+          context_event_id?: string;
+        };
         if (result?.block) {
           api.logger.info(
             `${TAG} injected ${result.count} memories (${result.block.length} chars)`,
@@ -500,6 +654,8 @@ function register(api: OpenClawPluginApi): void {
             pendingPrompts.set(sessionKey, {
               ...current,
               injectedRecordIds: result.record_ids ?? [],
+              retrievalId: result.retrieval_id,
+              contextEventId: result.context_event_id,
             });
           }
         }
@@ -588,6 +744,8 @@ function register(api: OpenClawPluginApi): void {
                   .update(responseText, "utf8")
                   .digest("hex"),
                 injected_record_ids: cached.injectedRecordIds,
+                retrieval_id: cached.retrievalId,
+                context_event_id: cached.contextEventId,
                 response_content_stored: false,
                 success: event.success !== false,
               },
@@ -1034,12 +1192,13 @@ function register(api: OpenClawPluginApi): void {
     );
 
     api.registerTool(
-      {
+      (toolCtx: OpenClawPluginToolContext) => ({
         name: "aetnamem_observe",
         label: "Media Observation (aetnamem)",
         description:
           "After analyzing an image, audio clip, video, or document, store one " +
-          "typed text observation with its exact-byte SHA-256 provenance. The " +
+          "typed text observation. For a current OpenClaw upload, exact-byte " +
+          "SHA-256 provenance is supplied automatically by the trusted host hook. The " +
           "observation is quarantined until explicitly promoted. Confidence is " +
           "evidence only and never grants trust.",
         parameters: {
@@ -1052,44 +1211,114 @@ function register(api: OpenClawPluginApi): void {
             },
             media_sha256: {
               type: "string",
-              description: "SHA-256 of the exact media byte stream",
+              description: "Optional SHA-256 when no current OpenClaw upload is bound",
             },
             host_reference: {
               type: "string",
-              description: "Secretless reference controlled by OpenClaw or the user",
+              description: "Optional secretless reference when no upload is bound",
             },
             segment: {
               type: "object",
-              description: "Optional page, timestamp range, or region label/coordinates",
+              description:
+                "Optional location inside the media. Omit for a whole-file observation.",
+              properties: {
+                page: {
+                  type: "integer",
+                  minimum: 1,
+                  description: "One-based document page",
+                },
+                timestamp_start: {
+                  type: "number",
+                  minimum: 0,
+                  description: "Audio/video start time in seconds",
+                },
+                timestamp_end: {
+                  type: "number",
+                  minimum: 0,
+                  description: "Audio/video end time in seconds",
+                },
+                region: {
+                  type: "string",
+                  minLength: 1,
+                  maxLength: 500,
+                  description: "Human-readable region, for example 'upper-left logo'",
+                },
+              },
+              additionalProperties: false,
             },
             extractor: {
               type: "object",
               description:
                 "Extractor identity: provider, model, version, and optional model_digest",
+              properties: {
+                provider: { type: "string" },
+                model: { type: "string" },
+                version: { type: "string" },
+                model_digest: { type: "string" },
+              },
+              additionalProperties: false,
             },
             confidence: {
               type: "number",
               description: "Extractor-local score from 0 to 1",
             },
             observed_at: { type: "string", description: "Optional ISO-8601 timestamp" },
+            attachment_index: {
+              type: "number",
+              description: "Zero-based upload index when the user supplied multiple files",
+            },
           },
-          required: [
-            "text",
-            "modality",
-            "media_sha256",
-            "host_reference",
-            "extractor",
-          ],
+          required: ["text", "modality"],
         },
         async execute(toolCallId, params) {
           const sessionId = `openclaw-tool:${toolCallId}`;
+          sweep();
+          const attachmentSet = contextIds(toolCtx)
+            .map((key) => inboundAttachments.get(key))
+            .find(Boolean);
+          const requestedIndex = Math.max(0, Math.floor(Number(params.attachment_index) || 0));
+          const attachment = attachmentSet?.items[requestedIndex];
+          const requestedModality = String(params.modality ?? "");
+          if (attachment && attachment.modality !== requestedModality) {
+            throw new Error(
+              `bound upload ${requestedIndex} is ${attachment.modality}, not ${requestedModality}`,
+            );
+          }
+          const mediaSha256 = attachment?.mediaSha256 ?? String(params.media_sha256 ?? "");
+          const hostReference = attachment?.hostReference ?? String(params.host_reference ?? "");
+          if (!/^[a-f0-9]{64}$/i.test(mediaSha256) || !hostReference) {
+            throw new Error(
+              "No exact uploaded-file provenance is bound to this session. " +
+              "Attach the file in the same OpenClaw message or provide its SHA-256 and secretless reference.",
+            );
+          }
+          const suppliedRaw = params.extractor && typeof params.extractor === "object"
+            ? params.extractor as Record<string, unknown>
+            : {};
+          const suppliedExtractor: Record<string, unknown> = {};
+          for (const key of ["provider", "model", "version", "model_digest"] as const) {
+            if (typeof suppliedRaw[key] === "string") suppliedExtractor[key] = suppliedRaw[key];
+          }
+          const extractor = {
+            ...suppliedExtractor,
+            provider: toolCtx.activeModel?.provider ?? suppliedExtractor.provider ?? "openclaw",
+            model: toolCtx.activeModel?.modelId ?? suppliedExtractor.model ?? "unknown",
+            version: suppliedExtractor.version ?? "openclaw-host-observation-v1",
+          };
+          const suppliedSegment = params.segment && typeof params.segment === "object"
+            ? params.segment as Record<string, unknown>
+            : {};
+          const segment: Record<string, unknown> = {};
+          for (const key of ["page", "timestamp_start", "timestamp_end", "region"] as const) {
+            if (suppliedSegment[key] !== undefined) segment[key] = suppliedSegment[key];
+          }
           const result = (await client.callTool("memory_observe", {
             text: String(params.text ?? ""),
-            modality: String(params.modality ?? ""),
-            media_sha256: String(params.media_sha256 ?? ""),
-            host_reference: String(params.host_reference ?? ""),
-            segment: params.segment ?? {},
-            extractor: params.extractor ?? {},
+            modality: requestedModality,
+            media_sha256: mediaSha256,
+            host_reference: hostReference,
+            segment,
+            extractor,
             confidence: params.confidence,
             observed_at: params.observed_at,
             session_id: sessionId,
@@ -1115,11 +1344,13 @@ function register(api: OpenClawPluginApi): void {
               recordId: result.record.id,
               status: result.record.status,
               duplicate: result.duplicate,
+              provenanceSource: attachment ? "openclaw-upload" : "caller",
+              mediaSha256,
               sessionId,
             },
           };
         },
-      },
+      }),
       { name: "aetnamem_observe" },
     );
 

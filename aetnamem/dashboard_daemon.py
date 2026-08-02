@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import secrets
 import signal
 import subprocess
 import sys
@@ -104,6 +105,9 @@ def _start(
     # startup cannot mistake an earlier daemon's access URL for the new
     # daemon's key.
     log_offset = log_path.stat().st_size if log_path.exists() else 0
+    access_code = str(current.get("access_code") or "").strip()
+    if len(access_code) < 32:
+        access_code = secrets.token_urlsafe(32)
     command = [
         sys.executable,
         "-m",
@@ -123,6 +127,7 @@ def _start(
             stderr=subprocess.STDOUT,
             start_new_session=True,
             close_fds=True,
+            env={**os.environ, "AETNAMEM_DASHBOARD_ACCESS_CODE": access_code},
         )
     value = {
         "format": "aetnamem-dashboard-daemon-v1",
@@ -136,6 +141,7 @@ def _start(
         ),
         "log_path": str(log_path),
         "started_at": utc_now(),
+        "access_code": access_code,
     }
     _write(state_path, value)
     deadline = time.monotonic() + 5.0

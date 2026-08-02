@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
+import hashlib
+import io
 import json
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -36,6 +40,8 @@ NATIVE_MEMORY_ROOTS = (
 )
 SUPPLEMENTAL_MEMORY_ROOTS = ("MEMORY.md", "memory")
 ProgressReporter = Callable[[int, int, str], None]
+MAX_REVIEW_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_REVIEW_MEDIA_FILES = 20_000
 
 
 @dataclass(frozen=True)
@@ -295,6 +301,205 @@ def search_mirror(
         memory.close()
 
 
+def list_mirror_reviews(state: TrialState) -> dict[str, Any]:
+    """Return the exact quarantined records awaiting a local human decision."""
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        records = [
+            record
+            for record in memory.list(state.subject_id, include_inactive=True)
+            if record.get("status") == "quarantined"
+        ]
+        episodes = {
+            str(row["id"]): row for row in memory.store.list_episodes(state.subject_id)
+        }
+        reviews: list[dict[str, Any]] = []
+        for record in reversed(records):
+            episode = episodes.get(str(record.get("episode_id") or "")) or {}
+            episode_raw = (
+                episode.get("raw") if isinstance(episode.get("raw"), dict) else {}
+            )
+            media = record.get("media_observation")
+            extractor = media.get("extractor") if isinstance(media, dict) else None
+            reviews.append(
+                {
+                    "record_id": record["id"],
+                    "content": record.get("content") or "",
+                    "created_at": record.get("created_at"),
+                    "source_type": record.get("source_type"),
+                    "scope": record.get("scope"),
+                    "trust_tier": record.get("trust_tier"),
+                    "source_session_id": record.get("source_session_id"),
+                    "source_sha256": (
+                        episode_raw.get("source_sha256")
+                        or episode_raw.get("media_sha256")
+                    ),
+                    "media": (
+                        {
+                            "artifact_id": media.get("artifact_id"),
+                            "modality": media.get("modality"),
+                            "media_sha256": media.get("media_sha256"),
+                            "digest_assurance": media.get("digest_assurance"),
+                            "extractor": extractor,
+                            "confidence": media.get("confidence"),
+                            "preview_url": (
+                                "/api/mirror/media-preview?record_id="
+                                + str(record["id"])
+                                if media.get("modality") == "image"
+                                else None
+                            ),
+                            "recall_payload": "text_description",
+                        }
+                        if isinstance(media, dict)
+                        else None
+                    ),
+                }
+            )
+        verification = memory.verify(state.subject_id)
+        return {
+            "format": "aetnamem-memory-review-queue-v1",
+            "subject_id": state.subject_id,
+            "count": len(reviews),
+            "records": reviews,
+            "audit_chain_valid": bool(verification.get("valid")),
+        }
+    finally:
+        memory.close()
+
+
+def resolve_mirror_review_image(state: TrialState, record_id: str) -> dict[str, Any]:
+    """Resolve an exact, host-controlled image for an informed review.
+
+    AetnaMem deliberately stores no media bytes or host filesystem path in the
+    memory record. For a local OpenClaw review, this function finds a file only
+    beneath OpenClaw's managed media directory and accepts it only after its
+    streamed SHA-256 matches the artifact digest bound to the record.
+    """
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    record_key = str(record_id or "").strip()
+    if not record_key:
+        raise ValueError("record_id is required")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        record = memory.store.get_record(state.subject_id, record_key)
+        if record is None:
+            raise ValueError("memory record was not found")
+        if record.get("status") != "quarantined":
+            raise ValueError("this record is no longer waiting for review")
+        media = memory.store.media_provenance_for_records(
+            state.subject_id, [record_key]
+        ).get(record_key)
+        if not media or media.get("modality") != "image":
+            raise ValueError("this review is not an image observation")
+        digest = str(media.get("media_sha256") or "")
+    finally:
+        memory.close()
+
+    configured_root = os.environ.get("AETNAMEM_OPENCLAW_MEDIA_ROOT")
+    root = (
+        Path(configured_root).expanduser()
+        if configured_root
+        else Path.home() / ".openclaw" / "media"
+    ).resolve()
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("the OpenClaw source-image directory is unavailable")
+
+    inspected = 0
+    for directory, names, filenames in os.walk(root, followlinks=False):
+        names[:] = [
+            name for name in names if not (Path(directory) / name).is_symlink()
+        ]
+        for filename in filenames:
+            inspected += 1
+            if inspected > MAX_REVIEW_MEDIA_FILES:
+                raise ValueError("source-image lookup exceeded the safe file limit")
+            candidate = Path(directory) / filename
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(root)
+                size = resolved.stat().st_size
+                if size <= 0 or size > MAX_REVIEW_IMAGE_BYTES:
+                    continue
+                hasher = hashlib.sha256()
+                with resolved.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        hasher.update(chunk)
+                if hasher.hexdigest() != digest:
+                    continue
+            except (OSError, ValueError):
+                continue
+            content_type = mimetypes.guess_type(resolved.name)[0] or ""
+            if not content_type.startswith("image/"):
+                raise ValueError("the verified source bytes are not a supported image")
+            return {
+                "path": resolved,
+                "content_type": content_type,
+                "bytes": size,
+                "media_sha256": digest,
+            }
+    raise ValueError("the exact source image is unavailable or its digest changed")
+
+
+def review_mirror_record(
+    state: TrialState,
+    record_id: str,
+    decision: str,
+    *,
+    actor: str = "dashboard-reviewer",
+) -> dict[str, Any]:
+    """Apply one explicit local approval or rejection to an exact record."""
+    if not re.fullmatch(r"rec_[A-Za-z0-9]+", record_id):
+        raise ValueError("record_id must be an AetnaMem record ID")
+    if decision not in {"approve", "reject"}:
+        raise ValueError("decision must be approve or reject")
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    session_id = f"trial:{state.trial_id}:dashboard-review"
+    try:
+        before = memory.store.get_record(state.subject_id, record_id)
+        if before is None or before.get("status") != "quarantined":
+            raise ValueError("this record is no longer waiting for review")
+        if decision == "approve":
+            record = memory.promote(
+                state.subject_id,
+                record_id,
+                session_id=session_id,
+                actor=actor,
+            )
+            result: dict[str, Any] = {
+                "decision": "approved",
+                "record": record,
+                "purged": False,
+            }
+        else:
+            result = memory.reject(
+                state.subject_id,
+                record_id,
+                session_id=session_id,
+                actor=actor,
+            )
+        verification = memory.verify(state.subject_id)
+        result.update(
+            {
+                "format": "aetnamem-memory-review-decision-v1",
+                "record_id": record_id,
+                "audit_chain_valid": bool(verification.get("valid")),
+            }
+        )
+        return result
+    finally:
+        memory.close()
+
+
 def _focused_excerpt(content: str, query: str, *, max_chars: int = 220) -> str:
     """Return the smallest useful sentence or bullet matching the query."""
 
@@ -359,6 +564,203 @@ def trace_mirror(
             audit_access=True,
             access_actor="openclaw-local-operator",
         )
+    finally:
+        memory.close()
+
+
+def query_mirror_audit(
+    state: TrialState,
+    *,
+    query: str = "",
+    event_type: str = "",
+    actor: str = "",
+    session_id: str = "",
+    record_id: str = "",
+    since: str = "",
+    until: str = "",
+    cursor: int | None = None,
+    limit: int = 100,
+    direction: str = "desc",
+    include_facets: bool = False,
+) -> dict[str, Any]:
+    """Search the full subject audit chain with stable cursor pagination."""
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        page = memory.store.query_audit_events(
+            state.subject_id,
+            query=query,
+            event_type=event_type,
+            actor=actor,
+            session_id=session_id,
+            record_id=record_id,
+            since=since,
+            until=until,
+            cursor=cursor,
+            limit=limit,
+            direction=direction,
+        )
+        filters = {
+            "query": query,
+            "event_type": event_type,
+            "actor": actor,
+            "session_id": session_id,
+            "record_id": record_id,
+            "since": since,
+            "until": until,
+            "direction": direction,
+        }
+        event_identity = [
+            {"sequence": row["sequence"], "event_hash": row["event_hash"]}
+            for row in page["events"]
+        ]
+        verification = memory.store.verify_audit_chain_incremental(state.subject_id)
+        result_digest = sha256_hex(canonical_json(event_identity))
+        access_id = memory.store.append_investigation_access(
+            subject_id=state.subject_id,
+            operation="audit-explorer-search",
+            actor="openclaw-local-operator",
+            query_digest=sha256_hex(query),
+            filters_digest=sha256_hex(canonical_json(filters)),
+            result_digest=result_digest,
+            result_count=len(page["events"]),
+            verification_report_digest=sha256_hex(canonical_json(verification)),
+        )
+        report: dict[str, Any] = {
+            "format": "aetnamem-audit-explorer-v1",
+            "subject_id": state.subject_id,
+            "filters": filters,
+            "events": page["events"],
+            "matched_total": page["matched_total"],
+            "has_more": page["has_more"],
+            "next_cursor": page["next_cursor"],
+            "direction": page["direction"],
+            "limit": page["limit"],
+            "audit_chain_valid": bool(verification.get("valid")),
+            "verification": verification,
+            "result_digest": result_digest,
+            "access_audit_id": access_id,
+        }
+        if include_facets:
+            report["facets"] = memory.store.audit_event_facets(state.subject_id)
+            report["histogram"] = memory.store.audit_event_histogram(
+                state.subject_id,
+                query=query,
+                event_type=event_type,
+                actor=actor,
+                session_id=session_id,
+                record_id=record_id,
+                since=since,
+                until=until,
+                bucket="hour",
+            )
+        return report
+    finally:
+        memory.close()
+
+
+def export_mirror_audit(
+    state: TrialState,
+    *,
+    output_format: str,
+    filters: dict[str, Any],
+) -> tuple[str, str]:
+    """Export a complete filtered evidence snapshot with verification metadata."""
+    if output_format not in {"json", "ndjson", "csv", "text"}:
+        raise ValueError("format must be json, ndjson, csv, or text")
+    status = mirror_status(state)
+    if not status.get("synced"):
+        raise ValueError(status.get("error") or "OpenClaw mirror is not synchronized")
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        events: list[dict[str, Any]] = []
+        cursor: int | None = None
+        while len(events) < 100_000:
+            page = memory.store.query_audit_events(
+                state.subject_id,
+                query=str(filters.get("query") or ""),
+                event_type=str(filters.get("event_type") or ""),
+                actor=str(filters.get("actor") or ""),
+                session_id=str(filters.get("session_id") or ""),
+                record_id=str(filters.get("record_id") or ""),
+                since=str(filters.get("since") or ""),
+                until=str(filters.get("until") or ""),
+                cursor=cursor,
+                limit=500,
+                direction=str(filters.get("direction") or "desc"),
+            )
+            events.extend(page["events"])
+            cursor = page["next_cursor"]
+            if not page["has_more"] or cursor is None:
+                break
+        verification = memory.store.verify_audit_chain_incremental(state.subject_id)
+        identity = [
+            {"sequence": row["sequence"], "event_hash": row["event_hash"]}
+            for row in events
+        ]
+        report = {
+            "format": "aetnamem-audit-export-v1",
+            "created_at": utc_now(),
+            "subject_id": state.subject_id,
+            "filters": filters,
+            "result_count": len(events),
+            "truncated": len(events) >= 100_000,
+            "audit_chain_valid": bool(verification.get("valid")),
+            "verification": verification,
+            "result_digest": sha256_hex(canonical_json(identity)),
+            "events": events,
+        }
+        report["report_sha256"] = sha256_hex(canonical_json(report))
+        memory.store.append_investigation_access(
+            subject_id=state.subject_id,
+            operation=f"audit-explorer-export-{output_format}",
+            actor="openclaw-local-operator",
+            query_digest=sha256_hex(str(filters.get("query") or "")),
+            filters_digest=sha256_hex(canonical_json(filters)),
+            result_digest=report["report_sha256"],
+            result_count=len(events),
+            verification_report_digest=sha256_hex(canonical_json(verification)),
+        )
+        if output_format == "json":
+            return json.dumps(report, indent=2, sort_keys=True) + "\n", "application/json; charset=utf-8"
+        if output_format == "ndjson":
+            metadata = {key: value for key, value in report.items() if key != "events"}
+            lines = [json.dumps({"metadata": metadata}, sort_keys=True)]
+            lines.extend(json.dumps({"event": row}, sort_keys=True) for row in events)
+            return "\n".join(lines) + "\n", "application/x-ndjson; charset=utf-8"
+        if output_format == "csv":
+            stream = io.StringIO()
+            writer = csv.writer(stream)
+            writer.writerow(["sequence", "created_at", "event_type", "actor", "session_id", "turn_id", "record_id", "event_id", "event_hash", "payload_json"])
+            for row in events:
+                writer.writerow([
+                    row.get("sequence"), row.get("created_at"), row.get("event_type"),
+                    row.get("actor"), row.get("session_id"), row.get("turn_id"),
+                    row.get("record_id"), row.get("event_id"), row.get("event_hash"),
+                    canonical_json(row.get("payload") or {}),
+                ])
+            return stream.getvalue(), "text/csv; charset=utf-8"
+        lines = [
+            "AetnaMem audit investigation",
+            f"Generated: {report['created_at']}",
+            f"Subject: {state.subject_id}",
+            f"Integrity: {'PASSED' if report['audit_chain_valid'] else 'FAILED'}",
+            f"Events: {len(events)}",
+            f"Report SHA-256: {report['report_sha256']}",
+            f"Filters: {canonical_json(filters)}",
+            "",
+        ]
+        for row in events:
+            lines.extend([
+                f"[{row['sequence']}] {row['created_at']}  {row['event_type']}",
+                f"  actor={row['actor']} session={row.get('session_id') or '-'} record={row.get('record_id') or '-'}",
+                f"  event={row['event_id']} hash={row['event_hash']}",
+                f"  payload={canonical_json(row.get('payload') or {})}",
+                "",
+            ])
+        return "\n".join(lines), "text/plain; charset=utf-8"
     finally:
         memory.close()
 
@@ -455,24 +857,60 @@ def inspect_mirror_record(state: TrialState, record_id: str) -> dict[str, Any]:
             if not candidate:
                 continue
             session_id = retrieval.get("session_id")
+            retrieval_id = str(retrieval.get("id") or "")
             injection = next(
                 (
                     event for event in injections
-                    if event.get("session_id") == session_id
-                    and str(event.get("created_at") or "")
-                    >= str(retrieval.get("created_at") or "")
+                    if str(event.get("payload", {}).get("retrieval_id") or "")
+                    == retrieval_id
                 ),
                 None,
             )
+            link_assurance = "exact-retrieval-id" if injection else None
+            # Old evidence predates retrieval IDs on context events. Preserve
+            # that history, but never turn a candidate-only row into a claimed
+            # delivery and label the weaker association explicitly.
+            if injection is None and candidate.get("returned"):
+                injection = next(
+                    (
+                        event for event in injections
+                        if not event.get("payload", {}).get("retrieval_id")
+                        and event.get("session_id") == session_id
+                        and str(event.get("created_at") or "")
+                        >= str(retrieval.get("created_at") or "")
+                    ),
+                    None,
+                )
+                if injection:
+                    link_assurance = "legacy-session-time"
             response = next(
                 (
                     event for event in responses
-                    if event.get("session_id") == session_id
-                    and str(event.get("created_at") or "")
-                    >= str((injection or retrieval).get("created_at") or "")
+                    if injection is not None
+                    and (
+                        str(event.get("payload", {}).get("context_event_id") or "")
+                        == str(injection.get("event_id") or "")
+                        or str(event.get("payload", {}).get("retrieval_id") or "")
+                        == retrieval_id
+                    )
                 ),
                 None,
             )
+            response_link_assurance = "exact-context-or-retrieval-id" if response else None
+            if response is None and injection is not None:
+                response = next(
+                    (
+                        event for event in responses
+                        if not event.get("payload", {}).get("context_event_id")
+                        and not event.get("payload", {}).get("retrieval_id")
+                        and event.get("session_id") == session_id
+                        and str(event.get("created_at") or "")
+                        >= str(injection.get("created_at") or "")
+                    ),
+                    None,
+                )
+                if response:
+                    response_link_assurance = "legacy-session-time"
             deliveries.append(
                 {
                     "retrieval_id": retrieval.get("id"),
@@ -490,6 +928,8 @@ def inspect_mirror_record(state: TrialState, record_id: str) -> dict[str, Any]:
                         if response else None
                     ),
                     "response_event_id": response.get("event_id") if response else None,
+                    "link_assurance": link_assurance,
+                    "response_link_assurance": response_link_assurance,
                 }
             )
 
@@ -512,7 +952,8 @@ def inspect_mirror_record(state: TrialState, record_id: str) -> dict[str, Any]:
         deleted = next(
             (
                 event for event in events
-                if event.get("event_type") == "memory.forget"
+                if event.get("event_type")
+                in {"memory.forget", "memory.record_rejected"}
                 and record_id in (event.get("payload", {}).get("purged_record_ids") or [])
             ),
             None,
@@ -667,6 +1108,8 @@ def _auditor_timeline_event(event: dict[str, Any], record_id: str) -> dict[str, 
         "memory.semantic_interpretation_received": "Source interpreted by the host model",
         "memory.record_created": "Memory record created",
         "memory.record_quarantined": "Memory record quarantined",
+        "memory.record_promoted": "Memory approved for recall",
+        "memory.record_rejected": "Memory rejected and purged",
         "memory.recall": "Memory returned by recall",
         "memory.context_injected": "Memory injected into agent context",
         "agent.response_after_memory": "Agent response bound to delivered memory",
@@ -680,6 +1123,8 @@ def _auditor_timeline_event(event: dict[str, Any], record_id: str) -> dict[str, 
         detail = f"response digest {str(payload.get('response_sha256') or '')[:16]}…"
     elif event_type == "memory.forget":
         detail = f"verified purge of {len(payload.get('purged_record_ids') or [])} record(s)"
+    elif event_type == "memory.record_rejected":
+        detail = "reviewer rejected the exact candidate and verified its purge"
     elif event_type == "memory.recall":
         detail = f"retrieval {payload.get('retrieval_id') or 'unknown'}"
     elif event_type == "memory.semantic_interpretation_received":
@@ -721,6 +1166,14 @@ def _deletion_receipt_from_event(
         "audit_event_id": event.get("event_id"),
         "audit_event_hash": event.get("event_hash"),
     }
+    if event.get("event_type") == "memory.record_rejected":
+        receipt.update(
+            {
+                "review_decision": "rejected",
+                "reviewed_record_id": event.get("record_id"),
+                "review_actor": event.get("actor"),
+            }
+        )
     for key in ("semantic_index_cleanup", "media_cleanup"):
         if payload.get(key) is not None:
             receipt[key] = payload[key]
@@ -907,7 +1360,11 @@ def activate_takeover(
         _set_json(
             executable,
             "tools.alsoAllow",
-            list(dict.fromkeys([*existing_tools, "memory_remember"])),
+            list(
+                dict.fromkeys(
+                    [*existing_tools, "memory_remember", "aetnamem_observe"]
+                )
+            ),
         )
         report(7, total_steps, "Restarting OpenClaw")
         _run([executable, "gateway", "restart"])
@@ -933,7 +1390,12 @@ def activate_takeover(
         tool_names = (
             set(plugin.get("toolNames") or []) if isinstance(plugin, dict) else set()
         )
-        required_tools = {"memory_search", "memory_get", "memory_remember"}
+        required_tools = {
+            "memory_search",
+            "memory_get",
+            "memory_remember",
+            "aetnamem_observe",
+        }
         typed_hooks = {
             str(row.get("name"))
             for row in plugin_runtime.get("typedHooks", [])
@@ -980,6 +1442,7 @@ def activate_takeover(
                     "memory_search",
                     "memory_get",
                     "memory_remember",
+                    "aetnamem_observe",
                 ],
                 "compatibility_tools_verified": True,
                 "capture_hooks_verified": True,

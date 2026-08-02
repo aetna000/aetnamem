@@ -17,14 +17,18 @@ class TrialDashboardServer(ThreadingHTTPServer):
         manager: TrialManager,
         *,
         html: str,
+        login_code: str | None = None,
     ) -> None:
         host, _ = address
         if host not in {"127.0.0.1", "::1", "localhost"}:
             raise ValueError("Safe Switch dashboard is loopback-only")
+        supplied_code = (login_code or "").strip()
+        if supplied_code and len(supplied_code) < 32:
+            raise ValueError("dashboard login code must contain at least 32 characters")
         super().__init__(address, TrialDashboardHandler)
         self.manager = manager
         self.html = html
-        self.login_code = secrets.token_urlsafe(24)
+        self.login_code = supplied_code or secrets.token_urlsafe(32)
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
 
@@ -83,6 +87,39 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 search_mirror(self.server.manager.state(), query, limit=12),
             )
             return
+        if parsed.path == "/api/mirror/reviews":
+            from aetnamem.trial.openclaw_native import list_mirror_reviews
+
+            self._json(
+                HTTPStatus.OK,
+                list_mirror_reviews(self.server.manager.state()),
+            )
+            return
+        if parsed.path == "/api/mirror/media-preview":
+            from aetnamem.trial.openclaw_native import resolve_mirror_review_image
+
+            record_id = (parse_qs(parsed.query).get("record_id") or [""])[0].strip()
+            try:
+                preview = resolve_mirror_review_image(
+                    self.server.manager.state(), record_id
+                )
+            except ValueError as exc:
+                self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                return
+            path = preview["path"]
+            self.send_response(HTTPStatus.OK)
+            self._security_headers()
+            self.send_header("Content-Type", str(preview["content_type"]))
+            self.send_header("Content-Length", str(preview["bytes"]))
+            self.send_header("Content-Disposition", "inline")
+            self.send_header(
+                "X-AetnaMem-Media-SHA256", str(preview["media_sha256"])
+            )
+            self.end_headers()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    self.wfile.write(chunk)
+            return
         if parsed.path == "/api/mirror/trace":
             from aetnamem.trial.openclaw_native import trace_mirror
 
@@ -94,6 +131,57 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 trace_mirror(self.server.manager.state(), query, limit=100),
             )
+            return
+        if parsed.path in {"/api/mirror/audit", "/api/mirror/audit-export"}:
+            from aetnamem.trial.openclaw_native import (
+                export_mirror_audit,
+                query_mirror_audit,
+            )
+
+            params = parse_qs(parsed.query)
+            value = lambda name, default="": (params.get(name) or [default])[0].strip()
+            filters = {
+                "query": value("query"),
+                "event_type": value("event_type"),
+                "actor": value("actor"),
+                "session_id": value("session_id"),
+                "record_id": value("record_id"),
+                "since": value("since"),
+                "until": value("until"),
+                "direction": value("direction", "desc"),
+            }
+            if parsed.path == "/api/mirror/audit-export":
+                output_format = value("format", "json")
+                try:
+                    content, content_type = export_mirror_audit(
+                        self.server.manager.state(),
+                        output_format=output_format,
+                        filters=filters,
+                    )
+                except ValueError as exc:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                self._download(
+                    content,
+                    filename=f"aetnamem-audit-investigation.{output_format}",
+                    content_type=content_type,
+                )
+                return
+            cursor_text = value("cursor")
+            try:
+                cursor = int(cursor_text) if cursor_text else None
+                limit = int(value("limit", "100"))
+                report = query_mirror_audit(
+                    self.server.manager.state(),
+                    **filters,
+                    cursor=cursor,
+                    limit=limit,
+                    include_facets=value("include_facets", "0") == "1",
+                )
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+            self._json(HTTPStatus.OK, report)
             return
         if parsed.path in {
             "/api/mirror/record",
@@ -216,6 +304,25 @@ class TrialDashboardHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.OK,
                     sync_mirror(self.server.manager.state()),
+                )
+                return
+            if path == "/api/mirror/review":
+                from aetnamem.trial.openclaw_native import review_mirror_record
+
+                record_id = str(body.get("record_id") or "").strip()
+                decision = str(body.get("decision") or "").strip()
+                if not secrets.compare_digest(
+                    str(body.get("confirm_record_id") or ""), record_id
+                ):
+                    raise ValueError("record confirmation does not match")
+                self._json(
+                    HTTPStatus.OK,
+                    review_mirror_record(
+                        self.server.manager.state(),
+                        record_id,
+                        decision,
+                        actor="dashboard-reviewer",
+                    ),
                 )
                 return
             if path == "/api/rollback":

@@ -122,8 +122,19 @@ The OpenClaw plugin exposes:
 - `aetnamem_observe` after OpenClaw has analyzed media;
 - `aetnamem_forget_artifact` after an explicit user deletion request.
 
-The plugin does not infer media provenance from unstable hook internals. The
-host supplies the digest, reference, and extractor identity explicitly.
+For a file uploaded in the current OpenClaw message, the plugin reads the
+documented `message_received` media path, requires the resolved regular file
+to remain under OpenClaw's managed media directory, streams its exact bytes
+through SHA-256, and binds the resulting digest to that session. The later
+`aetnamem_observe` call therefore needs only the observation text and modality;
+the plugin supplies the digest and a secretless
+`openclaw-media://sha256/...` reference automatically. Multiple uploads can be
+selected with `attachment_index`. The bytes and absolute local path are not
+stored in AetnaMem. If no current upload is bound, the host must still provide
+the digest and reference explicitly.
+
+The model identity comes from OpenClaw's authenticated tool context when
+available, rather than trusting a model-authored provider/model label.
 Hermes discovers the underlying `memory_observe` and
 `memory_forget_artifact` tools through its existing MCP connection.
 

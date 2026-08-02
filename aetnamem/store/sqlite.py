@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any, Iterator
 import uuid
@@ -26,6 +27,7 @@ class SQLiteStore:
         self._transaction_depth = 0
         self._fts_enabled = False
         self._graph_fts_enabled = False
+        self._audit_fts_enabled = False
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         if self.path != ":memory:":
@@ -1221,6 +1223,190 @@ class SQLiteStore:
         ).fetchall()
         return [_audit_from_row(row) for row in rows]
 
+    def query_audit_events(
+        self,
+        subject_id: str,
+        *,
+        query: str = "",
+        event_type: str = "",
+        actor: str = "",
+        session_id: str = "",
+        record_id: str = "",
+        since: str = "",
+        until: str = "",
+        cursor: int | None = None,
+        limit: int = 100,
+        direction: str = "desc",
+    ) -> dict[str, Any]:
+        """Indexed, cursor-paginated audit discovery for investigation UIs."""
+        if direction not in {"asc", "desc"}:
+            raise ValueError("direction must be asc or desc")
+        page_size = max(1, min(int(limit), 500))
+        clauses = ["subject_id = ?"]
+        params: list[Any] = [subject_id]
+        if event_type:
+            clauses.append("event_type GLOB ?")
+            params.append(event_type)
+        if actor:
+            clauses.append("actor = ?")
+            params.append(actor)
+        if session_id:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        if record_id:
+            clauses.append(
+                "(record_id = ? OR EXISTS ("
+                "SELECT 1 FROM json_tree(audit_log.payload) "
+                "WHERE json_tree.value = ?))"
+            )
+            params.extend([record_id, record_id])
+        if since:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        if until:
+            clauses.append("created_at <= ?")
+            params.append(until)
+        if query:
+            if self._audit_fts_enabled:
+                clauses.append(
+                    "sequence IN (SELECT rowid FROM audit_fts "
+                    "WHERE audit_fts MATCH ? AND subject_id = ?)"
+                )
+                params.extend([_audit_fts_query(query), subject_id])
+            else:
+                escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                pattern = f"%{escaped}%"
+                clauses.append(
+                    "(event_id LIKE ? ESCAPE '\\' OR event_type LIKE ? ESCAPE '\\' "
+                    "OR actor LIKE ? ESCAPE '\\' OR COALESCE(session_id, '') LIKE ? ESCAPE '\\' "
+                    "OR COALESCE(turn_id, '') LIKE ? ESCAPE '\\' "
+                    "OR COALESCE(record_id, '') LIKE ? ESCAPE '\\' "
+                    "OR payload LIKE ? ESCAPE '\\')"
+                )
+                params.extend([pattern] * 7)
+        count_where = " AND ".join(clauses)
+        count_params = list(params)
+        if cursor is not None:
+            clauses.append(f"sequence {'<' if direction == 'desc' else '>'} ?")
+            params.append(int(cursor))
+        where = " AND ".join(clauses)
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM audit_log
+            WHERE {where}
+            ORDER BY sequence {direction.upper()}
+            LIMIT ?
+            """,
+            (*params, page_size + 1),
+        ).fetchall()
+        has_more = len(rows) > page_size
+        rows = rows[:page_size]
+        events = [_audit_from_row(row) for row in rows]
+        matched_total = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) AS count FROM audit_log WHERE {count_where}",
+                count_params,
+            ).fetchone()["count"]
+        )
+        return {
+            "events": events,
+            "matched_total": matched_total,
+            "has_more": has_more,
+            "next_cursor": int(rows[-1]["sequence"]) if has_more and rows else None,
+            "direction": direction,
+            "limit": page_size,
+        }
+
+    def audit_event_facets(self, subject_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Low-cardinality facets used by the audit explorer."""
+        event_types = self._conn.execute(
+            """
+            SELECT event_type AS value, COUNT(*) AS count
+            FROM audit_log WHERE subject_id = ?
+            GROUP BY event_type ORDER BY count DESC, value ASC LIMIT 250
+            """,
+            (subject_id,),
+        ).fetchall()
+        actors = self._conn.execute(
+            """
+            SELECT actor AS value, COUNT(*) AS count
+            FROM audit_log WHERE subject_id = ?
+            GROUP BY actor ORDER BY count DESC, value ASC LIMIT 100
+            """,
+            (subject_id,),
+        ).fetchall()
+        return {
+            "event_types": [dict(row) for row in event_types],
+            "actors": [dict(row) for row in actors],
+        }
+
+    def audit_event_histogram(
+        self,
+        subject_id: str,
+        *,
+        query: str = "",
+        event_type: str = "",
+        actor: str = "",
+        session_id: str = "",
+        record_id: str = "",
+        since: str = "",
+        until: str = "",
+        bucket: str = "hour",
+    ) -> list[dict[str, Any]]:
+        if bucket not in {"hour", "day"}:
+            raise ValueError("bucket must be hour or day")
+        clauses = ["subject_id = ?"]
+        params: list[Any] = [subject_id]
+        if event_type:
+            clauses.append("event_type GLOB ?")
+            params.append(event_type)
+        if actor:
+            clauses.append("actor = ?")
+            params.append(actor)
+        if session_id:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        if record_id:
+            clauses.append(
+                "(record_id = ? OR EXISTS (SELECT 1 FROM json_tree(audit_log.payload) "
+                "WHERE json_tree.value = ?))"
+            )
+            params.extend([record_id, record_id])
+        if query:
+            if self._audit_fts_enabled:
+                clauses.append(
+                    "sequence IN (SELECT rowid FROM audit_fts "
+                    "WHERE audit_fts MATCH ? AND subject_id = ?)"
+                )
+                params.extend([_audit_fts_query(query), subject_id])
+            else:
+                escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                pattern = f"%{escaped}%"
+                clauses.append(
+                    "(event_id LIKE ? ESCAPE '\\' OR event_type LIKE ? ESCAPE '\\' "
+                    "OR actor LIKE ? ESCAPE '\\' OR COALESCE(session_id, '') LIKE ? ESCAPE '\\' "
+                    "OR COALESCE(turn_id, '') LIKE ? ESCAPE '\\' "
+                    "OR COALESCE(record_id, '') LIKE ? ESCAPE '\\' "
+                    "OR payload LIKE ? ESCAPE '\\')"
+                )
+                params.extend([pattern] * 7)
+        if since:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        if until:
+            clauses.append("created_at <= ?")
+            params.append(until)
+        width = 13 if bucket == "hour" else 10
+        rows = self._conn.execute(
+            f"""
+            SELECT substr(created_at, 1, {width}) AS bucket, COUNT(*) AS count
+            FROM audit_log WHERE {' AND '.join(clauses)}
+            GROUP BY bucket ORDER BY bucket ASC LIMIT 1000
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_audit_event(self, subject_id: str, event_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
             "SELECT * FROM audit_log WHERE subject_id = ? AND event_id = ?",
@@ -1795,6 +1981,27 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_audit_subject_sequence
                   ON audit_log(subject_id, sequence);
 
+                CREATE INDEX IF NOT EXISTS idx_audit_subject_created
+                  ON audit_log(subject_id, created_at, sequence);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_subject_type_created
+                  ON audit_log(subject_id, event_type, created_at, sequence);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_subject_actor_created
+                  ON audit_log(subject_id, actor, created_at, sequence);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_subject_session_created
+                  ON audit_log(subject_id, session_id, created_at, sequence);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_subject_record_created
+                  ON audit_log(subject_id, record_id, created_at, sequence);
+
+                CREATE INDEX IF NOT EXISTS idx_retrieval_subject_created
+                  ON retrieval_events(subject_id, created_at, id);
+
+                CREATE INDEX IF NOT EXISTS idx_retrieval_subject_session_created
+                  ON retrieval_events(subject_id, session_id, created_at, id);
+
                 CREATE TABLE IF NOT EXISTS investigation_access_log (
                   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                   access_id TEXT NOT NULL UNIQUE,
@@ -1999,6 +2206,7 @@ class SQLiteStore:
                 """)
             self._migrate_fts()
             self._migrate_graph_fts()
+            self._migrate_audit_fts()
 
     def _ensure_column(self, table: str, column: str, column_type: str) -> None:
         columns = {
@@ -2115,6 +2323,62 @@ class SQLiteStore:
                     """)
         except sqlite3.OperationalError:
             self._graph_fts_enabled = False
+
+    def _migrate_audit_fts(self) -> None:
+        try:
+            self._conn.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS audit_fts
+                USING fts5(
+                  event_id, subject_id UNINDEXED, event_type, actor,
+                  session_id, turn_id, record_id, payload,
+                  content='audit_log', content_rowid='sequence',
+                  tokenize='porter unicode61'
+                );
+                CREATE TABLE IF NOT EXISTS audit_fts_state(
+                  key TEXT PRIMARY KEY,
+                  value TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS audit_fts_insert AFTER INSERT ON audit_log BEGIN
+                  INSERT INTO audit_fts(
+                    rowid, event_id, subject_id, event_type, actor,
+                    session_id, turn_id, record_id, payload
+                  ) VALUES (
+                    new.sequence, new.event_id, new.subject_id, new.event_type, new.actor,
+                    new.session_id, new.turn_id, new.record_id, new.payload
+                  );
+                END;
+                CREATE TRIGGER IF NOT EXISTS audit_fts_delete AFTER DELETE ON audit_log BEGIN
+                  INSERT INTO audit_fts(audit_fts, rowid, event_id, subject_id, event_type,
+                    actor, session_id, turn_id, record_id, payload)
+                  VALUES('delete', old.sequence, old.event_id, old.subject_id, old.event_type,
+                    old.actor, old.session_id, old.turn_id, old.record_id, old.payload);
+                END;
+                CREATE TRIGGER IF NOT EXISTS audit_fts_update AFTER UPDATE ON audit_log BEGIN
+                  INSERT INTO audit_fts(audit_fts, rowid, event_id, subject_id, event_type,
+                    actor, session_id, turn_id, record_id, payload)
+                  VALUES('delete', old.sequence, old.event_id, old.subject_id, old.event_type,
+                    old.actor, old.session_id, old.turn_id, old.record_id, old.payload);
+                  INSERT INTO audit_fts(
+                    rowid, event_id, subject_id, event_type, actor,
+                    session_id, turn_id, record_id, payload
+                  ) VALUES (
+                    new.sequence, new.event_id, new.subject_id, new.event_type, new.actor,
+                    new.session_id, new.turn_id, new.record_id, new.payload
+                  );
+                END;
+                """)
+            version = self._conn.execute(
+                "SELECT value FROM audit_fts_state WHERE key = 'version'"
+            ).fetchone()
+            if version is None or version["value"] != "1":
+                self._conn.execute("INSERT INTO audit_fts(audit_fts) VALUES('rebuild')")
+                self._conn.execute(
+                    "INSERT INTO audit_fts_state(key, value) VALUES('version', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                )
+            self._audit_fts_enabled = True
+        except sqlite3.OperationalError:
+            self._audit_fts_enabled = False
 
     def _rebuild_fts(self) -> None:
         self._conn.execute("DELETE FROM records_fts_map")
@@ -2359,3 +2623,11 @@ def _audit_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "prev_hash": row["prev_hash"],
         "event_hash": row["event_hash"],
     }
+
+
+def _audit_fts_query(query: str) -> str:
+    """Treat investigator input as literal terms, never executable FTS syntax."""
+    terms = [term for term in re.split(r"[^\w]+", query, flags=re.UNICODE) if term]
+    if not terms:
+        return '""'
+    return " AND ".join('"' + term.replace('"', '""') + '"' for term in terms)

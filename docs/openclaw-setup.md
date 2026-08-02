@@ -1,7 +1,7 @@
 # Wiring aetnamem into OpenClaw via MCP
 
 This page covers the public legacy surface and the experimental Python
-`v0.7.0a5` / npm `v0.5.0-experimental.3` shadow-and-takeover preview. New users who
+`v0.7.0a6` / npm `v0.5.0-experimental.4` shadow-and-takeover preview. New users who
 want to observe before
 enabling context should start with the [Safe Switch guide](safe-switch.md). See
 [current capability status](current-status.md) before deployment.
@@ -21,7 +21,7 @@ searchable mirror:
 
 ```bash
 # 1. Install the engine.
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 
 # 2. Verify it, then install and verify the matching bridge.
 aetnamem --version
@@ -31,6 +31,9 @@ aetnamem openclaw install
 aetnamem openclaw memory status
 aetnamem openclaw memory search "your question"
 aetnamem dashboard
+
+# Reopen it later without copying a login code.
+openclaw aetnamem dashboard
 
 # 4. Switch only after review; rollback restores native memory exactly.
 aetnamem trial activate
@@ -139,9 +142,9 @@ flowchart LR
     R --> P{"Policy gate:<br/>source trusted?"}
     P -- "user said it" --> ACT["status: active<br/>visible to recall"]
     P -- "webpage / tool output" --> Q["status: quarantined<br/>invisible to recall and list"]
-    Q --> REV{"User reviews it<br/>(memory_list include_inactive)"}
-    REV -- "user confirms" --> PROM["memory_promote →<br/>active, trust: user_confirmed"]
-    REV -- "user declines" --> DEL["memory_forget →<br/>purged, receipt issued"]
+    Q --> REV{"Authenticated dashboard<br/>Needs approval queue"}
+    REV -- "Approve exact record" --> PROM["active + user_confirmed<br/>audit event written"]
+    REV -- "Reject and purge" --> DEL["content + derived indexes purged<br/>decision receipt retained"]
 ```
 
 The gate runs inside the MCP server, but it can enforce only the provenance it
@@ -149,8 +152,20 @@ receives. Embedded `<webpage>`/`<tool_output>` tags and an honest
 `source_type=webpage` quarantine the extraction; embedded forget instructions
 are rejected. If an agent strips that provenance and submits the text as a
 plain user message, the local server cannot infer the lost origin. Protect the
-host boundary and do not expose `memory_promote` as human approval without an
-authenticated reviewer layer.
+host boundary. The Safe Switch dashboard is the authenticated reviewer layer:
+it is loopback-only, requires its HttpOnly session cookie, same-origin request,
+CSRF token, and an exact record-ID confirmation. It never gives the agent a
+promotion tool. The active OpenClaw configuration allows
+`aetnamem_observe` so typed media observations can enter quarantine; only the
+human dashboard can release them into recall.
+
+To exercise this path, activate AetnaMem and ask OpenClaw to analyze a local
+image, audio clip, video, or document and store a typed AetnaMem observation
+with the file's exact SHA-256. Open the dashboard and review the resulting
+record under **Needs approval**. Before approval it is absent from normal
+recall. After approval it is searchable and recallable. **Reject and purge**
+removes its content and linked graph/vector/media-observation derivatives while
+retaining the digest-only reviewer decision in the investigation report.
 
 ## 4. The audit loop you run outside OpenClaw
 

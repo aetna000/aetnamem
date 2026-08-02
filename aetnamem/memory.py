@@ -526,6 +526,7 @@ class Memory:
         min_score: float | None = None,
         use_graph: bool | None = None,
         include_scores: bool = False,
+        _evidence: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Top-k recall over bounded active record and optional graph candidates."""
         active_records, fts_scores = self.store.recall_candidates(
@@ -696,6 +697,14 @@ class Memory:
                 }
             )
         )
+        if _evidence is not None:
+            _evidence.update(
+                {
+                    "retrieval_id": retrieval_id,
+                    "retrieval_sha256": retrieval_sha256,
+                    "query_sha256": query_sha256,
+                }
+            )
         self.store.append_audit_event(
             subject_id=subject_id,
             event_type="memory.recall",
@@ -1183,6 +1192,7 @@ class Memory:
         if reference_mode not in {"full", "compact", "none"}:
             raise ValueError("reference_mode must be full, compact, or none")
         excluded = exclude_record_ids or set()
+        recall_evidence: dict[str, Any] = {}
         records = self.recall(
             subject_id,
             query,
@@ -1190,6 +1200,7 @@ class Memory:
             limit=max_records + len(excluded),
             min_score=min_score,
             use_graph=use_graph,
+            _evidence=recall_evidence,
         )
         lines: list[str] = []
         included: list[str] = []
@@ -1208,10 +1219,16 @@ class Memory:
             used += len(line) + 1
 
         if not lines:
-            return {"block": "", "record_ids": [], "count": 0}
+            return {
+                "block": "",
+                "record_ids": [],
+                "count": 0,
+                "retrieval_id": recall_evidence.get("retrieval_id"),
+                "context_event_id": None,
+            }
 
         block = "<relevant_memories>\n" + "\n".join(lines) + "\n</relevant_memories>"
-        self.store.append_audit_event(
+        context_event_id = self.store.append_audit_event(
             subject_id=subject_id,
             event_type="memory.context_injected",
             actor="system",
@@ -1221,9 +1238,17 @@ class Memory:
                 "reference_mode": reference_mode,
                 "block_sha256": _sha256(block),
                 "query_sha256": _sha256(query),
+                "retrieval_id": recall_evidence.get("retrieval_id"),
+                "retrieval_sha256": recall_evidence.get("retrieval_sha256"),
             },
         )
-        return {"block": block, "record_ids": included, "count": len(included)}
+        return {
+            "block": block,
+            "record_ids": included,
+            "count": len(included),
+            "retrieval_id": recall_evidence.get("retrieval_id"),
+            "context_event_id": context_event_id,
+        }
 
     @_atomic
     def build_persona(
@@ -1660,6 +1685,60 @@ class Memory:
             record_id=record_id,
         )
         return self._attach_media_provenance(subject_id, [promoted])[0]
+
+    @_atomic
+    def reject(
+        self,
+        subject_id: str,
+        record_id: str,
+        *,
+        session_id: str | None = None,
+        turn_id: str | int | None = None,
+        actor: str = "user",
+    ) -> dict[str, Any]:
+        """Reject and purge one quarantined record after human review.
+
+        Rejection is deliberately narrower than free-form forgetting: the
+        reviewer must name an exact quarantined record. Its content and any
+        linked derived indexes are purged while a digest-only audit event
+        preserves who made the decision and what record it covered.
+        """
+        turn = _turn_id(turn_id)
+        record = self.store.get_record(subject_id, record_id)
+        if record is None or record.get("status") != "quarantined":
+            raise ValueError(f"record {record_id} is not quarantined for {subject_id}")
+        content_sha256 = _sha256(str(record.get("content") or ""))
+        cleanup = self._purge_record_ids(
+            subject_id,
+            [record_id],
+            session_id=session_id,
+            turn_id=turn,
+        )
+        event_id = self.store.append_audit_event(
+            subject_id=subject_id,
+            event_type="memory.record_rejected",
+            actor=actor,
+            session_id=session_id,
+            turn_id=turn,
+            record_id=record_id,
+            payload={
+                "content_sha256": content_sha256,
+                "prior_status": "quarantined",
+                "purged_record_ids": cleanup["purged_record_ids"],
+                "purged_episode_ids": cleanup["purged_episode_ids"],
+                "purged_graph_ids": cleanup["purged_graph_ids"],
+                "media_cleanup": cleanup["media_cleanup"],
+                "semantic_index_cleanup": cleanup["semantic_index_cleanup"],
+            },
+        )
+        rejected = self.store.get_record(subject_id, record_id)
+        assert rejected is not None
+        return {
+            "record": rejected,
+            "decision": "rejected",
+            "audit_event_id": event_id,
+            "purged": record_id in cleanup["purged_record_ids"],
+        }
 
     @_atomic
     def backfill_graph(

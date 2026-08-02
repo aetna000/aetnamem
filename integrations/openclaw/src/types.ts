@@ -35,6 +35,19 @@ export interface BeforeModelResolveEvent {
   tools?: unknown[];
 }
 
+export interface MessageReceivedEvent {
+  content: string;
+  sessionKey?: string;
+  runId?: string;
+  metadata?: {
+    mediaPath?: string;
+    mediaPaths?: string[];
+    mediaType?: string;
+    mediaTypes?: string[];
+    [key: string]: unknown;
+  };
+}
+
 export interface OpenClawPluginToolContext {
   agentId?: string;
   sessionKey?: string;
@@ -88,6 +101,13 @@ export interface OpenClawPluginApi {
   registerTool(
     spec: OpenClawToolSpec | ((ctx: OpenClawPluginToolContext) => OpenClawToolSpec),
     options?: { name?: string; names?: string[] },
+  ): void;
+  on(
+    event: "message_received",
+    handler: (
+      event: MessageReceivedEvent,
+      ctx: OpenClawHookCtx,
+    ) => Promise<void> | void,
   ): void;
   on(
     event: "before_model_resolve",

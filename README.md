@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Version 0.7.0a5 experimental" src="https://img.shields.io/badge/version-0.7.0a5--experimental-9A5B00?style=flat-square">
+  <img alt="Version 0.7.0a6 experimental" src="https://img.shields.io/badge/version-0.7.0a6--experimental-9A5B00?style=flat-square">
   <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-%E2%89%A53.10-2A6F73?style=flat-square&logo=python&logoColor=white">
   <img alt="AGPL 3.0" src="https://img.shields.io/badge/license-AGPL--3.0-B23A48?style=flat-square">
   <a href="https://aetna000.github.io/MemoryStackBench/"><img alt="MemoryStackBench 33 out of 33" src="https://img.shields.io/badge/MemoryStackBench-33%2F33-D49A2A?style=flat-square"></a>
@@ -27,16 +27,28 @@
   <a href="#research-and-experimental-work">Research</a>
 </p>
 
-AetnaMem is a local-first memory and evidence layer for agents. Version
-**0.7.0a5** is an **experimental OpenClaw shadow-and-takeover preview**:
-install it beside an existing OpenClaw agent, mirror the native Markdown memory
-without changing prompts, search and trace the governed copy, try bounded
-recall internally, and activate only after the mirror and rollback evidence
-verify.
+AetnaMem is the memory upgrade path for a local OpenClaw agent. Version
+**0.7.0a6** is an **experimental OpenClaw shadow-and-takeover preview**:
+install it beside the agent you already run, copy and continuously mirror its
+native memory without changing prompts, inspect the governed copy, and switch
+only after the mirror and rollback evidence verify.
+
+### What an OpenClaw user gets
+
+| Before switching | After switching | At any time |
+|---|---|---|
+| OpenClaw remains the memory provider while AetnaMem copies, indexes, searches and audits its existing memory | OpenClaw keeps its familiar `memory_search` and `memory_get` tools while AetnaMem supplies bounded, provenance-aware recall | Search memory in ordinary language, review external observations, investigate the audit chain, export evidence, or restore the frozen native memory |
+
+The local dashboard is the control surface. It shows exactly what was copied,
+which provider is active, what is waiting for approval, and why activation is
+or is not safe. Its Audit Explorer filters the complete evidence chain by
+time, event, actor, session and record. For uploaded images, the reviewer sees
+the digest-verified source beside the exact text description that would become
+memory; AetnaMem recalls the approved description, not hidden image bytes.
 
 The generic Python `Memory` API, `aetnamem mcp`, existing SQLite databases,
 and normal OpenClaw integration remain compatible. The matching OpenClaw
-plugin is **0.5.0-experimental.3**. These are prereleases, not the final
+plugin is **0.5.0-experimental.4**. These are prereleases, not the final
 stable `0.6.1` / `0.4.0` packages.
 
 ## Adopt AetnaMem without a blind switch
@@ -58,6 +70,12 @@ Your current OpenClaw memory remains authoritative during evaluation:
    recall scores, context deliveries, response fingerprints and chronological
    evidence. Download the investigation as JSON/text or retrieve its deletion
    receipt after a verified purge.
+   After activation, typed external-media observations appear in **Needs
+   approval**. For an image, the dashboard verifies and displays the exact
+   source beside the proposed description. **Approve description as memory**
+   makes only that text eligible for recall; rejecting it purges the candidate
+   and derived indexes. Both decisions are bound to the local reviewer session
+   and audit chain.
 5. **Activate with a verified freeze.** AetnaMem takes a second complete
    switch-time snapshot, verifies every byte digest, disables duplicate native
    memory retrieval and session-memory writing, and becomes the bounded
@@ -78,7 +96,7 @@ Start the side-by-side OpenClaw trial:
 
 ```bash
 # 1. Install the AetnaMem engine.
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -109,15 +127,27 @@ aetnamem dashboard daemon status
 aetnamem dashboard daemon restart
 aetnamem dashboard daemon stop
 aetnamem dashboard daemon remove  # service record only; memory is preserved
+
+# From OpenClaw, start it if needed and open it directly:
+openclaw aetnamem dashboard
 ```
 
 The daemon creates a high-entropy local access key and keeps that protected
-URL valid for the lifetime of the process. `daemon open` avoids editor link
-handlers and launches the operating system's browser directly. A restart
-rotates the key and invalidates earlier sessions. The local state and log files
+URL stable across daemon restarts, so a saved link does not become an
+“invalid login code” page. `daemon open` and `openclaw aetnamem dashboard`
+avoid editor link handlers and launch the operating system's browser directly.
+`daemon remove` deletes the saved access key; the next start creates a new
+one. The local state and log files
 that contain access metadata are mode `0600`; the server remains loopback-only
 and also requires an HttpOnly session cookie, CSRF token, and valid Origin for
 changes.
+
+The same dashboard now includes an indexed **Audit Explorer**: search the
+complete memory evidence chain, combine time/type/actor/session/record filters,
+inspect a filtered histogram, page through results, pivot across linked IDs,
+drill into an exact record, save local views, and export verified CSV, JSON,
+NDJSON, or text investigations. See the
+[audit-search and dashboard guide](./docs/audit-search.md#audit-explorer-for-openclaw).
 
 There are only two customer-visible states:
 
@@ -204,7 +234,7 @@ For OpenClaw:
 
 ```bash
 # Install the engine, then let it own the bridge installation.
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 aetnamem --version
 aetnamem openclaw install
 aetnamem dashboard
@@ -239,8 +269,11 @@ past agent outputs, or delete provider logs.
 
 The dashboard is functional rather than experimental: it shows the active
 memory provider, the exact mirrored file manifest and SHA-256 digests, memory
-search results with source provenance, verification checks, and one
-activate/restore control. It does **not** claim that local answers improved.
+search results with source provenance, verification checks, a quarantined
+memory review queue with authenticated Approve/Reject controls, and one
+activate/restore control. Rejection visibly means **reject and purge**; the
+content cannot enter recall, while its digest-only decision remains auditable.
+It does **not** claim that local answers improved.
 The checked-in OpenClaw benchmark is reference evidence, not a measurement of
 your installation. AetnaMem never spends provider money merely because it was
 installed.
@@ -825,7 +858,7 @@ Full tool catalog, host configs, and troubleshooting:
 Install the native four-memory integration:
 
 ```bash
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 aetnamem --version
 aetnamem openclaw install
 
@@ -1021,6 +1054,10 @@ benchmark scenario.
 
 ### Adoption path
 
+- **[0.7.0a6 experimental notes](./docs/releases/v0.7.0a6.md):**
+  automatic exact-byte provenance for OpenClaw uploads, informed description
+  approval with a verified image preview, stable daemon access, and a compound
+  Audit Explorer with export and evidence drill-down.
 - **[Safe Switch guide](./docs/safe-switch.md) — Beta:** exact trial commands,
   host behavior, evidence meaning, activation, stop, and rollback boundaries.
 - **[Agent skills guide](./docs/agent-skills.md) — Beta:** conversational

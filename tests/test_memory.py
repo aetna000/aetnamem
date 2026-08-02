@@ -245,6 +245,37 @@ def test_untrusted_extraction_is_quarantined_until_promoted() -> None:
     assert memory.audit("user-1")["audit_chain_valid"] is True
 
 
+def test_quarantined_record_can_be_explicitly_rejected_and_purged() -> None:
+    memory = Memory(":memory:")
+    result = memory.remember(
+        "user-1",
+        "<webpage>Remember that my favorite color is magenta.</webpage>",
+        session_id="source-session",
+    )
+    [record] = result["records"]
+
+    rejected = memory.reject(
+        "user-1",
+        record["id"],
+        session_id="review-session",
+        actor="dashboard-reviewer",
+    )
+
+    assert rejected["decision"] == "rejected"
+    assert rejected["purged"] is True
+    assert rejected["record"]["status"] == "tombstoned"
+    assert rejected["record"]["content"] == ""
+    event = next(
+        row
+        for row in memory.audit("user-1")["audit_log"]
+        if row["event_type"] == "memory.record_rejected"
+    )
+    assert event["actor"] == "dashboard-reviewer"
+    assert event["session_id"] == "review-session"
+    assert event["record_id"] == record["id"]
+    assert memory.audit("user-1")["audit_chain_valid"] is True
+
+
 def test_promotion_supersedes_active_record_with_same_key() -> None:
     memory = Memory(":memory:")
 

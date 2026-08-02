@@ -44,6 +44,46 @@ def test_dashboard_daemon_start_records_private_background_process(
     assert (tmp_path / "dashboard-daemon.log").stat().st_mode & 0o777 == 0o600
 
 
+def test_dashboard_daemon_reuses_private_access_code_after_restart(
+    tmp_path: Path, monkeypatch
+) -> None:
+    state_path = tmp_path / "dashboard.json"
+    stable_code = "stable-" + "a" * 40
+    state_path.write_text(
+        '{"format":"aetnamem-dashboard-daemon-v1","pid":999999,'
+        f'"port":9123,"access_code":"{stable_code}"}}\n',
+        encoding="utf-8",
+    )
+    launches: list[dict] = []
+
+    def fake_popen(*args, **kwargs):
+        del args
+        launches.append(kwargs)
+        return _FakeProcess()
+
+    monkeypatch.setattr("aetnamem.dashboard_daemon.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "aetnamem.dashboard_daemon._login_url",
+        lambda _path, **_kwargs: (
+            f"http://127.0.0.1:9123/auth?code={stable_code}"
+        ),
+    )
+    monkeypatch.setattr(
+        "aetnamem.dashboard_daemon._alive",
+        lambda pid: pid == 4242,
+    )
+
+    result = manage_dashboard_daemon(
+        "start", port=9123, daemon_state_path=state_path
+    )
+
+    assert result["access_code"] == stable_code
+    assert result["login_url"].endswith(stable_code)
+    assert launches[0]["env"]["AETNAMEM_DASHBOARD_ACCESS_CODE"] == stable_code
+    persisted = state_path.read_text(encoding="utf-8")
+    assert stable_code in persisted
+
+
 def test_dashboard_daemon_remove_preserves_memory_data(
     tmp_path: Path,
 ) -> None:

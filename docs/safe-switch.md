@@ -1,6 +1,6 @@
 # OpenClaw Safe Switch: mirror, inspect, then take over
 
-Status: **experimental preview in AetnaMem 0.7.0a5**
+Status: **experimental preview in AetnaMem 0.7.0a6**
 
 Safe Switch gives a local, single-user OpenClaw installation a reversible way
 to adopt AetnaMem:
@@ -15,7 +15,7 @@ It is not a promise that every agent becomes cheaper or more accurate.
 
 ```bash
 # 1. Install the engine. No sudo or snapshot package is required.
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 aetnamem --version
 
 # 2. Let AetnaMem install and verify the matching OpenClaw bridge.
@@ -31,7 +31,7 @@ aetnamem dashboard
 ```
 
 The installer pins the exact engine executable, installs npm
-`0.5.0-experimental.3` internally, takes and verifies a complete byte-for-byte
+`0.5.0-experimental.4` internally, takes and verifies a complete byte-for-byte
 baseline of the existing native memory, builds the searchable mirror, restarts
 and probes the gateway, and enters shadow mode. If any step fails, it restores
 the prior plugin configuration. Users do not install the npm package directly.
@@ -75,14 +75,14 @@ aetnamem dashboard daemon stop
 aetnamem dashboard daemon remove
 ```
 
-The dashboard binds only to `127.0.0.1`. The daemon's high-entropy access URL
-remains valid while that daemon is running, so `status` never advertises a
-consumed code. `open` launches it through the operating system instead of an
-editor link handler. Restarting rotates the key and invalidates prior
-sessions. The local state and startup log files containing access metadata are
-both forced to mode `0600`. HttpOnly session cookies, CSRF and Origin checks
-remain enforced. `remove` deletes the daemon service record, not memory or
-trial evidence.
+The dashboard binds only to `127.0.0.1`. Its high-entropy access key is stored
+in the mode-`0600` daemon state and remains valid across normal restarts, so a
+saved launch link does not become an `invalid login code` page. `open` launches
+that protected URL through the operating system instead of an editor link
+handler. `remove` deletes the daemon service record and access key; the next
+start creates a new key. Restart still creates a new HttpOnly browser session,
+and CSRF and Origin checks remain enforced. Removing the daemon does not remove
+memory or trial evidence.
 
 Dashboard memory results are auditor entry points. Select a record ID to see
 the source-message digest, host interpreting model (or native-import source),
@@ -214,6 +214,6 @@ Default evidence files:
 ~/.aetnamem/trials/trial_*/openclaw-post-switch-preserved*/
 ```
 
-Hermes keeps the earlier coexistence integration, but 0.7.0a5 does not
+Hermes keeps the earlier coexistence integration, but 0.7.0a6 does not
 replace the selected Hermes memory provider. The two-state native-memory
 takeover described on this page is currently OpenClaw-specific.

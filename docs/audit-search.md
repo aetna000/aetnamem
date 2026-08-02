@@ -56,6 +56,54 @@ an answer or replace evidence. Setup, verification, ranking explanations, and
 purge behavior are documented in
 [Semantic investigation search](semantic-search.md).
 
+## Audit Explorer for OpenClaw
+
+The local OpenClaw dashboard includes a global **Audit Explorer** in addition
+to ordinary memory search:
+
+```bash
+aetnamem dashboard daemon open
+```
+
+It searches the complete subject audit chain with an FTS5 evidence index and
+compound SQLite indexes. The browser receives one stable cursor page at a
+time; it does not load the complete audit lifetime into JavaScript.
+
+An investigator can combine:
+
+- free-text evidence, digest, model, and identifier search;
+- exact or wildcard event type, actor, session, record, and time filters;
+- 15-minute, one-hour, 24-hour, seven-day, and all-time ranges;
+- admission, recall, context-injection, response, and deletion stages;
+- newest/oldest ordering and 50, 100, 250, or 500-row pages.
+
+The histogram represents the currently filtered evidence. Selecting a bucket
+narrows the investigation to that exact interval. Selecting an event opens its
+canonical payload, chain sequence, previous hash, event hash, and linked
+identifiers. Those identifiers pivot back into the explorer or open the exact
+memory-record history. Saved views remain in the operator's local browser.
+
+Filtered evidence can be exported as CSV, JSON, NDJSON, or human-readable
+text. Each export records its filters, result count, verification result,
+result digest, report digest, and creation time. Export access is appended to
+the separate investigator-access chain. A single export is deliberately
+bounded to 100,000 events and says `truncated: true` if that boundary is
+reached; use narrower time ranges for larger investigations.
+
+### Candidate, return, injection, and response are different facts
+
+The record drill-down shows separate counts for considered, returned,
+injected, and response-bound evidence. New context-injection events carry the
+exact retrieval ID, and the OpenClaw response event carries both the retrieval
+and context-event IDs. A candidate-only retrieval can never be displayed as a
+delivery. Older evidence that predates those identifiers is retained with an
+explicit `legacy-session-time` assurance label rather than represented as an
+exact link.
+
+The dashboard is currently a protected loopback operator surface. It provides
+a deep local investigation workflow, not organization-wide SSO, RBAC, remote
+retention management, or a distributed Splunk replacement.
+
 ## Record who investigated
 
 Add `--audit-access` when the investigation itself must be reviewable:

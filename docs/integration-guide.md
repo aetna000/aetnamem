@@ -1,7 +1,7 @@
 # Integration guide: CLI and MCP
 
-Repository preview boundary: Python `v0.7.0a5` and OpenClaw npm
-`v0.5.0-experimental.3` are matching experimental prereleases. Stable
+Repository preview boundary: Python `v0.7.0a6` and OpenClaw npm
+`v0.5.0-experimental.4` are matching experimental prereleases. Stable
 `v0.6.1` / npm `v0.4.0` remain the public releases. Safe Switch is opt-in;
 Memory Impact/CML measurement modes remain research surfaces and default off.
 See [current capability status](current-status.md).
@@ -18,8 +18,8 @@ four-memory runtime. Pick by what your host can do:
 | memory MCP server (`aetnamem mcp`) | your host speaks MCP and needs memory tools | v0 |
 | four-memory Python runtime (`from aetnamem.runtime import MemoryRuntime`) | your host wants one coordinator for all four memory types | v0.5 |
 | runtime MCP server (`aetnamem runtime mcp`) | your MCP host wants the complete prepare/outcome loop | v0.5 |
-| Verified OpenClaw installer (`aetnamem openclaw install`) | install the matching bridge, pin the engine path, start native-memory shadowing, and verify gateway RPC | v0.7.0a5 experimental |
-| OpenClaw memory takeover (`aetnamem trial activate`) | freeze native supplemental memory, verify a guard against normal tool access to those paths, use bounded AetnaMem recall, and preserve exact rollback | v0.7.0a5 experimental |
+| Verified OpenClaw installer (`aetnamem openclaw install`) | install the matching bridge, pin the engine path, start native-memory shadowing, and verify gateway RPC | v0.7.0a6 experimental |
+| OpenClaw memory takeover (`aetnamem trial activate`) | freeze native supplemental memory, verify a guard against normal tool access to those paths, use bounded AetnaMem recall, and preserve exact rollback | v0.7.0a6 experimental |
 | Safe Switch (`aetnamem trial`) | a local OpenClaw/Hermes user wants capture and preview before context injection | v0.6.1 beta |
 
 Collaborative decisions are an opt-in Python SDK and add nothing to the

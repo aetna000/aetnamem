@@ -208,6 +208,37 @@ def test_record_investigation_binds_model_delivery_response_and_deletion(
     assert report["deletion_receipt"]["purged_record_ids"] == [record_id]
 
 
+def test_candidate_only_retrieval_never_inherits_later_session_injection(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    status = sync_mirror(manager.state(), workspace=_workspace(tmp_path))
+    (Path(manager.state().trial_dir) / CUTOVER_NAME).write_text(
+        json.dumps({"status": "active"}), encoding="utf-8"
+    )
+    memory = Memory(status["mirror_db"], retain_query_text=True)
+    try:
+        memory.remember("local-user", "I like blue cars.")
+        candidate = memory.remember("local-user", "I prefer red bicycles.")["records"][0]
+        memory.recall(
+            "local-user", "blue car", session_id="same-session", limit=1, min_score=0.0
+        )
+        memory.store.append_audit_event(
+            subject_id="local-user",
+            event_type="memory.context_injected",
+            session_id="same-session",
+            payload={"record_ids": [candidate["id"]], "block_sha256": "a" * 64},
+        )
+    finally:
+        memory.close()
+
+    report = inspect_mirror_record(manager.state(), candidate["id"])
+    candidate_attempts = [row for row in report["deliveries"] if not row["returned"]]
+    assert candidate_attempts
+    assert all(row["context_injected_at"] is None for row in candidate_attempts)
+    assert all(row["response_sha256"] is None for row in candidate_attempts)
+
+
 def test_takeover_freezes_native_files_and_rollback_restores_them(
     tmp_path: Path,
     monkeypatch,
@@ -263,6 +294,7 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
                         "memory_search",
                         "memory_get",
                         "memory_remember",
+                        "aetnamem_observe",
                     ],
                 },
                 "typedHooks": [
@@ -299,7 +331,10 @@ def test_takeover_freezes_native_files_and_rollback_restores_them(
         configured["plugins.entries.memory-aetnamem.hooks.allowConversationAccess"]
         is True
     )
-    assert configured["tools.alsoAllow"] == ["memory_remember"]
+    assert configured["tools.alsoAllow"] == [
+        "memory_remember",
+        "aetnamem_observe",
+    ]
     assert any(command[1:3] == ["hooks", "disable"] for command in commands)
 
     restored = restore_takeover(manager.state())
@@ -395,7 +430,12 @@ def test_rollback_preserves_post_switch_native_files_before_restore(
             {
                 "plugin": {
                     "status": "loaded",
-                    "toolNames": ["memory_search", "memory_get", "memory_remember"],
+                    "toolNames": [
+                        "memory_search",
+                        "memory_get",
+                        "memory_remember",
+                        "aetnamem_observe",
+                    ],
                 },
                 "typedHooks": [
                     {"name": "before_model_resolve"},

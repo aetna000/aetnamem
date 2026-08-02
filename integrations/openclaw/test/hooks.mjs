@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -53,6 +54,9 @@ function trialCli(...args) {
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "aetnamem-hooks-"));
 const dbPath = path.join(dataDir, "memory.db");
+const mediaRoot = path.join(dataDir, "openclaw-media");
+mkdirSync(mediaRoot);
+process.env.AETNAMEM_OPENCLAW_MEDIA_ROOT = mediaRoot;
 const base = {
   command: "aetnamem",
   commandArgs: ["mcp", "--db", dbPath, "--subject", "hook-user"],
@@ -85,27 +89,52 @@ try {
   assert.equal(runtime.tools.size, 6);
 
   const observe = runtime.tools.get("aetnamem_observe");
-  const observed = await observe.execute("observe-1", {
-    text: "The image contains a blue shipping label.",
-    modality: "image",
-    media_sha256: "a".repeat(64),
-    host_reference: "openclaw://media/label-1",
-    segment: { region: "whole image" },
-    extractor: {
-      provider: "grok",
-      model: "grok-vision",
-      version: "2026-07",
+  const attachmentBytes = Buffer.from("exact uploaded image bytes");
+  const attachmentPath = path.join(mediaRoot, "upload.png");
+  writeFileSync(attachmentPath, attachmentBytes);
+  const messageReceived = runtime.hooks.get("message_received");
+  await messageReceived(
+    {
+      content: "Analyze this upload",
+      sessionKey: "takeover-1",
+      metadata: {
+        mediaPath: attachmentPath,
+        mediaPaths: [attachmentPath],
+        mediaType: "image/png",
+        mediaTypes: ["image/png"],
+      },
     },
-    confidence: 0.91,
+    { sessionKey: "takeover-1" },
+  );
+  const autoObserved = await observe.execute("observe-auto-1", {
+    text: "The upload contains a geometric logo.",
+    modality: "image",
+    segment: { region: "whole image", dimensions: { width: 640, height: 480 } },
   });
-  assert.equal(observed.details.status, "quarantined");
+  assert.equal(autoObserved.details.status, "quarantined");
+  assert.equal(autoObserved.details.provenanceSource, "openclaw-upload");
+  assert.equal(
+    autoObserved.details.mediaSha256,
+    createHash("sha256").update(attachmentBytes).digest("hex"),
+  );
 
   const forgetArtifact = runtime.tools.get("aetnamem_forget_artifact");
   const artifactForgotten = await forgetArtifact.execute("forget-artifact-1", {
-    media_sha256: "a".repeat(64),
-    artifact_id: observed.details.artifactId,
+    media_sha256: autoObserved.details.mediaSha256,
+    artifact_id: autoObserved.details.artifactId,
   });
   assert.equal(artifactForgotten.details.deleted, true);
+  await messageReceived(
+    { content: "A later text-only turn", sessionKey: "takeover-1", metadata: {} },
+    { sessionKey: "takeover-1" },
+  );
+  await assert.rejects(
+    observe.execute("observe-stale-1", {
+      text: "This must not reuse the previous upload.",
+      modality: "image",
+    }),
+    /No exact uploaded-file provenance is bound/,
+  );
 
   await beforePrompt({ prompt: "My favorite color is teal." }, { sessionKey: "capture-1" });
   await agentEnd({ success: true, messages: [] }, { sessionKey: "capture-1" });

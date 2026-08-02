@@ -2127,7 +2127,10 @@ def _serve_dashboard(
     # Fail before opening a port if no valid trial exists.
     manager.state()
     server = TrialDashboardServer(
-        ("127.0.0.1", port), manager, html=dashboard_html()
+        ("127.0.0.1", port),
+        manager,
+        html=dashboard_html(),
+        login_code=os.environ.get("AETNAMEM_DASHBOARD_ACCESS_CODE"),
     )
     base = f"http://127.0.0.1:{server.server_port}/"
     login = f"{base}auth?code={server.login_code}"

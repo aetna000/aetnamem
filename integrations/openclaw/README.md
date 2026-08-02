@@ -2,8 +2,8 @@
 
 > **AetnaMem remembers whether remembering actually helped.**
 
-This README describes experimental npm `0.5.0-experimental.3`, compatible with
-Python prerelease `v0.7.0a5`.
+This README describes experimental npm `0.5.0-experimental.4`, compatible with
+Python prerelease `v0.7.0a6`.
 It adds an opt-in Safe Switch path while preserving the existing hooks and
 tools when `safeSwitch.enabled` is false. Memory Impact remains host-side
 research infrastructure. See
@@ -25,6 +25,7 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 
 | OpenClaw hook | engine call | behavior |
 |---|---|---|
+| `message_received` with managed media | local SHA-256 binding | streams the exact OpenClaw-managed upload through SHA-256, retains only digest/size/type plus a secretless reference, and binds it to the current session for `aetnamem_observe` |
 | `before_prompt_build` | `memory_persona` | in cache-aware mode, adds a stable `<user_persona>` through `appendSystemContext`; correction, capture, and plugin-driven forgetting invalidate it |
 | `before_prompt_build` | `memory_recall_block` | adds query-specific `<relevant_memories>` through `appendContext`; a lexical match is required and the audit retains full record IDs even when the model sees compact references |
 | `before_model_resolve` | private typed-source handoff | in active takeover, temporarily binds OpenClaw's current raw user prompt to its session aliases; it does not scan history or extract keywords, and the handoff is cleared after the turn |
@@ -35,7 +36,7 @@ delimited JSON-RPC over stdio ([src/rpc-client.ts](src/rpc-client.ts)).
 | `before_tool_call` | — | during verified takeover, blocks normal OpenClaw tools from reading or recreating the exact frozen `MEMORY.md` and `memory/*` paths |
 | tool `aetnamem_search` | `memory_recall` | explicit memory search for the agent |
 | tool `aetnamem_forget` | `memory_forget` | deletion on user request, returns the receipt |
-| tool `aetnamem_observe` | `memory_observe` | submits a typed, quarantined text observation after OpenClaw analyzes host-controlled media |
+| tool `aetnamem_observe` | `memory_observe` | submits a typed, quarantined text observation after OpenClaw analyzes host-controlled media; active takeover explicitly adds this tool to OpenClaw's allowlist |
 | tool `aetnamem_forget_artifact` | `memory_forget_artifact` | purges AetnaMem derivatives of one exact-byte digest on an explicit user request |
 
 With `orchestration.enabled`, `before_prompt_build` instead calls
@@ -56,11 +57,22 @@ Agent-callable AetnaMem tools are not registered in the side-by-side state. A
 missing or tampered state fails closed to no injection.
 
 The two media tools introduced in npm `0.3.1` remain available in the normal
-integration. They do not inspect OpenClaw media
-hooks or store media bytes. OpenClaw supplies an exact-byte SHA-256, secretless
-host reference, and extractor identity after analysis; AetnaMem preserves
-that evidence and quarantines the text. See the repository
+integration. For a current chat upload, the plugin consumes OpenClaw's typed
+`message_received` media metadata, verifies that the resolved file remains
+inside OpenClaw's managed media directory, streams it through SHA-256, and
+binds the digest to the session. It never copies media bytes into AetnaMem and
+stores a secretless `openclaw-media://sha256/...` reference rather than the
+local path. `aetnamem_observe` automatically uses that binding; direct callers
+can still supply an explicit digest and reference. AetnaMem preserves the
+evidence and quarantines the text. See the repository
 [multimodal observation guide](../../docs/multimodal-observations.md).
+In verified active takeover, `aetnamem_observe` is also allowed through
+OpenClaw's tool policy. Its record appears in the local dashboard's **Needs
+approval** queue. The agent cannot approve it: the authenticated operator must
+review the verified source beside the proposed text and choose **Approve
+description as memory** or **Reject and purge**. Approval makes the text—not
+the media bytes—eligible for recall, and the exact decision is written to the
+AetnaMem audit chain.
 
 ## Install
 
@@ -68,7 +80,7 @@ that evidence and quarantines the text. See the repository
 
 ```bash
 # 1. Install and verify the engine.
-python -m pip install --pre aetnamem==0.7.0a5
+python -m pip install --pre aetnamem==0.7.0a6
 aetnamem --version
 
 # 2. Let the engine install, configure, restart, and verify this bridge.
@@ -77,14 +89,23 @@ aetnamem openclaw install
 # 3. Review the native mirror. Model context is unchanged.
 aetnamem openclaw memory status
 aetnamem dashboard
+
+# Reopen it later without copying a login code.
+openclaw aetnamem dashboard
 ```
 
 The installer records the absolute engine path, so the OpenClaw service does
 not have to inherit the interactive shell's Python `PATH`. It installs npm
-`0.5.0-experimental.3` internally, starts shadow Safe Switch mode, synchronizes
+`0.5.0-experimental.4` internally, starts shadow Safe Switch mode, synchronizes
 native Markdown memory into an isolated evidence database, restarts the gateway,
 requires a successful RPC probe, and verifies the retained configuration. On
 failure it stops the trial and restores the prior plugin configuration.
+
+`openclaw aetnamem dashboard` starts the background dashboard when necessary
+and opens its protected loopback URL in the default browser. The daemon keeps
+one high-entropy access key in its mode-`0600` state across restarts, preventing
+saved launch links from failing with `invalid login code`. Removing the daemon
+service record deletes that key and rotates it on the next start.
 
 For an advanced direct four-memory setup, finish evaluating the trial and
 restore its baseline first:
