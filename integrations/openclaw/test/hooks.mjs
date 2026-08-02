@@ -10,7 +10,7 @@ import plugin from "../dist/index.js";
 import { AetnamemClient } from "../dist/src/rpc-client.js";
 
 
-function fakeApi(config) {
+function fakeApi(config, toolContext = {}) {
   const hooks = new Map();
   const tools = new Map();
   const services = [];
@@ -31,6 +31,7 @@ function fakeApi(config) {
           sessionKey: "takeover-1",
           senderIsOwner: true,
           activeModel: { provider: "openai", modelId: "test-model" },
+          ...toolContext,
         });
         tools.set(tool.name, tool);
         return;
@@ -117,6 +118,63 @@ try {
     autoObserved.details.mediaSha256,
     createHash("sha256").update(attachmentBytes).digest("hex"),
   );
+
+  // OpenClaw can execute the inbound hook and the later agent tool in
+  // separate plugin runtimes. The trusted upload binding must survive that
+  // boundary instead of depending on one process-local Map.
+  const separateRuntime = fakeApi(base);
+  try {
+    const crossRuntimeObserved = await separateRuntime.tools
+      .get("aetnamem_observe")
+      .execute("observe-cross-runtime-1", {
+        text: "The separately executed tool can resolve the geometric logo upload.",
+        modality: "image",
+      });
+    assert.equal(crossRuntimeObserved.details.status, "quarantined");
+    assert.equal(crossRuntimeObserved.details.provenanceSource, "openclaw-upload");
+    assert.equal(crossRuntimeObserved.details.mediaSha256, autoObserved.details.mediaSha256);
+  } finally {
+    for (const service of separateRuntime.services) await service.stop?.();
+  }
+
+  // Internal OpenClaw webchat does not broadcast message_received, and its
+  // prompt hooks intentionally omit local attachment paths. The synchronous
+  // transcript hook receives the current user message with canonical
+  // MediaPath fields before the model can call tools, so it establishes the
+  // trusted binding without scraping text or guessing the newest file.
+  const webchatBytes = Buffer.from("exact webchat image bytes");
+  const webchatPath = path.join(mediaRoot, "webchat-upload.png");
+  writeFileSync(webchatPath, webchatBytes);
+  const webchatPrompt = "Remember this webchat upload for later.";
+  beforeWrite({
+    message: {
+      role: "user",
+      content: webchatPrompt,
+      idempotencyKey: "webchat-run-1:user",
+      MediaPath: webchatPath,
+      MediaPaths: [webchatPath],
+      MediaType: "image/png",
+      MediaTypes: ["image/png"],
+    },
+  }, { sessionKey: "takeover-1" });
+  const webchatRuntime = fakeApi(base, { runId: "webchat-run-1" });
+  try {
+    const webchatObserved = await webchatRuntime.tools
+      .get("aetnamem_observe")
+      .execute("observe-webchat-runtime-1", {
+        text: "The webchat upload is available through trusted structured metadata.",
+        modality: "image",
+      });
+    assert.equal(webchatObserved.details.status, "quarantined");
+    assert.equal(webchatObserved.details.success, true);
+    assert.equal(webchatObserved.details.provenanceSource, "openclaw-upload");
+    assert.equal(
+      webchatObserved.details.mediaSha256,
+      createHash("sha256").update(webchatBytes).digest("hex"),
+    );
+  } finally {
+    for (const service of webchatRuntime.services) await service.stop?.();
+  }
 
   const forgetArtifact = runtime.tools.get("aetnamem_forget_artifact");
   const artifactForgotten = await forgetArtifact.execute("forget-artifact-1", {
@@ -243,6 +301,8 @@ try {
   assert.ok(guided.appendSystemContext.includes("Use memory_search"));
   assert.ok(guided.appendSystemContext.includes("intentionally unavailable"));
   assert.ok(guided.appendSystemContext.includes("Never call Bash"));
+  assert.ok(guided.appendSystemContext.includes("Interpret intent semantically"));
+  assert.ok(guided.appendSystemContext.includes("If the user's meaning is both"));
   assert.ok(takeover.tools.has("memory_search"));
   assert.ok(takeover.tools.has("memory_get"));
   assert.ok(takeover.tools.has("memory_remember"));

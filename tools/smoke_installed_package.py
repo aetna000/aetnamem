@@ -21,7 +21,7 @@ def json_run(*args: str) -> object:
 
 def main() -> None:
     distribution = importlib.metadata.distribution("aetnamem")
-    assert distribution.version == "1.0.0a2"
+    assert distribution.version == "1.0.0a3"
     scripts = {
         entry.name: entry.value
         for entry in distribution.entry_points
@@ -31,7 +31,7 @@ def main() -> None:
 
     executable = Path(sys.executable).with_name("aetnamem")
     assert executable.is_file()
-    assert "1.0.0a2" in run(str(executable), "--version").stdout
+    assert "1.0.0a3" in run(str(executable), "--version").stdout
 
     with tempfile.TemporaryDirectory(prefix="aetnamem-wheel-smoke-") as temp:
         database = Path(temp) / "memory.db"

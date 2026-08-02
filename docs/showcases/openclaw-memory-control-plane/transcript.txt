@@ -1,0 +1,27 @@
+Your OpenClaw agent already has memory. The problem is switching memory systems without losing what it knows, breaking recall, or trusting a black box. AetnaMem gives you a reversible path.
+
+Install the Python engine first. Then run aetnamem openclaw install. That one command installs the matching OpenClaw bridge, discovers the workspace, copies the complete native memory history, restarts the gateway, and verifies the integration.
+
+At first, OpenClaw stays in control. AetnaMem runs in shadow mode beside it. It does not change model context and it does not make extra model-provider calls.
+
+The dashboard shows exactly what was mirrored: MEMORY dot M D, daily memory files, user identity, agent instructions, tools, and other pinned procedures. Every source has a path, memory plane, byte count, and SHA two fifty-six digest.
+
+Now search the mirror for comic books. AetnaMem finds the memory, shows the original OpenClaw source file and line number, and gives it a stable record I D.
+
+While shadowing, tell OpenClaw, “Remember that I prefer TypeScript for new projects.” OpenClaw still writes its normal native memory. The mirror detects the change, creates a new verified snapshot, and the dashboard search finds the new preference. Nothing has been switched yet.
+
+When the source manifest, audit chain, gateway, and compatibility tools all verify, the dashboard says it is safe to activate. Press Activate AetnaMem, or run aetnamem control activate.
+
+Active mode freezes the verified native memory state. OpenClaw now uses AetnaMem’s compatible memory search, get, remember, and media-observation tools, with bounded context recall.
+
+Tell OpenClaw, “Remember that my deployment region is Sydney.” The agent understands the meaning, calls memory remember, and stores one governed fact. Ask for the deployment region later, and bounded recall returns Sydney with a retrieval receipt.
+
+Media follows a stricter path. Say, “Keep this image in your long-term memory.” OpenClaw describes the upload, while AetnaMem binds the exact file digest and interpreting model. Because media is external evidence, the description waits for human approval and stays out of recall.
+
+The approver can see the image, description, model, confidence, and provenance together. After approval, recall returns the governed text observation—not the original image bytes—and links back to the exact artifact digest.
+
+For an auditor, every record opens into a complete evidence chain: source, interpretation, admission, recall, context injection, and agent response. Filter by time, event type, actor, session, or record I D, then export JSON, N D JSON, CSV, or a formatted investigation report.
+
+If AetnaMem is not right for your deployment, restore returns OpenClaw to the saved native memory configuration. This demo does not trigger restore, because the important point is that the verified rollback path remains available.
+
+AetnaMem is open source and experimental. Read the code, test the switch, report issues, and contribute at github dot com slash aetna zero zero zero slash aetnamem. Help us build agent memory that can be searched, governed, and proven.

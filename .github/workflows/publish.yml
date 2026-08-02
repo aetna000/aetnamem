@@ -171,7 +171,7 @@ jobs:
         run: |
           node -e '
             const pkg = require("./package.json");
-            const releases = {"v1.0.0a1": "1.0.0-experimental.1", "v1.0.0a2": "1.0.0-experimental.2"};
+            const releases = {"v1.0.0a1": "1.0.0-experimental.1", "v1.0.0a2": "1.0.0-experimental.2", "v1.0.0a3": "1.0.0-experimental.3"};
             const expected = releases[process.env.RELEASE_TAG];
             if (!expected || pkg.version !== expected) {
               throw new Error(`release ${process.env.RELEASE_TAG} does not match plugin ${pkg.version}`);
@@ -214,3 +214,4 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'a') }}
           files: |
             dist/*
+            docs/showcases/openclaw-memory-control-plane/aetnamem-openclaw-memory-control-plane.mp4

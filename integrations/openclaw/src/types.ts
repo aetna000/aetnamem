@@ -50,6 +50,7 @@ export interface MessageReceivedEvent {
 
 export interface OpenClawPluginToolContext {
   agentId?: string;
+  runId?: string;
   sessionKey?: string;
   sessionId?: string;
   senderIsOwner?: boolean;
@@ -57,7 +58,19 @@ export interface OpenClawPluginToolContext {
 }
 
 export interface BeforeMessageWriteEvent {
-  message: { role?: string; content?: unknown };
+  message: {
+    role?: string;
+    content?: unknown;
+    idempotencyKey?: string;
+    MediaPath?: string;
+    MediaPaths?: string[];
+    MediaType?: string;
+    MediaTypes?: string[];
+    mediaPath?: string;
+    mediaPaths?: string[];
+    mediaType?: string;
+    mediaTypes?: string[];
+  };
 }
 
 export interface BeforeToolCallEvent {
@@ -147,6 +160,7 @@ export interface OpenClawPluginApi {
     event: "before_message_write",
     handler: (
       event: BeforeMessageWriteEvent,
+      ctx: OpenClawHookCtx,
     ) => { message: BeforeMessageWriteEvent["message"] } | void,
   ): void;
   on(

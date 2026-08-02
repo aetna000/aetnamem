@@ -261,7 +261,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "1.0.0-experimental.2",
+                            "version": "1.0.0-experimental.3",
                         }
                     }
                 ),

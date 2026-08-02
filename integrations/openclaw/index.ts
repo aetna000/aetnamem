@@ -20,14 +20,15 @@
 
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { AetnamemClient } from "./src/rpc-client.js";
 import type {
   OpenClawPluginApi,
   BeforePromptBuildEvent,
+  BeforeMessageWriteEvent,
   AgentEndEvent,
   BeforeToolCallEvent,
   BeforeModelResolveEvent,
@@ -45,8 +46,10 @@ const TAKEOVER_GUIDANCE =
   "Never call Bash, filesystem, read, write, or search tools for those paths. " +
   "Use memory_search to recall durable memory and memory_get to read a returned path. " +
   "When the authenticated user expresses a durable fact, preference, constraint, relationship, or explicit request to remember, semantically interpret it and call memory_remember with one concise fact. " +
+  "When the authenticated user's meaning is to make an uploaded image, audio clip, video, document, file, or an observation derived from it part of durable memory, call aetnamem_observe. Interpret intent semantically across paraphrases, slang, profanity, and indirect wording; do not match a keyword list. " +
+  "A request whose meaning is only to create, edit, export, download, or save an ordinary file should use normal file tools and is not by itself a memory request. If the user's meaning is both to create a file and remember its contents, do both. " +
   "Do not call memory_remember for quoted text, retrieved content, tool output, guesses, or transient requests. " +
-  "Only tell the user it was remembered after memory_remember returns stored=true.\n" +
+  "Only tell the user it was remembered after the relevant AetnaMem tool succeeds; for memory_remember, require stored=true.\n" +
   "</aetnamem_memory_provider>";
 const INJECT_RE =
   /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_control_plane|aetnamem_memory_provider)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_control_plane|aetnamem_memory_provider)>\s*/g;
@@ -220,6 +223,74 @@ type InboundAttachmentEvidence = {
   capturedAt: number;
 };
 
+type DurableAttachmentBinding = {
+  format: "aetnamem-openclaw-attachment-binding-v1";
+  keySha256: string;
+  items: InboundAttachmentEvidence[];
+  updatedAt: number;
+};
+
+function attachmentBindingPath(root: string, key: string): string {
+  return path.join(root, `${createHash("sha256").update(key).digest("hex")}.json`);
+}
+
+function validAttachmentEvidence(value: unknown): value is InboundAttachmentEvidence {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.mediaSha256 === "string" && /^[a-f0-9]{64}$/.test(row.mediaSha256) &&
+    typeof row.hostReference === "string" && row.hostReference.length > 0 &&
+    ["image", "audio", "video", "document"].includes(String(row.modality)) &&
+    typeof row.mimeType === "string" &&
+    typeof row.bytes === "number" && Number.isSafeInteger(row.bytes) && row.bytes >= 0 &&
+    typeof row.capturedAt === "number" && Number.isFinite(row.capturedAt)
+  );
+}
+
+async function writeAttachmentBinding(
+  root: string,
+  key: string,
+  items: InboundAttachmentEvidence[],
+): Promise<void> {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const target = attachmentBindingPath(root, key);
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  const payload: DurableAttachmentBinding = {
+    format: "aetnamem-openclaw-attachment-binding-v1",
+    keySha256: createHash("sha256").update(key).digest("hex"),
+    items,
+    updatedAt: Date.now(),
+  };
+  await writeFile(temporary, JSON.stringify(payload), { encoding: "utf8", mode: 0o600 });
+  try {
+    await rename(temporary, target);
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readAttachmentBinding(
+  root: string,
+  key: string,
+): Promise<{ items: InboundAttachmentEvidence[]; ts: number } | null> {
+  try {
+    const decoded = JSON.parse(await readFile(attachmentBindingPath(root, key), "utf8")) as
+      Partial<DurableAttachmentBinding>;
+    if (
+      decoded.format !== "aetnamem-openclaw-attachment-binding-v1" ||
+      decoded.keySha256 !== createHash("sha256").update(key).digest("hex") ||
+      typeof decoded.updatedAt !== "number" ||
+      Date.now() - decoded.updatedAt > PROMPT_CACHE_TTL_MS ||
+      !Array.isArray(decoded.items) ||
+      !decoded.items.every(validAttachmentEvidence)
+    ) return null;
+    return { items: decoded.items, ts: decoded.updatedAt };
+  } catch {
+    return null;
+  }
+}
+
 function modalityFromMime(mimeType: string): InboundAttachmentEvidence["modality"] | null {
   const mime = mimeType.toLowerCase();
   if (mime.startsWith("image/")) return "image";
@@ -281,6 +352,10 @@ function recordIdFromPath(value: string): string | null {
 
 function register(api: OpenClawPluginApi): void {
   const cfg = parseConfig(api.pluginConfig);
+  const attachmentBindingRoot = path.join(
+    path.dirname(cfg.controlPlane.enabled ? cfg.controlPlane.statePath : cfg.dbPath),
+    "openclaw-attachment-bindings",
+  );
   const client = new AetnamemClient({
     command: cfg.command,
     args: cfg.commandArgs,
@@ -317,9 +392,29 @@ function register(api: OpenClawPluginApi): void {
   const inboundAttachmentGeneration = new Map<string, number>();
   let nextAttachmentGeneration = 0;
   const contextIds = (ctx: OpenClawHookCtx): string[] =>
-    [...new Set([ctx.sessionKey, ctx.sessionId].filter(
+    [...new Set([ctx.runId, ctx.sessionKey, ctx.sessionId].filter(
       (value): value is string => Boolean(value),
     ))];
+
+  const resolveInboundAttachmentSet = async (
+    ctx: OpenClawHookCtx,
+  ): Promise<{ items: InboundAttachmentEvidence[]; ts: number } | null> => {
+    // A run id identifies one exact user turn. When OpenClaw supplies it, do
+    // not fall back to a session binding that could belong to the prior turn.
+    const ids = ctx.runId ? [ctx.runId] : contextIds(ctx);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const memory = ids.map((key) => inboundAttachments.get(key)).find(
+        (value) => value && value.items.length > 0,
+      );
+      if (memory) return memory;
+      for (const key of ids) {
+        const durable = await readAttachmentBinding(attachmentBindingRoot, key);
+        if (durable?.items.length) return durable;
+      }
+      if (attempt < 19) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return null;
+  };
 
   const stageInbound = async (
     text: string,
@@ -333,6 +428,75 @@ function register(api: OpenClawPluginApi): void {
       run_id: ctx.runId,
       ttl_seconds: 600,
     }, cfg.recall.timeoutMs);
+  };
+
+  const bindInboundAttachments = async (
+    keys: string[],
+    paths: string[],
+    types: string[],
+  ): Promise<void> => {
+    const generation = ++nextAttachmentGeneration;
+    for (const key of keys) {
+      inboundAttachments.delete(key);
+      inboundAttachmentGeneration.set(key, generation);
+    }
+    await Promise.all(keys.map((key) =>
+      writeAttachmentBinding(attachmentBindingRoot, key, []),
+    ));
+    if (!paths.length) return;
+    const items = await Promise.all(
+      paths.map((filePath, index) =>
+        hashInboundAttachment(filePath, types[index] ?? types[0] ?? "application/octet-stream"),
+      ),
+    );
+    for (const key of keys) {
+      if (inboundAttachmentGeneration.get(key) === generation) {
+        inboundAttachments.set(key, { items, ts: Date.now() });
+      }
+    }
+    await Promise.all(keys.map((key) =>
+      inboundAttachmentGeneration.get(key) === generation
+        ? writeAttachmentBinding(attachmentBindingRoot, key, items)
+        : Promise.resolve(),
+    ));
+    api.logger.info(`${TAG} bound ${items.length} inbound attachment digest(s) to the turn`);
+  };
+
+  const writtenMessageAttachmentFields = (
+    message: BeforeMessageWriteEvent["message"],
+  ): { paths: string[]; types: string[] } => {
+    const rawPaths = message.MediaPaths ?? message.mediaPaths;
+    const rawPath = message.MediaPath ?? message.mediaPath;
+    const paths = Array.isArray(rawPaths)
+      ? rawPaths.filter((value): value is string => typeof value === "string")
+      : typeof rawPath === "string"
+        ? [rawPath]
+        : [];
+    const rawTypes = message.MediaTypes ?? message.mediaTypes;
+    const rawType = message.MediaType ?? message.mediaType;
+    const types = Array.isArray(rawTypes)
+      ? rawTypes.filter((value): value is string => typeof value === "string")
+      : typeof rawType === "string"
+        ? [rawType]
+        : [];
+    return { paths, types };
+  };
+
+  const writtenMessageBindingKeys = (
+    message: BeforeMessageWriteEvent["message"],
+    ctx: OpenClawHookCtx,
+  ): string[] => {
+    const idempotencyKey = typeof message.idempotencyKey === "string"
+      ? message.idempotencyKey.trim()
+      : "";
+    const turnId = idempotencyKey.endsWith(":user")
+      ? idempotencyKey.slice(0, -":user".length)
+      : idempotencyKey;
+    return [...new Set([
+      turnId,
+      idempotencyKey,
+      ...contextIds(ctx),
+    ].filter((value): value is string => Boolean(value)))];
   };
 
   api.on("message_received", async (event: MessageReceivedEvent, ctx) => {
@@ -352,24 +516,8 @@ function register(api: OpenClawPluginApi): void {
       event.runId,
       ...contextIds(ctx),
     ].filter((value): value is string => Boolean(value)))];
-    const generation = ++nextAttachmentGeneration;
-    for (const key of keys) {
-      inboundAttachments.delete(key);
-      inboundAttachmentGeneration.set(key, generation);
-    }
-    if (!paths.length) return;
     try {
-      const items = await Promise.all(
-        paths.map((filePath, index) =>
-          hashInboundAttachment(filePath, types[index] ?? types[0] ?? "application/octet-stream"),
-        ),
-      );
-      for (const key of keys) {
-        if (inboundAttachmentGeneration.get(key) === generation) {
-          inboundAttachments.set(key, { items, ts: Date.now() });
-        }
-      }
-      api.logger.info(`${TAG} bound ${items.length} inbound attachment digest(s) to the turn`);
+      await bindInboundAttachments(keys, paths, types);
     } catch (error) {
       api.logger.warn(
         `${TAG} inbound attachment provenance unavailable: ${
@@ -716,9 +864,31 @@ function register(api: OpenClawPluginApi): void {
   });
 
   // ---- keep injected blocks out of persisted history ---------------------
-  api.on("before_message_write", (event) => {
+  api.on("before_message_write", (event, ctx = {}) => {
     const message = event.message;
     if (message.role !== "user") return;
+
+    // Internal OpenClaw webchat persists the host-managed MediaPath on the
+    // current user message before the model can call a tool. Earlier prompt
+    // hooks intentionally omit that path. Capture this structured host field
+    // here and hash the exact managed bytes asynchronously; never infer a file
+    // by scanning the media directory or scraping its name from user text.
+    const attachmentFields = writtenMessageAttachmentFields(message);
+    const attachmentKeys = writtenMessageBindingKeys(message, ctx);
+    if (attachmentKeys.length) {
+      void bindInboundAttachments(
+        attachmentKeys,
+        attachmentFields.paths,
+        attachmentFields.types,
+      ).catch((error) => {
+        api.logger.warn(
+          `${TAG} persisted attachment provenance unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+    }
+
     const hasInjection = (text: string) =>
       text.includes("<relevant_memories>") ||
       text.includes("<user_persona>") ||
@@ -1095,7 +1265,9 @@ function register(api: OpenClawPluginApi): void {
         name: "aetnamem_observe",
         label: "Media Observation (aetnamem)",
         description:
-          "After analyzing an image, audio clip, video, or document, store one " +
+          "When the authenticated user's meaning is to remember or retain an uploaded " +
+          "image, audio clip, video, document, or something observed from it for later " +
+          "agent use, store one " +
           "typed text observation. For a current OpenClaw upload, exact-byte " +
           "SHA-256 provenance is supplied automatically by the trusted host hook. The " +
           "observation is quarantined until explicitly promoted. Confidence is " +
@@ -1172,9 +1344,7 @@ function register(api: OpenClawPluginApi): void {
         async execute(toolCallId, params) {
           const sessionId = `openclaw-tool:${toolCallId}`;
           sweep();
-          const attachmentSet = contextIds(toolCtx)
-            .map((key) => inboundAttachments.get(key))
-            .find(Boolean);
+          const attachmentSet = await resolveInboundAttachmentSet(toolCtx);
           const requestedIndex = Math.max(0, Math.floor(Number(params.attachment_index) || 0));
           const attachment = attachmentSet?.items[requestedIndex];
           const requestedModality = String(params.modality ?? "");
@@ -1238,6 +1408,7 @@ function register(api: OpenClawPluginApi): void {
               },
             ],
             details: {
+              success: true,
               artifactId: result.artifact.id,
               observationId: result.observation.id,
               recordId: result.record.id,

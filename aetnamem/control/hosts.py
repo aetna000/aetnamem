@@ -69,7 +69,7 @@ def _configure_openclaw(
     if plugin_version is None or _version_tuple(plugin_version) < (1, 0, 0):
         raise ValueError(
             "The AetnaMem control plane requires openclaw-memory-aetnamem "
-            "1.0.0-experimental.2 or newer. "
+            "1.0.0-experimental.3 or newer. "
             "Run `aetnamem openclaw install`; it installs and verifies the "
             "matching bridge before starting the migration."
         )

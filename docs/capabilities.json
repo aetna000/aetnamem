@@ -1,6 +1,6 @@
 {
   "product": "memory_control_plane",
-  "version": "1.0.0a2",
+  "version": "1.0.0a3",
   "release_status": "experimental_prerelease",
   "engine": "model_agnostic",
   "reversible_switch_hosts": ["openclaw"],
