@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-python -m pip install --pre aetnamem==1.0.0a1
+python -m pip install --pre aetnamem==1.0.0a2
 aetnamem --version
 aetnamem openclaw install
 ```
@@ -38,4 +38,4 @@ aetnamem control restore
 
 Both destructive state transitions require confirmation in an interactive terminal unless `--yes` is supplied deliberately. A failed activation does not claim success. A restore preserves AetnaMem evidence and does not undo past agent outputs.
 
-For dashboard lifecycle and authentication, see the [main README](../README.md). For the exact switch guarantees, see [control-plane.md](control-plane.md).
+For dashboard lifecycle and its loopback-only boundary, see the [main README](../README.md). For the exact switch guarantees, see [control-plane.md](control-plane.md).

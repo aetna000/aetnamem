@@ -1,19 +1,19 @@
 # AetnaMem
 
-[![Version 1.0.0a1](https://img.shields.io/badge/version-1.0.0a1--experimental-orange)](./docs/releases/v1.0.0a1.md)
+[![Version 1.0.0a2](https://img.shields.io/badge/version-1.0.0a2--experimental-orange)](./docs/releases/v1.0.0a2.md)
 [![CI](https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg)](https://github.com/aetna000/aetnamem/actions/workflows/ci.yml)
 
 **AetnaMem is a model-agnostic memory control plane for agents. Its complete reversible memory switch is currently OpenClaw-specific.**
 
 Install AetnaMem beside OpenClaw, let it copy and shadow the complete native memory, inspect the result, then activate it when you are ready. Shadow mode does not change the context sent to the model. Activation freezes the verified OpenClaw memory state and replaces native supplemental-memory access with bounded AetnaMem recall. Restore puts the saved OpenClaw configuration and memory paths back.
 
-This is **Version 1.0.0a1**, an experimental prerelease. The memory engine and MCP interface are model-agnostic. The automated copy, shadow, activation, and restore workflow supports OpenClaw first.
+This is **Version 1.0.0a2**, an experimental prerelease. The memory engine and MCP interface are model-agnostic. The automated copy, shadow, activation, and restore workflow supports OpenClaw first.
 
 ## Install and migrate OpenClaw
 
 ```bash
 # 1. Install the engine. Do not install the npm bridge separately.
-python -m pip install --pre aetnamem==1.0.0a1
+python -m pip install --pre aetnamem==1.0.0a2
 aetnamem --version
 
 # 2. Install the matching bridge and copy all existing OpenClaw memory.
@@ -48,8 +48,8 @@ The loopback-only dashboard is the operating and investigation surface:
 - one activation control and one restore control.
 
 ```bash
-aetnamem dashboard daemon start   # background service and authenticated browser URL
-aetnamem dashboard daemon open    # reopen with the current local access key
+aetnamem dashboard daemon start   # background service at http://127.0.0.1:8766/
+aetnamem dashboard daemon open    # open the direct loopback URL
 aetnamem dashboard daemon status
 aetnamem dashboard daemon restart
 aetnamem dashboard daemon stop
@@ -77,7 +77,7 @@ See the [integration guide](docs/integration-guide.md), [audit search](docs/audi
 - External media bytes remain host-controlled. AetnaMem stores a typed text observation, exact byte-stream SHA-256, model identity, and host reference.
 - External observations are quarantined until approved. Confidence is evidence, never an automatic promotion rule.
 - Forget operations cascade through canonical, graph, media, and vector-derived state and return a receipt.
-- The dashboard binds only to loopback and uses a protected local access key, HttpOnly cookie, CSRF, and origin checks.
+- The dashboard binds only to loopback and opens without a login. Mutations retain CSRF and origin checks.
 
 See [data storage and backup](docs/data-storage-and-backup.md) and the [auditing guide](docs/auditing-guide.md).
 

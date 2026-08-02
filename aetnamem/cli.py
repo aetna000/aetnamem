@@ -1334,9 +1334,7 @@ def _run_dashboard(args: argparse.Namespace) -> None:
             print(f"  Process      {result['pid']}")
         if result.get("port"):
             print(f"  Port         {result['port']}")
-        if result.get("login_url"):
-            print(f"  Access       {result['login_url']}")
-        elif result.get("url"):
+        if result.get("url"):
             print(f"  Dashboard    {result['url']}")
         if result.get("log_path"):
             print(f"  Log          {result['log_path']}")
@@ -1371,15 +1369,12 @@ def _serve_dashboard(
         ("127.0.0.1", port),
         manager,
         html=dashboard_html(),
-        login_code=os.environ.get("AETNAMEM_DASHBOARD_ACCESS_CODE"),
     )
     base = f"http://127.0.0.1:{server.server_port}/"
-    login = f"{base}auth?code={server.login_code}"
     print(f"AetnaMem dashboard: {base}", flush=True)
-    print(f"Dashboard login: {login}", flush=True)
-    print("The dashboard is loopback-only. Press Ctrl-C to stop.", flush=True)
+    print("No login is required. The dashboard is loopback-only. Press Ctrl-C to stop.", flush=True)
     if open_browser:
-        webbrowser.open(login)
+        webbrowser.open(base)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -8,7 +8,7 @@ Default locations:
 ~/.aetnamem/migrations/<migration-id>/
 ```
 
-The migration directory contains the isolated OpenClaw mirror, source snapshots, restore material and control evidence. Dashboard service metadata and its protected access key are separate from memory; removing the dashboard daemon does not delete memory.
+The migration directory contains the isolated OpenClaw mirror, source snapshots, restore material and control evidence. Dashboard service metadata is separate from memory; removing the dashboard daemon does not delete memory.
 
 Before copying a SQLite database, stop active writers or use SQLite's online backup mechanism. Copy the database together with `-wal` and `-shm` only when following SQLite's documented procedure. After restoration, run:
 

@@ -1,6 +1,6 @@
 # Current product status
 
-Version 1.0.0a1 is an experimental prerelease of one product: the AetnaMem memory control plane.
+Version 1.0.0a2 is an experimental prerelease of one product: the AetnaMem memory control plane.
 
 | Capability | Status |
 | --- | --- |

@@ -1,6 +1,6 @@
 {
   "name": "openclaw-memory-aetnamem",
-  "version": "1.0.0-experimental.1",
+  "version": "1.0.0-experimental.2",
   "description": "OpenClaw bridge for the AetnaMem memory control plane",
   "type": "module",
   "main": "./dist/index.js",

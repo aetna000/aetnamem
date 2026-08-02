@@ -17,19 +17,13 @@ class ControlDashboardServer(ThreadingHTTPServer):
         manager: ControlPlaneManager,
         *,
         html: str,
-        login_code: str | None = None,
     ) -> None:
         host, _ = address
         if host not in {"127.0.0.1", "::1", "localhost"}:
             raise ValueError("memory control plane dashboard is loopback-only")
-        supplied_code = (login_code or "").strip()
-        if supplied_code and len(supplied_code) < 32:
-            raise ValueError("dashboard login code must contain at least 32 characters")
         super().__init__(address, ControlDashboardHandler)
         self.manager = manager
         self.html = html
-        self.login_code = supplied_code or secrets.token_urlsafe(32)
-        self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
 
 
@@ -41,25 +35,6 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid Host header"})
             return
         parsed = urlparse(self.path)
-        if parsed.path == "/auth":
-            code = (parse_qs(parsed.query).get("code") or [""])[0]
-            if not secrets.compare_digest(code, self.server.login_code):
-                self._json(HTTPStatus.UNAUTHORIZED, {"error": "invalid login code"})
-                return
-            self.send_response(HTTPStatus.SEE_OTHER)
-            self._security_headers()
-            self.send_header(
-                "Set-Cookie",
-                "aetnamem_migration="
-                + self.server.session_token
-                + "; HttpOnly; SameSite=Strict; Path=/",
-            )
-            self.send_header("Location", "/")
-            self.end_headers()
-            return
-        if not self._authenticated():
-            self._json(HTTPStatus.UNAUTHORIZED, {"error": "authentication required"})
-            return
         if parsed.path == "/":
             body = self.server.html.encode("utf-8")
             self.send_response(HTTPStatus.OK)
@@ -243,9 +218,6 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if not self._authenticated():
-            self._json(HTTPStatus.UNAUTHORIZED, {"error": "authentication required"})
-            return
         if not self._same_origin() or not secrets.compare_digest(
             self.headers.get("X-CSRF-Token", ""), self.server.csrf_token
         ):
@@ -361,16 +333,6 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:
         del format, args
-
-    def _authenticated(self) -> bool:
-        cookies: dict[str, str] = {}
-        for part in self.headers.get("Cookie", "").split(";"):
-            key, separator, value = part.strip().partition("=")
-            if separator:
-                cookies[key] = value
-        return secrets.compare_digest(
-            cookies.get("aetnamem_migration", ""), self.server.session_token
-        )
 
     def _same_origin(self) -> bool:
         host = self.headers.get("Host", "")

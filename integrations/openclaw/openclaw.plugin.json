@@ -2,7 +2,7 @@
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
   "description": "OpenClaw bridge installed and managed by the AetnaMem memory control plane.",
-  "version": "1.0.0-experimental.1",
+  "version": "1.0.0-experimental.2",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true

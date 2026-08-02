@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import secrets
 import signal
 import subprocess
 import sys
@@ -34,15 +33,15 @@ def manage_dashboard_daemon(
                 "AetnaMem dashboard daemon is not running; use "
                 "`aetnamem dashboard daemon start`"
             )
-        login_url = str(current.get("login_url") or "")
-        if not login_url:
+        url = str(current.get("url") or "")
+        if not url:
             raise ValueError(
-                "dashboard access URL is unavailable; restart the daemon"
+                "dashboard URL is unavailable; restart the daemon"
             )
-        if not _open_default_browser(login_url):
+        if not _open_default_browser(url):
             raise ValueError(
                 "the default browser did not accept the dashboard URL; "
-                "copy the Access URL shown by `aetnamem dashboard daemon status`"
+                "copy the URL shown by `aetnamem dashboard daemon status`"
             )
         return {**current, "opened": True}
     if action == "start":
@@ -102,12 +101,8 @@ def _start(
     log_path.touch(mode=0o600, exist_ok=True)
     log_path.chmod(0o600)
     # The log is append-only across restarts. Remember its current end so
-    # startup cannot mistake an earlier daemon's access URL for the new
-    # daemon's key.
+    # startup cannot mistake an earlier daemon's URL for the new process.
     log_offset = log_path.stat().st_size if log_path.exists() else 0
-    access_code = str(current.get("access_code") or "").strip()
-    if len(access_code) < 32:
-        access_code = secrets.token_urlsafe(32)
     command = [
         sys.executable,
         "-m",
@@ -127,7 +122,7 @@ def _start(
             stderr=subprocess.STDOUT,
             start_new_session=True,
             close_fds=True,
-            env={**os.environ, "AETNAMEM_DASHBOARD_ACCESS_CODE": access_code},
+            env=os.environ.copy(),
         )
     value = {
         "format": "aetnamem-dashboard-daemon-v1",
@@ -141,27 +136,28 @@ def _start(
         ),
         "log_path": str(log_path),
         "started_at": utc_now(),
-        "access_code": access_code,
     }
     _write(state_path, value)
     deadline = time.monotonic() + 5.0
+    ready = False
     while time.monotonic() < deadline:
         if process.poll() is not None:
             detail = _tail(log_path)
             raise ValueError(
                 f"AetnaMem dashboard daemon exited during startup: {detail}"
             )
-        login_url = _login_url(log_path, after_bytes=log_offset)
-        if login_url:
-            value["login_url"] = login_url
+        dashboard_url = _dashboard_url(log_path, after_bytes=log_offset)
+        if dashboard_url:
+            value["url"] = dashboard_url
             _write(state_path, value)
+            ready = True
             break
         time.sleep(0.1)
-    if not value.get("login_url"):
+    if not ready:
         detail = _tail(log_path)
         _stop(state_path)
         raise ValueError(
-            "AetnaMem dashboard daemon did not publish a usable access URL "
+            "AetnaMem dashboard daemon did not publish a usable URL "
             f"during startup: {detail}"
         )
     return {**value, "running": process.poll() is None, "installed": True}
@@ -263,14 +259,14 @@ def _read(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _login_url(path: Path, *, after_bytes: int = 0) -> str | None:
+def _dashboard_url(path: Path, *, after_bytes: int = 0) -> str | None:
     try:
         with path.open("rb") as stream:
             stream.seek(max(0, int(after_bytes)))
             lines = stream.read().decode("utf-8", errors="replace").splitlines()
     except FileNotFoundError:
         return None
-    prefix = "Dashboard login: "
+    prefix = "AetnaMem dashboard: "
     for line in reversed(lines):
         if line.startswith(prefix):
             return line.removeprefix(prefix).strip()

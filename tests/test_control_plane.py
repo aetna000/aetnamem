@@ -8,11 +8,9 @@ import subprocess
 import threading
 from urllib.error import HTTPError
 from urllib.request import (
-    HTTPCookieProcessor,
     Request,
     build_opener,
 )
-from http.cookiejar import CookieJar
 
 import pytest
 
@@ -263,7 +261,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "1.0.0-experimental.1",
+                            "version": "1.0.0-experimental.2",
                         }
                     }
                 ),
@@ -320,7 +318,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
     assert entry == {"enabled": False, "config": {"existing": "kept"}}
 
 
-def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
+def test_dashboard_is_direct_on_loopback_and_uses_csrf_for_mutations(
     tmp_path: Path,
 ) -> None:
     from aetnamem.control.web import ControlDashboardServer
@@ -330,24 +328,11 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    opener = build_opener()
     try:
-        response = opener.open(f"{base}/auth?code={server.login_code}")
-        assert response.read() == b"<html>safe</html>"
-        # Redirect hides the original Set-Cookie header, but the jar proves
-        # the cookie was accepted and the protected page became readable.
+        assert opener.open(f"{base}/").read() == b"<html>safe</html>"
         assert opener.open(f"{base}/api/status").status == 200
         session = json.loads(opener.open(f"{base}/api/session").read())
-
-        # A daemon advertises one stable local access URL for its lifetime.
-        # A second browser can use the same protected URL without restarting
-        # the daemon or receiving a stale-code error.
-        second_opener = build_opener(HTTPCookieProcessor(CookieJar()))
-        assert (
-            second_opener.open(f"{base}/auth?code={server.login_code}").read()
-            == b"<html>safe</html>"
-        )
-        assert second_opener.open(f"{base}/api/status").status == 200
 
         unprotected = Request(
             f"{base}/api/mode",
@@ -380,29 +365,15 @@ def test_dashboard_uses_http_only_cookie_and_csrf_for_mutations(
         thread.join(timeout=2)
 
 
-def test_dashboard_accepts_daemon_supplied_stable_login_code(tmp_path: Path) -> None:
+def test_dashboard_rejects_non_loopback_bindings(tmp_path: Path) -> None:
     from aetnamem.control.web import ControlDashboardServer
 
-    code = "stable-" + "b" * 40
-    server = ControlDashboardServer(
-        ("127.0.0.1", 0),
-        _manager(tmp_path),
-        html="<html>safe</html>",
-        login_code=code,
-    )
-    try:
-        assert server.login_code == code
-    finally:
-        server.server_close()
-
-    with pytest.raises(ValueError, match="at least 32"):
-        invalid = ControlDashboardServer(
-            ("127.0.0.1", 0),
+    with pytest.raises(ValueError, match="loopback-only"):
+        ControlDashboardServer(
+            ("0.0.0.0", 0),
             _manager(tmp_path / "short"),
             html="<html>safe</html>",
-            login_code="too-short",
         )
-        invalid.server_close()
 
 
 def test_dashboard_ships_the_visual_control_ui_not_the_json_fallback() -> None:
@@ -516,9 +487,8 @@ def test_review_image_preview_requires_exact_host_bytes(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    opener = build_opener()
     try:
-        opener.open(f"{base}/auth?code={server.login_code}").read()
         response = opener.open(
             f"{base}/api/mirror/media-preview?record_id={record_id}"
         )
@@ -571,9 +541,8 @@ def test_dashboard_serves_record_investigation_and_downloads(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    opener = build_opener()
     try:
-        opener.open(f"{base}/auth?code={server.login_code}").read()
         value = json.loads(
             opener.open(
                 f"{base}/api/mirror/record?record_id=rec_abc123"
@@ -630,9 +599,8 @@ def test_dashboard_review_mutation_requires_csrf_and_exact_record_confirmation(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    opener = build_opener()
     try:
-        opener.open(f"{base}/auth?code={server.login_code}").read()
         csrf = json.loads(opener.open(f"{base}/api/session").read())["csrf_token"]
         queue = json.loads(opener.open(f"{base}/api/mirror/reviews").read())
         assert queue["records"][0]["record_id"] == pending["id"]
@@ -709,9 +677,8 @@ def test_dashboard_audit_explorer_filters_paginates_and_exports(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    opener = build_opener()
     try:
-        opener.open(f"{base}/auth?code={server.login_code}").read()
         report = json.loads(
             opener.open(
                 f"{base}/api/mirror/audit?event_type=memory.*&session_id="
