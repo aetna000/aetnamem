@@ -49,7 +49,7 @@ const TAKEOVER_GUIDANCE =
   "Only tell the user it was remembered after memory_remember returns stored=true.\n" +
   "</aetnamem_memory_provider>";
 const INJECT_RE =
-  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_safe_switch|aetnamem_memory_provider)>\s*/g;
+  /<(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_control_plane|aetnamem_memory_provider)>[\s\S]*?<\/(relevant_memories|user_persona|working_memory|episodic_memory|procedural_memory|aetnamem_control_plane|aetnamem_memory_provider)>\s*/g;
 const PROMPT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface PluginConfig {
@@ -70,13 +70,7 @@ interface PluginConfig {
   capture: { enabled: boolean; captureAssistant: boolean };
   cacheAware: { enabled: boolean; compactReferences: boolean };
   tools: { enabled: boolean };
-  orchestration: {
-    enabled: boolean;
-    agentId: string;
-    runtimeConfig: string;
-    fallback: "legacy" | "none";
-  };
-  safeSwitch: {
+  controlPlane: {
     enabled: boolean;
     statePath: string;
   };
@@ -86,32 +80,19 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
   const cfg = (raw ?? {}) as Record<string, any>;
   const dbPath = expandHome(String(cfg.dbPath ?? "~/.aetnamem/memories.db"));
   const subject = String(cfg.subject ?? "default");
-  const orchestration = {
-    enabled: cfg.orchestration?.enabled === true,
-    agentId: String(cfg.orchestration?.agentId ?? "openclaw-primary"),
-    runtimeConfig: expandHome(
-      String(cfg.orchestration?.runtimeConfig ?? "~/.aetnamem/runtime.json"),
-    ),
-    fallback:
-      cfg.orchestration?.fallback === "none"
-        ? ("none" as const)
-        : ("legacy" as const),
-  };
-  const safeSwitch = {
-    enabled: cfg.safeSwitch?.enabled === true,
+  const controlPlane = {
+    enabled: cfg.controlPlane?.enabled === true,
     statePath: expandHome(
-      String(cfg.safeSwitch?.statePath ?? "~/.aetnamem/safe-switch.json"),
+      String(cfg.controlPlane?.statePath ?? "~/.aetnamem/control-plane.json"),
     ),
   };
   return {
     command: String(cfg.command ?? "aetnamem"),
-    commandArgs: safeSwitch.enabled
-      ? ["trial", "mcp", "--state", safeSwitch.statePath]
+    commandArgs: controlPlane.enabled
+      ? ["control", "mcp", "--state", controlPlane.statePath]
       : Array.isArray(cfg.commandArgs)
         ? cfg.commandArgs.map(String)
-        : orchestration.enabled
-          ? ["runtime", "mcp", "--config", orchestration.runtimeConfig]
-          : ["mcp", "--db", dbPath, "--subject", subject],
+        : ["mcp", "--db", dbPath, "--subject", subject],
     dbPath,
     subject,
     takeoverActive: cfg.takeoverActive === true,
@@ -137,8 +118,7 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
       compactReferences: cfg.cacheAware?.compactReferences !== false,
     },
     tools: { enabled: cfg.tools?.enabled !== false },
-    orchestration,
-    safeSwitch,
+    controlPlane,
   };
 }
 
@@ -455,13 +435,6 @@ function register(api: OpenClawPluginApi): void {
         .option("--subject <id>", "Stable single-user memory subject", "you")
         .option("--command <path>", "AetnaMem executable", cfg.command)
         .option("--db-path <path>", "AetnaMem SQLite database", cfg.dbPath)
-        .option("--orchestrated", "Use all four AetnaMem memory planes")
-        .option(
-          "--runtime-config <path>",
-          "AetnaMem four-memory runtime configuration",
-          cfg.orchestration.runtimeConfig,
-        )
-        .option("--agent-id <id>", "Stable agent identity", cfg.orchestration.agentId)
         .option("--no-restart", "Do not restart the OpenClaw gateway")
         .action(async (options) => {
           await runSetup({
@@ -469,9 +442,6 @@ function register(api: OpenClawPluginApi): void {
             command: String(options.command),
             dbPath: String(options.dbPath),
             restart: options.restart !== false,
-            orchestrated: options.orchestrated === true,
-            runtimeConfig: String(options.runtimeConfig),
-            agentId: String(options.agentId),
           });
         });
     },
@@ -522,10 +492,10 @@ function register(api: OpenClawPluginApi): void {
     pendingPrompts.set(sessionKey, { text: userText, ts: Date.now() });
     sweep();
 
-    if (cfg.safeSwitch.enabled) {
+    if (cfg.controlPlane.enabled) {
       try {
         const prepared = (await client.callTool(
-          "trial_prepare",
+          "control_prepare",
           { query: userText, session_id: sessionKey },
           cfg.recall.timeoutMs,
         )) as {
@@ -541,70 +511,18 @@ function register(api: OpenClawPluginApi): void {
         });
         if (prepared.inject && prepared.context) {
           api.logger.info(
-            `${TAG} Safe Switch ${prepared.mode ?? "active"} context exposed`,
+            `${TAG} memory control plane ${prepared.mode ?? "active"} context exposed`,
           );
           return { appendContext: prepared.context };
         }
         return;
       } catch (error) {
         api.logger.warn(
-          `${TAG} Safe Switch failed closed: ${
+          `${TAG} memory control plane failed closed: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
         return;
-      }
-    }
-
-    if (cfg.orchestration.enabled) {
-      try {
-        const available = await client.hasTool(
-          "memory_prepare_turn",
-          cfg.recall.timeoutMs,
-        );
-        if (!available) {
-          throw new Error("connected AetnaMem does not expose memory_prepare_turn");
-        }
-        const pack = (await client.callTool(
-          "memory_prepare_turn",
-          {
-            query: userText,
-            session_id: sessionKey,
-            task_state: { goal: userText, phase: "respond" },
-          },
-          cfg.recall.timeoutMs,
-        )) as {
-          run_id?: string;
-          manifest_sha256?: string;
-          stable_context?: string;
-          dynamic_context?: string;
-          degraded_planes?: string[];
-        };
-        pendingPrompts.set(sessionKey, {
-          text: userText,
-          ts: Date.now(),
-          runId: pack.run_id,
-          manifestSha256: pack.manifest_sha256,
-        });
-        api.logger.info(
-          `${TAG} four-memory pack prepared` +
-            (pack.degraded_planes?.length
-              ? ` (degraded: ${pack.degraded_planes.join(", ")})`
-              : ""),
-        );
-        const result: { appendSystemContext?: string; appendContext?: string } = {};
-        const stableParts = [takeoverGuidance, pack.stable_context].filter(Boolean);
-        if (stableParts.length) result.appendSystemContext = stableParts.join("\n\n");
-        if (pack.dynamic_context) result.appendContext = pack.dynamic_context;
-        if (Object.keys(result).length) return result;
-        return;
-      } catch (error) {
-        api.logger.warn(
-          `${TAG} four-memory orchestration unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        if (cfg.orchestration.fallback === "none") return;
       }
     }
 
@@ -713,17 +631,17 @@ function register(api: OpenClawPluginApi): void {
           cfg.recall.timeoutMs,
         );
       }
-      if (cfg.safeSwitch.enabled) {
+      if (cfg.controlPlane.enabled) {
         if (cached?.exposureId) {
           await client.callTool(
-            "trial_exposure_shown",
+            "control_exposure_shown",
             { exposure_id: cached.exposureId },
             cfg.recall.timeoutMs,
           );
         }
         if (event.success !== false) {
           await client.callTool(
-            "trial_sync_openclaw_memory",
+            "control_sync_openclaw_memory",
             {},
             cfg.recall.timeoutMs,
           );
@@ -790,25 +708,6 @@ function register(api: OpenClawPluginApi): void {
           }
         }
       }
-      if (cfg.orchestration.enabled && cached?.runId) {
-        await client.callTool(
-          "memory_record_outcome",
-          {
-            run_id: cached.runId,
-            ...(cached.manifestSha256
-              ? { manifest_sha256: cached.manifestSha256 }
-              : {}),
-            success: event.success !== false,
-            summary:
-              event.success === false
-                ? "OpenClaw agent turn failed"
-                : "OpenClaw agent turn completed",
-            session_id: sessionKey,
-            idempotency_key: `openclaw:${sessionKey}:${cached.runId}`,
-          },
-          cfg.recall.timeoutMs,
-        );
-      }
     } catch (error) {
       api.logger.warn(
         `${TAG} auto-capture failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -826,7 +725,7 @@ function register(api: OpenClawPluginApi): void {
       text.includes("<working_memory>") ||
       text.includes("<episodic_memory>") ||
       text.includes("<procedural_memory>") ||
-      text.includes("<aetnamem_safe_switch>") ||
+      text.includes("<aetnamem_control_plane>") ||
       text.includes("<aetnamem_memory_provider>");
     if (typeof message.content === "string") {
       if (!hasInjection(message.content)) return;
@@ -846,7 +745,7 @@ function register(api: OpenClawPluginApi): void {
   });
 
   // ---- agent-callable tools ----------------------------------------------
-  if (cfg.tools.enabled && !cfg.safeSwitch.enabled) {
+  if (cfg.tools.enabled && !cfg.controlPlane.enabled) {
     if (cfg.takeoverActive) {
       api.registerTool(
         (toolCtx: OpenClawPluginToolContext) => ({
@@ -1401,7 +1300,7 @@ function register(api: OpenClawPluginApi): void {
   api.logger.info(
     `${TAG} registered (db=${cfg.dbPath}, subject=${cfg.subject}, ` +
       `recall=${cfg.recall.enabled}, capture=${cfg.capture.enabled}, ` +
-      `fourMemory=${cfg.orchestration.enabled}, safeSwitch=${cfg.safeSwitch.enabled})`,
+      `controlPlane=${cfg.controlPlane.enabled})`,
   );
 }
 

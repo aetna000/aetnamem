@@ -1,8 +1,8 @@
 {
   "id": "memory-aetnamem",
   "name": "Memory (aetnamem)",
-  "description": "OpenClaw bridge for the separately installed AetnaMem Python engine. Requires `pip install aetnamem` first. Adds auditable auto-recall and auto-capture.",
-  "version": "0.5.0-experimental.4",
+  "description": "OpenClaw bridge installed and managed by the AetnaMem memory control plane.",
+  "version": "1.0.0-experimental.1",
   "commandAliases": ["memory-aetnamem"],
   "activation": {
     "onStartup": true
@@ -49,7 +49,7 @@
       },
       "nativeWorkspace": {
         "type": "string",
-        "description": "Absolute OpenClaw workspace path protected during verified takeover. Set by `aetnamem trial activate`; do not configure manually."
+        "description": "Absolute OpenClaw workspace path protected during verified takeover. Set by `aetnamem control activate`; do not configure manually."
       },
       "recall": {
         "type": "object",
@@ -94,38 +94,19 @@
           "enabled": { "type": "boolean", "default": true, "description": "Register aetnamem_search and aetnamem_forget tool schemas" }
         }
       },
-      "orchestration": {
+      "controlPlane": {
         "type": "object",
-        "description": "Opt-in four-memory runtime. Disabled keeps the exact legacy recall/capture path.",
-        "properties": {
-          "enabled": { "type": "boolean", "default": false },
-          "agentId": { "type": "string", "default": "openclaw-primary" },
-          "runtimeConfig": {
-            "type": "string",
-            "default": "~/.aetnamem/runtime.json",
-            "description": "Configuration created by `aetnamem setup`"
-          },
-          "fallback": {
-            "type": "string",
-            "enum": ["legacy", "none"],
-            "default": "legacy",
-            "description": "Use legacy semantic recall when runtime tools are unavailable"
-          }
-        }
-      },
-      "safeSwitch": {
-        "type": "object",
-        "description": "Opt-in reversible trial. Capture and preview do not change model context; canary and active are controlled by the digest-bound local state file.",
+        "description": "Reversible memory control plane. Shadow mode does not change model context; active mode replaces native supplemental memory.",
         "properties": {
           "enabled": {
             "type": "boolean",
             "default": false,
-            "description": "Route hooks through the private Safe Switch protocol; agent-callable memory tools are disabled during the trial."
+            "description": "Route hooks through the private memory control plane protocol; agent-callable memory tools are disabled in shadow mode."
           },
           "statePath": {
             "type": "string",
-            "default": "~/.aetnamem/safe-switch.json",
-            "description": "Digest-bound control file written by `aetnamem trial`."
+            "default": "~/.aetnamem/control-plane.json",
+            "description": "Digest-bound control file written by `aetnamem control`."
           }
         }
       }

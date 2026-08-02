@@ -43,8 +43,8 @@ function fakeApi(config) {
   return { hooks, tools, services, logs };
 }
 
-function trialCli(...args) {
-  const result = spawnSync("aetnamem", ["trial", ...args, "--json"], {
+function controlCli(...args) {
+  const result = spawnSync("aetnamem", ["control", ...args, "--json"], {
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -228,66 +228,6 @@ try {
   assert.equal(legacyInjection.appendSystemContext, undefined);
   for (const service of legacy.services) await service.stop?.();
 
-  const fourDb = path.join(dataDir, "four-memory.db");
-  const fourConfigPath = path.join(dataDir, "runtime.json");
-  writeFileSync(
-    fourConfigPath,
-    JSON.stringify({
-      format: "aetnamem-runtime-config-v1",
-      preset: "starter",
-      db_path: fourDb,
-      scope: { subject_id: "four-user", agent_id: "openclaw-primary" },
-      budgets: {
-        total_chars: 4200,
-        working_chars: 700,
-        semantic_chars: 1800,
-        episodic_chars: 900,
-        procedural_chars: 800,
-      },
-      planes: {
-        working: { enabled: true },
-        semantic: { enabled: true, max_records: 3, min_score: 0.3 },
-        episodic: { enabled: true, max_outcomes: 3 },
-        procedural: { enabled: true, skill_paths: [] },
-      },
-      failure_policy: "degrade",
-    }),
-  );
-  const fourMemory = fakeApi({
-    ...base,
-    dbPath: fourDb,
-    subject: "four-user",
-    commandArgs: ["runtime", "mcp", "--config", fourConfigPath],
-    orchestration: {
-      enabled: true,
-      agentId: "openclaw-primary",
-      runtimeConfig: fourConfigPath,
-      fallback: "legacy",
-    },
-  });
-  const fourBefore = fourMemory.hooks.get("before_prompt_build");
-  const fourEnd = fourMemory.hooks.get("agent_end");
-  const firstPack = await fourBefore(
-    { prompt: "My deployment region is Sydney." },
-    { sessionKey: "four-1" },
-  );
-  assert.ok(
-    firstPack?.appendContext?.includes("<working_memory>"),
-    fourMemory.logs.join("\n"),
-  );
-  await fourEnd({ success: true, messages: [] }, { sessionKey: "four-1" });
-  const recalledPack = await fourBefore(
-    { prompt: "What is my deployment region?" },
-    { sessionKey: "four-2" },
-  );
-  assert.ok(
-    `${recalledPack.appendSystemContext ?? ""}${recalledPack.appendContext ?? ""}`.includes(
-      "Sydney",
-    ),
-  );
-  await fourEnd({ success: true, messages: [] }, { sessionKey: "four-2" });
-  for (const service of fourMemory.services) await service.stop?.();
-
   const takeover = fakeApi({
     ...base,
     takeoverActive: true,
@@ -358,40 +298,40 @@ try {
   }, {}), undefined);
   for (const service of takeover.services) await service.stop?.();
 
-  const trialState = path.join(dataDir, "safe-switch.json");
-  const trialRoot = path.join(dataDir, "trials");
-  trialCli(
-    "start",
+  const migrationState = path.join(dataDir, "control-plane.json");
+  const migrationRoot = path.join(dataDir, "migrations");
+  controlCli(
+    "shadow",
     "--host",
     "openclaw",
     "--state",
-    trialState,
-    "--trial-root",
-    trialRoot,
+    migrationState,
+    "--control-root",
+    migrationRoot,
     "--no-configure",
   );
-  const safeSwitch = fakeApi({
+  const controlPlane = fakeApi({
     ...base,
     commandArgs: ["mcp", "--db", path.join(dataDir, "must-not-be-used.db")],
-    safeSwitch: { enabled: true, statePath: trialState },
+    controlPlane: { enabled: true, statePath: migrationState },
     tools: { enabled: true },
   });
-  assert.equal(safeSwitch.tools.size, 0);
-  const safeBefore = safeSwitch.hooks.get("before_prompt_build");
-  const safeEnd = safeSwitch.hooks.get("agent_end");
+  assert.equal(controlPlane.tools.size, 0);
+  const safeBefore = controlPlane.hooks.get("before_prompt_build");
+  const safeEnd = controlPlane.hooks.get("agent_end");
   const captureOnly = await safeBefore(
     { prompt: "Remember that my preferred terminal is Ghostty." },
-    { sessionKey: "trial-1" },
+    { sessionKey: "migration-1" },
   );
   assert.equal(captureOnly, undefined);
-  await safeEnd({ success: true, messages: [] }, { sessionKey: "trial-1" });
-  const trialStatus = trialCli("status", "--state", trialState);
-  assert.equal(trialStatus.mode, "capture");
-  assert.equal(trialStatus.changes_model_context, false);
-  for (const service of safeSwitch.services) await service.stop?.();
+  await safeEnd({ success: true, messages: [] }, { sessionKey: "migration-1" });
+  const migrationStatus = controlCli("status", "--state", migrationState);
+  assert.equal(migrationStatus.mode, "shadow");
+  assert.equal(migrationStatus.changes_model_context, false);
+  for (const service of controlPlane.services) await service.stop?.();
 
   console.log(
-    "hooks: legacy, four-memory, and fail-closed Safe Switch paths verified",
+    "hooks: direct engine and fail-closed memory control plane paths verified",
   );
 } finally {
   for (const service of runtime.services) await service.stop?.();

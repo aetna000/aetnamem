@@ -8,13 +8,13 @@ import shutil
 import subprocess
 from typing import Any, Callable
 
-from aetnamem.trial import TrialManager, TrialMode
-from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
+from aetnamem.control import ControlPlaneManager, ControlMode
+from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
 
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "0.5.0-experimental.4"
+OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.1"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 
@@ -32,12 +32,12 @@ ProgressReporter = Callable[[int, int, str], None]
 def install_openclaw(
     *,
     state_path: str | Path = DEFAULT_STATE_PATH,
-    trial_root: str | Path = DEFAULT_TRIAL_ROOT,
+    control_root: str | Path = DEFAULT_CONTROL_ROOT,
     runner: Runner | None = None,
     engine_executable: str | None = None,
     progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
-    """Install the matching bridge and enter fail-closed capture mode.
+    """Install the matching bridge and enter fail-closed shadow mode.
 
     The Python package is the authority for this workflow. The npm package is
     a host bridge and is never presented as a standalone installation.
@@ -65,8 +65,8 @@ def install_openclaw(
         [openclaw, "config", "get", _CONFIG_KEY, "--json"], run
     )
     package_changed = False
-    manager: TrialManager | None = None
-    rollback_errors: list[str] = []
+    manager: ControlPlaneManager | None = None
+    restore_errors: list[str] = []
 
     try:
         report(3, total_steps, "Installing the verified OpenClaw bridge")
@@ -92,8 +92,8 @@ def install_openclaw(
                 f"{installed_version or 'unknown'}; expected {OPENCLAW_PLUGIN_VERSION}"
             )
 
-        # Record the exact executable before the trial snapshot is taken. This
-        # survives service PATH differences and remains the rollback baseline.
+        # Record the exact executable before the migration snapshot is taken. This
+        # survives service PATH differences and remains the restore baseline.
         _set_json(
             openclaw,
             f"{_CONFIG_KEY}.config.command",
@@ -104,12 +104,12 @@ def install_openclaw(
             _set_json(openclaw, f"{_CONFIG_KEY}.enabled", False, run)
 
         report(5, total_steps, "Copying and indexing existing OpenClaw memory")
-        manager = TrialManager.start(
+        manager = ControlPlaneManager.start(
             host="openclaw",
             state_path=state_path,
-            trial_root=trial_root,
+            control_root=control_root,
         )
-        from aetnamem.trial.hosts import configure_host
+        from aetnamem.control.hosts import configure_host
 
         integration = configure_host(
             manager.state(),
@@ -149,16 +149,16 @@ def install_openclaw(
         )
         if not isinstance(observed, dict):
             raise ValueError("OpenClaw did not return the AetnaMem plugin configuration")
-        safe_switch = observed.get("safeSwitch")
-        if not isinstance(safe_switch, dict) or safe_switch.get("enabled") is not True:
-            raise ValueError("OpenClaw did not retain fail-closed Safe Switch mode")
+        control_plane = observed.get("controlPlane")
+        if not isinstance(control_plane, dict) or control_plane.get("enabled") is not True:
+            raise ValueError("OpenClaw did not retain fail-closed memory control plane mode")
         if observed.get("command") != engine:
             raise ValueError("OpenClaw did not retain the exact AetnaMem executable path")
 
         report(8, total_steps, "Verifying the memory mirror and audit evidence")
         status = manager.status()
-        if status.get("mode") != "capture":
-            raise ValueError("AetnaMem trial did not enter shadow capture mode")
+        if status.get("mode") != "shadow":
+            raise ValueError("AetnaMem migration did not enter shadow mode")
         mirror = status.get("mirror")
         mirror = mirror if isinstance(mirror, dict) else {}
         baseline = mirror.get("native_baseline")
@@ -175,10 +175,10 @@ def install_openclaw(
             "plugin_version": installed_version,
             "plugin_id": OPENCLAW_PLUGIN_ID,
             "gateway_verified": _gateway_verified(gateway),
-            "trial_id": status.get("trial_id"),
-            "trial_mode": status.get("mode"),
+            "migration_id": status.get("migration_id"),
+            "control_mode": status.get("mode"),
             "changes_model_context": status.get("changes_model_context"),
-            "trial_dir": status.get("trial_dir"),
+            "control_dir": status.get("control_dir"),
             "state_path": str(Path(state_path).expanduser().resolve(strict=False)),
             "integration": integration,
             "native_baseline_verified": True,
@@ -192,9 +192,9 @@ def install_openclaw(
         report(total_steps, total_steps, "Installation failed; restoring prior state")
         if manager is not None:
             try:
-                manager.transition(TrialMode.OFF, actor="install-rollback")
-            except Exception as rollback_exc:  # pragma: no cover - defensive
-                rollback_errors.append(f"trial stop: {rollback_exc}")
+                manager.transition(ControlMode.OFF, actor="install-restore")
+            except Exception as restore_exc:  # pragma: no cover - defensive
+                restore_errors.append(f"migration stop: {restore_exc}")
         if package_changed:
             try:
                 if prior_version is None:
@@ -208,7 +208,7 @@ def install_openclaw(
                                 "--force",
                             ]
                         ),
-                        "bridge package rollback",
+                        "bridge package restore",
                     )
                 else:
                     _require_success(
@@ -222,24 +222,24 @@ def install_openclaw(
                                 "--force",
                             ]
                         ),
-                        "bridge package rollback",
+                        "bridge package restore",
                     )
-            except Exception as rollback_exc:
-                rollback_errors.append(f"bridge package: {rollback_exc}")
+            except Exception as restore_exc:
+                restore_errors.append(f"bridge package: {restore_exc}")
         try:
             _restore_entry(openclaw, prior_entry, run)
-        except Exception as rollback_exc:
-            rollback_errors.append(f"OpenClaw configuration: {rollback_exc}")
+        except Exception as restore_exc:
+            restore_errors.append(f"OpenClaw configuration: {restore_exc}")
         try:
             _require_success(
                 run([openclaw, "gateway", "restart"]),
-                "OpenClaw gateway restart after rollback",
+                "OpenClaw gateway restart after restore",
             )
-        except Exception as rollback_exc:
-            rollback_errors.append(f"gateway restart: {rollback_exc}")
+        except Exception as restore_exc:
+            restore_errors.append(f"gateway restart: {restore_exc}")
         detail = f"AetnaMem OpenClaw installation failed: {exc}"
-        if rollback_errors:
-            detail += ". Rollback also needs attention: " + "; ".join(rollback_errors)
+        if restore_errors:
+            detail += ". Restore also needs attention: " + "; ".join(restore_errors)
         else:
             detail += ". The prior OpenClaw plugin configuration was restored."
         raise ValueError(detail) from exc
@@ -365,7 +365,7 @@ def _restore_entry(openclaw: str, prior_entry: Any | None, run: Runner) -> None:
                 text in normalized
                 for text in ("not found", "no value", "missing", "unknown config path")
             ):
-                _require_success(result, "OpenClaw configuration rollback")
+                _require_success(result, "OpenClaw configuration restore")
         return
     _set_json(openclaw, _CONFIG_KEY, prior_entry, run)
 

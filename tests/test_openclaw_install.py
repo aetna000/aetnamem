@@ -12,21 +12,21 @@ from aetnamem.openclaw_install import (
 )
 
 
-class FakeTrialManager:
-    instance: "FakeTrialManager | None" = None
+class FakeControlPlaneManager:
+    instance: "FakeControlPlaneManager | None" = None
 
-    def __init__(self, state_path: Path, trial_root: Path) -> None:
+    def __init__(self, state_path: Path, control_root: Path) -> None:
         self.state_path = state_path
-        self.trial_root = trial_root
-        self.mode = "capture"
+        self.control_root = control_root
+        self.mode = "shadow"
         self.transitions: list[tuple[object, str]] = []
 
     @classmethod
     def start(
-        cls, *, host: str, state_path: str | Path, trial_root: str | Path
-    ) -> "FakeTrialManager":
+        cls, *, host: str, state_path: str | Path, control_root: str | Path
+    ) -> "FakeControlPlaneManager":
         assert host == "openclaw"
-        cls.instance = cls(Path(state_path), Path(trial_root))
+        cls.instance = cls(Path(state_path), Path(control_root))
         return cls.instance
 
     def state(self) -> object:
@@ -34,13 +34,13 @@ class FakeTrialManager:
 
     def status(self) -> dict[str, object]:
         return {
-            "trial_id": "trial_test",
-            "trial_dir": str(self.trial_root / "trial_test"),
+            "migration_id": "control_test",
+            "control_dir": str(self.control_root / "control_test"),
             "mode": self.mode,
             "changes_model_context": False,
             "mirror": {
                 "audit_verified": True,
-                "mirror_db": str(self.trial_root / "trial_test" / "openclaw-mirror.db"),
+                "mirror_db": str(self.control_root / "control_test" / "openclaw-mirror.db"),
                 "native_baseline": {
                     "snapshot_sha256": "a" * 64,
                     "file_count": 3,
@@ -64,7 +64,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 0.7.0a6\n", "")
+            return CommandResult(0, "aetnamem 1.0.0a1\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:
@@ -129,7 +129,7 @@ class FakeOpenClaw:
         raise AssertionError(arguments)
 
 
-def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
+def test_installer_owns_bridge_setup_and_starts_shadow_only_migration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     engine = tmp_path / "aetnamem"
@@ -141,15 +141,15 @@ def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
         lambda name: "/fake/openclaw" if name == "openclaw" else None,
     )
     monkeypatch.setattr(
-        "aetnamem.openclaw_install.TrialManager",
-        FakeTrialManager,
+        "aetnamem.openclaw_install.ControlPlaneManager",
+        FakeControlPlaneManager,
     )
 
     def configure(_state, state_path, *, aetnamem_executable):
         assert Path(state_path) == tmp_path / "state.json"
         assert aetnamem_executable == str(engine.resolve())
         assert fake.entry is not None
-        fake.entry.setdefault("config", {})["safeSwitch"] = {  # type: ignore[index]
+        fake.entry.setdefault("config", {})["controlPlane"] = {  # type: ignore[index]
             "enabled": True,
             "statePath": str(state_path),
         }
@@ -157,12 +157,12 @@ def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
         fake.entry["enabled"] = True
         return {"host": "openclaw", "configured": True}
 
-    monkeypatch.setattr("aetnamem.trial.hosts.configure_host", configure)
+    monkeypatch.setattr("aetnamem.control.hosts.configure_host", configure)
 
     progress: list[tuple[int, int, str]] = []
     result = install_openclaw(
         state_path=tmp_path / "state.json",
-        trial_root=tmp_path / "trials",
+        control_root=tmp_path / "migrations",
         runner=fake.run,
         engine_executable=str(engine),
         progress=lambda step, total, label: progress.append((step, total, label)),
@@ -171,7 +171,7 @@ def test_installer_owns_bridge_setup_and_starts_capture_only_trial(
     assert result["installed"] is True
     assert result["plugin_version"] == OPENCLAW_PLUGIN_VERSION
     assert result["gateway_verified"] is True
-    assert result["trial_mode"] == "capture"
+    assert result["control_mode"] == "shadow"
     assert result["changes_model_context"] is False
     assert fake.entry is not None
     assert fake.entry["config"]["command"] == str(engine.resolve())  # type: ignore[index]
@@ -195,8 +195,8 @@ def test_installer_restores_prior_state_when_gateway_verification_fails(
         lambda name: "/fake/openclaw" if name == "openclaw" else None,
     )
     monkeypatch.setattr(
-        "aetnamem.openclaw_install.TrialManager",
-        FakeTrialManager,
+        "aetnamem.openclaw_install.ControlPlaneManager",
+        FakeControlPlaneManager,
     )
 
     def configure(_state, state_path, *, aetnamem_executable):
@@ -204,25 +204,25 @@ def test_installer_restores_prior_state_when_gateway_verification_fails(
             "enabled": True,
             "config": {
                 "command": aetnamem_executable,
-                "safeSwitch": {"enabled": True, "statePath": str(state_path)},
+                "controlPlane": {"enabled": True, "statePath": str(state_path)},
             },
         }
         return {"host": "openclaw", "configured": True}
 
-    monkeypatch.setattr("aetnamem.trial.hosts.configure_host", configure)
+    monkeypatch.setattr("aetnamem.control.hosts.configure_host", configure)
 
     with pytest.raises(ValueError, match="prior OpenClaw plugin configuration was restored"):
         install_openclaw(
             state_path=tmp_path / "state.json",
-            trial_root=tmp_path / "trials",
+            control_root=tmp_path / "migrations",
             runner=fake.run,
             engine_executable=str(engine),
         )
 
     assert fake.plugin_version is None
     assert fake.entry is None
-    assert FakeTrialManager.instance is not None
-    assert FakeTrialManager.instance.mode == "off"
+    assert FakeControlPlaneManager.instance is not None
+    assert FakeControlPlaneManager.instance.mode == "off"
 
 
 def test_installer_restores_previous_bridge_version_and_configuration(
@@ -243,26 +243,26 @@ def test_installer_restores_previous_bridge_version_and_configuration(
         lambda name: "/fake/openclaw" if name == "openclaw" else None,
     )
     monkeypatch.setattr(
-        "aetnamem.openclaw_install.TrialManager",
-        FakeTrialManager,
+        "aetnamem.openclaw_install.ControlPlaneManager",
+        FakeControlPlaneManager,
     )
 
     def configure(_state, state_path, *, aetnamem_executable):
         assert fake.entry is not None
         fake.entry["enabled"] = True
         fake.entry.setdefault("config", {})["command"] = aetnamem_executable  # type: ignore[index]
-        fake.entry["config"]["safeSwitch"] = {  # type: ignore[index]
+        fake.entry["config"]["controlPlane"] = {  # type: ignore[index]
             "enabled": True,
             "statePath": str(state_path),
         }
         return {"host": "openclaw", "configured": True}
 
-    monkeypatch.setattr("aetnamem.trial.hosts.configure_host", configure)
+    monkeypatch.setattr("aetnamem.control.hosts.configure_host", configure)
 
     with pytest.raises(ValueError, match="prior OpenClaw plugin configuration was restored"):
         install_openclaw(
             state_path=tmp_path / "state.json",
-            trial_root=tmp_path / "trials",
+            control_root=tmp_path / "migrations",
             runner=fake.run,
             engine_executable=str(engine),
         )

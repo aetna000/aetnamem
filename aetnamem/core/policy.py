@@ -1,8 +1,7 @@
 """Policy gates: the small set of rules every candidate fact must pass.
 
 These functions are the product. They are deterministic, source-agnostic, and
-unit-tested directly — nothing in here may reference the vocabulary of any
-particular benchmark scenario.
+unit-tested directly and independent of any one host integration.
 """
 
 from __future__ import annotations

@@ -17,8 +17,6 @@ _SCOPES = {
     "episodes",
     "retrievals",
     "events",
-    "runs",
-    "actions",
 }
 _ID_KEYS = {
     "event_id",
@@ -45,8 +43,6 @@ def search_evidence(
     session_id: str | None = None,
     event_type: str | None = None,
     actor: str | None = None,
-    plane: str | None = None,
-    outcome: str | None = None,
     since: str | None = None,
     until: str | None = None,
     limit: int = 100,
@@ -131,22 +127,12 @@ def search_evidence(
                 _item("event", event["event_id"], event, _event_summary(event))
             )
 
-    if "runs" in selected_scopes:
-        results.extend(_runtime_items(memory, subject_id))
-
-    if "actions" in selected_scopes:
-        results.extend(_action_items(memory, subject_id))
-
     eligible: list[dict[str, Any]] = []
     for item in results:
         data = item["data"]
         if session_id and str(data.get("session_id") or "") != session_id:
             continue
         if not _within_time(item.get("created_at"), since_value, until_value):
-            continue
-        if plane and not _contains_value(data, plane, keys={"plane", "planes", "candidate_planes", "admitted_planes"}):
-            continue
-        if outcome and not _matches_outcome(data, outcome):
             continue
         score = _match_score(item, phrase, terms)
         item["score"] = score
@@ -269,9 +255,7 @@ def search_evidence(
             "session_id": session_id,
             "event_type": event_type,
             "actor": actor,
-            "plane": plane,
-            "outcome": outcome,
-            "since": since,
+                "since": since,
             "until": until,
         },
         "audit_chain_valid": memory.store.verify_audit_chain(subject_id),
@@ -552,122 +536,6 @@ def _item(kind: str, item_id: str, data: dict[str, Any], summary: str) -> dict[s
     }
 
 
-def _runtime_items(memory: Memory, subject_id: str) -> list[dict[str, Any]]:
-    conn = memory.store._conn  # Shared read connection; no runtime migrations.
-    if not _table_exists(conn, "runtime_runs"):
-        return []
-    items: list[dict[str, Any]] = []
-    runs = conn.execute(
-        "SELECT * FROM runtime_runs WHERE subject_id = ? ORDER BY created_at", (subject_id,)
-    ).fetchall()
-    for row in runs:
-        run = _decoded_row(row)
-        items.append(
-            _item(
-                "run",
-                run["id"],
-                run,
-                f"runtime run {run['status']} · agent {run.get('agent_id', 'unknown')}",
-            )
-        )
-        run_id = run["id"]
-        for table, kind, summary_field in (
-            ("runtime_contributions", "contribution", "plane"),
-            ("context_manifests", "manifest", "manifest_sha256"),
-            ("runtime_interventions", "intervention", "plane"),
-            ("experience_outcomes", "outcome", "summary"),
-        ):
-            if not _table_exists(conn, table):
-                continue
-            for related in conn.execute(
-                f"SELECT * FROM {table} WHERE run_id = ? ORDER BY created_at", (run_id,)
-            ).fetchall():
-                value = _decoded_row(related)
-                item_id = (
-                    value.get("id")
-                    or value.get("decision_id")
-                    or value.get("manifest_sha256")
-                    or run_id
-                )
-                summary = str(value.get(summary_field) or kind)
-                if kind == "outcome":
-                    summary = (
-                        f"{'success' if bool(value.get('success')) else 'failed'}"
-                        f" · {summary or 'no summary'}"
-                    )
-                elif kind == "contribution":
-                    summary = f"{summary} memory contribution"
-                elif kind == "intervention":
-                    summary = (
-                        f"{summary} memory · "
-                        f"{'included' if bool(value.get('applied')) else 'withheld'}"
-                    )
-                elif kind == "manifest":
-                    summary = f"context manifest {summary[:12]}"
-                items.append(
-                    _item(kind, str(item_id), value, summary)
-                )
-    return items
-
-
-def _action_items(memory: Memory, subject_id: str) -> list[dict[str, Any]]:
-    conn = memory.store._conn
-    if not _table_exists(conn, "action_transactions"):
-        return []
-    items: list[dict[str, Any]] = []
-    transactions = conn.execute(
-        "SELECT * FROM action_transactions WHERE subject_id = ? ORDER BY created_at",
-        (subject_id,),
-    ).fetchall()
-    for row in transactions:
-        transaction = _decoded_row(row)
-        transaction_id = str(transaction["id"])
-        items.append(
-            _item(
-                "action",
-                transaction_id,
-                transaction,
-                f"{transaction.get('mode', 'action')} {transaction.get('state', '')}",
-            )
-        )
-        if not _table_exists(conn, "action_operations"):
-            continue
-        for operation_row in conn.execute(
-            "SELECT * FROM action_operations WHERE transaction_id = ? ORDER BY ordinal",
-            (transaction_id,),
-        ).fetchall():
-            operation = _decoded_row(operation_row)
-            items.append(
-                _item(
-                    "operation",
-                    operation["id"],
-                    operation,
-                    f"{operation.get('adapter', '')}.{operation.get('operation', '')} {operation.get('state', '')}",
-                )
-            )
-    return items
-
-
-def _table_exists(conn: Any, name: str) -> bool:
-    return (
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
-        ).fetchone()
-        is not None
-    )
-
-
-def _decoded_row(row: Any) -> dict[str, Any]:
-    result = dict(row)
-    for key, value in list(result.items()):
-        if isinstance(value, str) and value[:1] in {"{", "["}:
-            try:
-                result[key] = json.loads(value)
-            except json.JSONDecodeError:
-                pass
-    return result
-
-
 def _links(value: Any, *, parent_key: str = "") -> dict[str, str]:
     links: dict[str, str] = {}
     if isinstance(value, dict):
@@ -740,15 +608,6 @@ def _event_summary(event: dict[str, Any]) -> str:
     if event_type == "memory.recall":
         returned = payload.get("returned_ids") or []
         return f"{event_type} · returned {len(returned)}"
-    if event_type == "runtime.prepare_turn":
-        planes = ", ".join(payload.get("admitted_planes") or payload.get("planes") or [])
-        return f"{event_type} · context from {planes or 'no memory planes'}"
-    if event_type == "runtime.record_outcome":
-        return (
-            f"{event_type} · "
-            f"{'success' if bool(payload.get('success')) else 'failed'}"
-            f" · {payload.get('outcome_trust', 'unknown trust')}"
-        )
     if event_type in {"agent.tool_call", "agent.model_call", "agent.response_shown"}:
         name = payload.get("tool") or payload.get("model") or payload.get("status")
         return f"{event_type}{f' · {name}' if name else ''}"
@@ -764,27 +623,6 @@ def _event_summary(event: dict[str, Any]) -> str:
         purged = payload.get("purged_record_ids") or []
         return f"{event_type} · purged {len(purged)} derived records"
     return event_type
-
-
-def _contains_value(data: dict[str, Any], needle: str, *, keys: set[str]) -> bool:
-    wanted = needle.casefold()
-    for key in keys:
-        value = data.get(key)
-        if isinstance(value, list) and any(str(item).casefold() == wanted for item in value):
-            return True
-        if value is not None and str(value).casefold() == wanted:
-            return True
-    return False
-
-
-def _matches_outcome(data: dict[str, Any], outcome: str) -> bool:
-    wanted = outcome.casefold()
-    success = data.get("success")
-    if wanted in {"failed", "failure", "false"}:
-        return success in {False, 0, "false"}
-    if wanted in {"success", "succeeded", "true"}:
-        return success in {True, 1, "true"}
-    return str(data.get("status") or data.get("state") or "").casefold() == wanted
 
 
 def _time_bound(value: str | None, *, end: bool) -> datetime | None:

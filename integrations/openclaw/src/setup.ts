@@ -7,9 +7,6 @@ export interface SetupOptions {
   command: string;
   dbPath: string;
   restart: boolean;
-  orchestrated?: boolean;
-  runtimeConfig?: string;
-  agentId?: string;
 }
 
 interface Invocation {
@@ -64,12 +61,6 @@ export function setupWrites(options: SetupOptions): Array<[string, string, boole
     capture: { enabled: true, captureAssistant: true },
     cacheAware: { enabled: true, compactReferences: true },
     tools: { enabled: true },
-    orchestration: {
-      enabled: options.orchestrated === true,
-      agentId: options.agentId ?? "openclaw-primary",
-      runtimeConfig: options.runtimeConfig ?? "~/.aetnamem/runtime.json",
-      fallback: "legacy",
-    },
   };
   return [
     ["plugins.entries.memory-aetnamem.enabled", "true", true],
@@ -114,11 +105,6 @@ export function setupWrites(options: SetupOptions): Array<[string, string, boole
       JSON.stringify(config.tools),
       true,
     ],
-    [
-      "plugins.entries.memory-aetnamem.config.orchestration",
-      JSON.stringify(config.orchestration),
-      true,
-    ],
   ];
 }
 
@@ -154,7 +140,7 @@ export async function runSetup(
   }
 
   process.stdout.write(
-    `AetnaMem is configured with ${options.orchestrated ? "four-memory orchestration" : "bounded auto-recall"} and capture. ` +
-      "Existing MEMORY.md files were not changed; reduce duplicate native memory only after verifying recall.\n",
+    "AetnaMem bounded recall and capture are configured. " +
+      "Use `aetnamem openclaw install` for verified shadowing and reversible activation.\n",
   );
 }

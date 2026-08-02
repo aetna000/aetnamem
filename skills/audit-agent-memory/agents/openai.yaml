@@ -1,4 +1,0 @@
-interface:
-  display_name: "Audit Agent Memory"
-  short_description: "Trace memory provenance and verify evidence"
-  default_prompt: "Use $audit-agent-memory to explain why this was remembered."

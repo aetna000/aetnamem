@@ -170,7 +170,7 @@ def test_artifact_retains_first_host_reference_for_identical_bytes() -> None:
         "alice",
         _envelope(
             "Second location.",
-            host_reference="hermes://media/receipt-copy",
+            host_reference="host://media/receipt-copy",
         ),
     )
 
@@ -183,7 +183,7 @@ def test_artifact_retains_first_host_reference_for_identical_bytes() -> None:
         and item["record_id"] == second["record"]["id"]
     )
     assert admission["payload"]["host_reference_sha256"] == hashlib.sha256(
-        b"hermes://media/receipt-copy"
+        b"host://media/receipt-copy"
     ).hexdigest()
 
 

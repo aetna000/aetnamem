@@ -13,7 +13,6 @@ from aetnamem.memory import Memory
 DEFAULT_MCP_DB = os.environ.get(
     "AETNAMEM_DB", str(Path.home() / ".aetnamem" / "memories.db")
 )
-DEFAULT_RUNTIME_CONFIG = str(Path.home() / ".aetnamem" / "runtime.json")
 
 
 def _installed_version() -> str:
@@ -32,21 +31,6 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    setup_parser = subparsers.add_parser(
-        "setup", help="Ten-step wizard for four-memory agent setup"
-    )
-    setup_parser.add_argument(
-        "--preset", choices=("starter", "private", "team", "benchmark"), default="starter"
-    )
-    setup_parser.add_argument("--db", default=DEFAULT_MCP_DB)
-    setup_parser.add_argument("--output", default=DEFAULT_RUNTIME_CONFIG)
-    setup_parser.add_argument("--subject", default="you")
-    setup_parser.add_argument("--agent", default="openclaw-primary")
-    setup_parser.add_argument("--skill-path", action="append", default=[])
-    setup_parser.add_argument(
-        "--yes", action="store_true", help="Accept defaults without interactive prompts"
-    )
-
     openclaw_parser = subparsers.add_parser(
         "openclaw",
         help="Install and verify the matching OpenClaw bridge",
@@ -57,17 +41,17 @@ def main() -> None:
     )
     openclaw_install = openclaw_commands.add_parser(
         "install",
-        help="Install the bridge and start a native-memory shadow trial",
+        help="Install the bridge and start a native-memory shadow migration",
     )
     openclaw_install.add_argument(
         "--state",
         default=None,
-        help="Advanced: override the local trial control-file path",
+        help="Advanced: override the local migration control-file path",
     )
     openclaw_install.add_argument(
-        "--trial-root",
+        "--control-root",
         default=None,
-        help="Advanced: override the private trial evidence directory",
+        help="Advanced: override the private migration evidence directory",
     )
     openclaw_install.add_argument(
         "--json",
@@ -296,8 +280,6 @@ def main() -> None:
             "episodes",
             "retrievals",
             "events",
-            "runs",
-            "actions",
         ),
         default="all",
     )
@@ -312,12 +294,6 @@ def main() -> None:
         "--event-type", default=None, help="Exact type or wildcard such as memory.*"
     )
     search_parser.add_argument("--actor", default=None)
-    search_parser.add_argument(
-        "--plane", choices=("working", "semantic", "episodic", "procedural"), default=None
-    )
-    search_parser.add_argument(
-        "--outcome", default=None, help="success, failed, or a stored state/status"
-    )
     search_parser.add_argument("--since", default=None, help="ISO date or timestamp")
     search_parser.add_argument("--until", default=None, help="ISO date or timestamp")
     search_parser.add_argument("--limit", type=int, default=100)
@@ -493,180 +469,48 @@ def main() -> None:
     )
     mcp_parser.add_argument("--retain-query-text", action="store_true")
 
-    runtime_parser = subparsers.add_parser(
-        "runtime", help="Coordinate working, semantic, episodic, and procedural memory"
+    control_parser = subparsers.add_parser(
+        "control", help="Manage shadowing, activation, restoration, and host adapters"
     )
-    runtime_commands = runtime_parser.add_subparsers(
-        dest="runtime_command", required=True
+    control_commands = control_parser.add_subparsers(
+        dest="control_command", required=True
     )
-    runtime_commands.add_parser("presets", help="List ready-made configurations")
-
-    runtime_init = runtime_commands.add_parser(
-        "init", help="Write a ready-made runtime configuration"
+    control_shadow = control_commands.add_parser(
+        "shadow", help="Mirror native memory while OpenClaw remains active"
     )
-    runtime_init.add_argument(
-        "--preset", choices=("starter", "private", "team", "benchmark"), default="starter"
-    )
-    runtime_init.add_argument("--db", default=DEFAULT_MCP_DB)
-    runtime_init.add_argument("--output", default=DEFAULT_RUNTIME_CONFIG)
-    runtime_init.add_argument("--subject", default="you")
-    runtime_init.add_argument("--agent", default="default-agent")
-    runtime_init.add_argument("--skill-path", action="append", default=[])
-
-    for name, help_text in (
-        ("validate", "Validate a runtime configuration"),
-        ("status", "Show runtime health and stored learning counts"),
-        ("mcp", "Serve legacy and four-memory runtime tools over stdio"),
-    ):
-        command_parser = runtime_commands.add_parser(name, help=help_text)
-        command_parser.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
-        if name == "mcp":
-            command_parser.add_argument(
-                "--impact-restricted",
-                action="store_true",
-                help="Expose no memory or outcome tools to the experimental agent",
-            )
-
-    runtime_prepare = runtime_commands.add_parser(
-        "prepare", help="Compile four memory planes for one agent turn"
-    )
-    runtime_prepare.add_argument("query")
-    runtime_prepare.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
-    runtime_prepare.add_argument(
-        "--task-state", default="{}", help="JSON object with goal, constraints, and progress"
-    )
-    runtime_prepare.add_argument("--session", default=None)
-    runtime_prepare.add_argument("--task", default=None)
-    runtime_prepare.add_argument("--turn", default=None)
-
-    runtime_outcome = runtime_commands.add_parser(
-        "outcome", help="Record a caller-asserted outcome for a prepared turn"
-    )
-    runtime_outcome.add_argument("run_id")
-    runtime_outcome.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
-    outcome_result = runtime_outcome.add_mutually_exclusive_group(required=True)
-    outcome_result.add_argument("--success", action="store_true")
-    outcome_result.add_argument("--failure", action="store_true")
-    runtime_outcome.add_argument("--summary", default="")
-    runtime_outcome.add_argument("--result-digest", default=None)
-    runtime_outcome.add_argument("--feedback", default=None)
-    runtime_outcome.add_argument("--idempotency-key", default=None)
-    runtime_outcome.add_argument("--manifest-sha256", default=None)
-    runtime_outcome.add_argument(
-        "--metrics",
-        default="{}",
-        help="JSON object with verifier, token, cost, latency, and safety metrics",
-    )
-
-    runtime_promote = runtime_commands.add_parser(
-        "promote-lesson", help="Activate a reviewed episodic lesson proposal"
-    )
-    runtime_promote.add_argument("lesson_id")
-    runtime_promote.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
-
-    runtime_forget = runtime_commands.add_parser(
-        "forget", help="Purge matching content across all four memory planes"
-    )
-    runtime_forget.add_argument("--config", default=DEFAULT_RUNTIME_CONFIG)
-    runtime_forget_selector = runtime_forget.add_mutually_exclusive_group(required=True)
-    runtime_forget_selector.add_argument("--contains", default=None)
-    runtime_forget_selector.add_argument("--utterance", default=None)
-
-    impact_parser = subparsers.add_parser(
-        "impact", help="Run registered Memory Impact experiments"
-    )
-    impact_commands = impact_parser.add_subparsers(
-        dest="impact_command", required=True
-    )
-    impact_init = impact_commands.add_parser(
-        "init", help="Create a reproducible 16-arm Memory Impact Lab"
-    )
-    impact_init.add_argument("path", nargs="?", default="bench/causal_memory")
-
-    impact_run = impact_commands.add_parser(
-        "run", help="Run a gated synthetic, Grok training, or held-out stage"
-    )
-    impact_run.add_argument("--protocol", required=True)
-    impact_run.add_argument(
-        "--stage",
-        choices=("synthetic", "grok-smoke", "grok-train", "grok-held-out"),
-        default="synthetic",
-    )
-    impact_run.add_argument("--simulations", type=int, default=500)
-    impact_run.add_argument("--blocks", type=int, default=80)
-    impact_run.add_argument(
-        "--max-new-runs",
-        type=int,
-        default=None,
-        help="Stop after this many newly completed model runs",
-    )
-    impact_run.add_argument("--signing-key", default=None)
-    impact_run.add_argument(
-        "--confirm-paid-run",
-        action="store_true",
-        help="Required for stages that invoke the configured model",
-    )
-
-    impact_verify = impact_commands.add_parser(
-        "verify", help="Verify assignments, artifacts, and signed host outcomes"
-    )
-    impact_verify.add_argument("results")
-    impact_verify.add_argument("--public-key", required=True)
-    impact_verify.add_argument(
-        "--seed-file",
-        default=None,
-        help="After experiment close, verify every HMAC assignment token",
-    )
-
-    impact_report = impact_commands.add_parser(
-        "report", help="Build a human-readable Memory Impact HTML report"
-    )
-    impact_report.add_argument("results")
-    impact_report.add_argument("--public-key", required=True)
-    impact_report.add_argument("--output", required=True)
-
-    trial_parser = subparsers.add_parser(
-        "trial", help="Mirror OpenClaw memory, then activate or restore AetnaMem"
-    )
-    trial_commands = trial_parser.add_subparsers(
-        dest="trial_command", required=True
-    )
-    trial_start = trial_commands.add_parser(
-        "start", help="Start the side-by-side mirror; OpenClaw remains active"
-    )
-    trial_start.add_argument(
+    control_shadow.add_argument(
         "--host",
-        choices=("auto", "openclaw", "hermes"),
-        default="auto",
-        help="auto detects exactly one installed supported agent",
+        choices=("openclaw",),
+        default="openclaw",
+        help="Verified host adapter; OpenClaw is supported in this release",
     )
-    trial_start.add_argument(
+    control_shadow.add_argument(
         "--state",
         default=None,
-        help="Advanced: override the local trial control-file path",
+        help="Advanced: override the local migration control-file path",
     )
-    trial_start.add_argument(
-        "--trial-root",
+    control_shadow.add_argument(
+        "--control-root",
         default=None,
-        help="Advanced: override the private trial evidence directory",
+        help="Advanced: override the private migration evidence directory",
     )
-    trial_start.add_argument(
+    control_shadow.add_argument(
         "--no-configure",
         action="store_true",
-        help="Testing only: create trial state without installing the host hook",
+        help="Testing only: create migration state without installing the host hook",
     )
-    trial_start.add_argument(
+    control_shadow.add_argument(
         "--json", action="store_true", help="Print machine-readable JSON"
     )
 
     for name, help_text in (
         ("status", "Show which memory provider is active and whether switching is safe"),
         ("activate", "Make AetnaMem the OpenClaw memory provider"),
-        ("rollback", "Restore OpenClaw memory; preserve AetnaMem evidence"),
+        ("restore", "Restore OpenClaw memory; preserve AetnaMem evidence"),
         ("mcp", "Serve the private host-integration protocol over stdio"),
         ("dashboard", "Open the local memory mirror and switch dashboard"),
     ):
-        command_parser = trial_commands.add_parser(name, help=help_text)
+        command_parser = control_commands.add_parser(name, help=help_text)
         command_parser.add_argument("--state", default=None)
         if name not in {"mcp", "dashboard"}:
             command_parser.add_argument(
@@ -675,131 +519,12 @@ def main() -> None:
         if name == "dashboard":
             command_parser.add_argument("--port", type=int, default=8766)
             command_parser.add_argument("--no-open", action="store_true")
-        if name in {"activate", "rollback"}:
+        if name in {"activate", "restore"}:
             command_parser.add_argument(
                 "--yes", action="store_true", help="Confirm non-interactively"
             )
 
-    actions_parser = subparsers.add_parser(
-        "actions", help="Stage, approve, execute, and verify guarded actions"
-    )
-    action_commands = actions_parser.add_subparsers(
-        dest="action_command", required=True
-    )
-
-    stage_parser = action_commands.add_parser(
-        "stage", help="Create a canonical hash-bound one-operation WorldPatch"
-    )
-    stage_parser.add_argument("path", help="aetnamem SQLite database")
-    stage_parser.add_argument("subject_id")
-    stage_parser.add_argument("adapter", choices=["filesystem"])
-    stage_parser.add_argument("operation", choices=["write_text", "delete_file"])
-    stage_parser.add_argument("--args", required=True, help="Operation arguments JSON")
-    stage_parser.add_argument("--root", required=True, help="Filesystem adapter root")
-    stage_parser.add_argument("--actor", required=True)
-    stage_parser.add_argument(
-        "--mode", choices=["observe", "preview", "enforce"], default="enforce"
-    )
-    stage_parser.add_argument("--authority-id", default=None)
-    stage_parser.add_argument(
-        "--authority-digest",
-        default=None,
-        help="Digest of the host-attested user task; raw task text is not stored",
-    )
-    stage_parser.add_argument(
-        "--evidence",
-        default="[]",
-        help="Additional EvidenceRef objects as a JSON array",
-    )
-    stage_parser.add_argument("--session", default=None)
-    stage_parser.add_argument("--turn", default=None)
-
-    show_parser = action_commands.add_parser("show", help="Show a redacted action plan")
-    show_parser.add_argument("path")
-    show_parser.add_argument("transaction_id")
-
-    action_list_parser = action_commands.add_parser("list", help="List action plans")
-    action_list_parser.add_argument("path")
-    action_list_parser.add_argument("--subject", default=None)
-
-    approve_parser = action_commands.add_parser(
-        "approve", help="Sign and record approval for the exact current plan"
-    )
-    approve_parser.add_argument("path")
-    approve_parser.add_argument("transaction_id")
-    approve_parser.add_argument(
-        "--approver-label",
-        "--approver",
-        dest="approver_label",
-        required=True,
-        help="Attribution label; shared-key possession is the authenticated fact",
-    )
-    approve_parser.add_argument("--ttl", type=int, default=900)
-    approve_parser.add_argument("--approval-key-file", default=None)
-
-    commit_parser = action_commands.add_parser(
-        "commit", help="Revalidate and execute an approved plan"
-    )
-    commit_parser.add_argument("path")
-    commit_parser.add_argument("transaction_id")
-    commit_parser.add_argument("--root", required=True)
-    commit_parser.add_argument("--approval-key-file", default=None)
-
-    abort_parser = action_commands.add_parser("abort", help="Abort a pre-commit plan")
-    abort_parser.add_argument("path")
-    abort_parser.add_argument("transaction_id")
-    abort_parser.add_argument("--actor", default="user")
-
-    recover_parser = action_commands.add_parser(
-        "recover", help="Fence an interrupted external call for operator recovery"
-    )
-    recover_parser.add_argument("path")
-    recover_parser.add_argument("transaction_id")
-    recover_parser.add_argument("--actor", default="operator")
-
-    action_verify_parser = action_commands.add_parser(
-        "verify", help="Verify an action receipt and its audit-chain binding"
-    )
-    action_verify_parser.add_argument("path")
-    action_verify_parser.add_argument("transaction_id")
-    action_verify_parser.add_argument("--approval-key-file", default=None)
-
-    purge_parser = action_commands.add_parser(
-        "purge-payloads", help="Erase raw action arguments, snapshots, and results"
-    )
-    purge_parser.add_argument("path")
-    purge_parser.add_argument("transaction_id")
-    purge_parser.add_argument("--actor", default="user")
-
-    import_journal_parser = action_commands.add_parser(
-        "import-journal",
-        help="Import a compatible journal as digest-only, unverified audit evidence",
-    )
-    import_journal_parser.add_argument("path", help="aetnamem SQLite database")
-    import_journal_parser.add_argument("subject_id")
-    import_journal_parser.add_argument("source_journal")
-    import_journal_parser.add_argument("--source-id", required=True)
-    import_journal_parser.add_argument("--actor", default="journal-importer")
-
     args = parser.parse_args()
-
-    if args.command == "setup":
-        from aetnamem.runtime.wizard import run_setup_wizard
-
-        run_setup_wizard(
-            preset=args.preset,
-            db_path=args.db,
-            output_path=args.output,
-            subject_id=args.subject,
-            agent_id=args.agent,
-            skill_paths=args.skill_path,
-            non_interactive=args.yes,
-        )
-        return
-
-    if args.command == "runtime":
-        _run_runtime(args)
-        return
 
     if args.command == "openclaw":
         _run_openclaw(args)
@@ -809,20 +534,12 @@ def main() -> None:
         _run_dashboard(args)
         return
 
-    if args.command == "impact":
-        _run_impact(args)
-        return
-
-    if args.command == "trial":
-        _run_trial(args)
+    if args.command == "control":
+        _run_control(args)
         return
 
     if args.command == "index":
         _run_index(args)
-        return
-
-    if args.command == "actions":
-        _run_actions(args)
         return
 
     if args.command == "mcp":
@@ -961,8 +678,6 @@ def main() -> None:
                 session_id=args.session,
                 event_type=args.event_type,
                 actor=args.actor,
-                plane=args.plane,
-                outcome=args.outcome,
                 since=args.since,
                 until=args.until,
                 limit=args.limit,
@@ -1096,9 +811,9 @@ def _print(value: object) -> None:
 
 def _run_openclaw(args: argparse.Namespace) -> None:
     if args.openclaw_command == "memory":
-        from aetnamem.trial import TrialManager
-        from aetnamem.trial.manager import DEFAULT_STATE_PATH
-        from aetnamem.trial.openclaw_native import (
+        from aetnamem.control import ControlPlaneManager
+        from aetnamem.control.manager import DEFAULT_STATE_PATH
+        from aetnamem.control.openclaw_native import (
             mirror_status,
             search_mirror,
             sync_mirror,
@@ -1106,7 +821,7 @@ def _run_openclaw(args: argparse.Namespace) -> None:
             trace_mirror,
         )
 
-        manager = TrialManager(args.state or DEFAULT_STATE_PATH)
+        manager = ControlPlaneManager(args.state or DEFAULT_STATE_PATH)
         state = manager.state()
         command = args.openclaw_memory_command
         if command == "sync":
@@ -1132,7 +847,7 @@ def _run_openclaw(args: argparse.Namespace) -> None:
     if args.openclaw_command != "install":
         raise ValueError(f"unknown OpenClaw command: {args.openclaw_command}")
     from aetnamem.openclaw_install import install_openclaw
-    from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
+    from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
 
     try:
         def show_progress(step: int, total: int, label: str) -> None:
@@ -1147,7 +862,7 @@ def _run_openclaw(args: argparse.Namespace) -> None:
 
         result = install_openclaw(
             state_path=args.state or DEFAULT_STATE_PATH,
-            trial_root=args.trial_root or DEFAULT_TRIAL_ROOT,
+            control_root=args.control_root or DEFAULT_CONTROL_ROOT,
             progress=None if args.json else show_progress,
         )
     except ValueError as exc:
@@ -1190,11 +905,11 @@ def _run_openclaw(args: argparse.Namespace) -> None:
         "  Search mirror          "
         + ("PASSED" if result.get("mirror_verified") else "FAILED")
     )
-    print("  Trial mode            shadow capture")
+    print("  Control mode            shadow capture")
     print("  Model context changed no")
     print("  Extra provider calls  no")
-    print(f"  Trial ID              {result['trial_id']}")
-    print(f"  Evidence directory    {result['trial_dir']}")
+    print(f"  Control ID              {result['migration_id']}")
+    print(f"  Evidence directory    {result['control_dir']}")
     print(
         "\nKeep using OpenClaw normally. AetnaMem will collect candidate memories "
         "locally and mirror native memory without changing model context."
@@ -1276,7 +991,7 @@ def _print_openclaw_memory(command: str, result: dict[str, object]) -> None:
         else:
             print(
                 "\nAetnaMem owns supplemental memory recall. The frozen native "
-                "snapshot remains available for verified rollback."
+                "snapshot remains available for verified restore."
             )
         return
     if command == "sync":
@@ -1313,16 +1028,16 @@ def _print_openclaw_memory(command: str, result: dict[str, object]) -> None:
         return
 
 
-def _print_trial(command: str, value: object, *, json_output: bool) -> None:
+def _print_control(command: str, value: object, *, json_output: bool) -> None:
     if json_output:
         _print(value)
         return
     result = value if isinstance(value, dict) else {}
-    if command == "rollback":
+    if command == "restore":
         restored = result.get("host_restore")
         restored = restored if isinstance(restored, dict) else {}
         verified = bool(restored.get("verified"))
-        print("AetnaMem rollback complete")
+        print("AetnaMem restore complete")
         print(f"\n  Host                 {_display_host(result.get('host'))}")
         print(
             "  Host configuration   "
@@ -1332,7 +1047,7 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
         print("  Memory provider      OpenClaw")
         plugin_enabled = restored.get("plugin_enabled")
         if plugin_enabled is True:
-            print("  AetnaMem plugin      enabled (restored pre-trial state)")
+            print("  AetnaMem plugin      enabled (restored pre-migration state)")
         elif plugin_enabled is False:
             print("  AetnaMem plugin      disabled")
         else:
@@ -1350,29 +1065,29 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
         if exported_count:
             print(f"  Active memories      returned to OpenClaw ({exported_count})")
             print(f"  Native export        {active_export.get('path')}")
-        print("  Trial evidence       preserved")
-        if result.get("trial_id"):
-            print(f"  Trial ID             {result['trial_id']}")
-        if result.get("trial_dir"):
-            print(f"  Evidence directory   {result['trial_dir']}")
+        print("  Control evidence       preserved")
+        if result.get("migration_id"):
+            print(f"  Control ID             {result['migration_id']}")
+        if result.get("control_dir"):
+            print(f"  Evidence directory   {result['control_dir']}")
         print("\nYour original host configuration has been restored.")
         if plugin_enabled is True:
             print(
                 "AetnaMem itself is still enabled because it was enabled before "
-                "this Safe Switch trial."
+                "this control-plane migration."
             )
         else:
             print("AetnaMem is not enabled in the restored host configuration.")
         print("Past agent outputs and provider logs are unchanged.")
         return
     titles = {
-        "start": "AetnaMem mirror started",
+        "shadow": "AetnaMem shadowing started",
         "status": "OpenClaw memory status",
         "activate": "AetnaMem is active",
     }
-    print(titles.get(command, "AetnaMem Safe Switch"))
-    _print_trial_status_rows(result)
-    if command == "start":
+    print(titles.get(command, "AetnaMem memory control plane"))
+    _print_control_status_rows(result)
+    if command == "shadow":
         integration = result.get("integration")
         integration = integration if isinstance(integration, dict) else {}
         print(
@@ -1392,12 +1107,12 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
             )
         elif result.get("mode") == "off":
             print(
-                "\nNext: start a new trial with "
-                "`aetnamem trial start --host openclaw`."
+                "\nNext: start a new migration with "
+                "`aetnamem control shadow --host openclaw`."
             )
         elif result.get("mode") == "active":
             print(
-                "\nAetnaMem is active. Use `aetnamem trial rollback` "
+                "\nAetnaMem is active. Use `aetnamem control restore` "
                 "to restore OpenClaw memory."
             )
         elif isinstance(reasons, list) and reasons:
@@ -1407,11 +1122,11 @@ def _print_trial(command: str, value: object, *, json_output: bool) -> None:
     elif command == "activate":
         print(
             "\nAetnaMem now supplies bounded, governed memory context. "
-            "Use `aetnamem trial rollback` to restore the saved host configuration."
+            "Use `aetnamem control restore` to restore the saved host configuration."
         )
 
 
-def _print_trial_status_rows(result: dict[str, object]) -> None:
+def _print_control_status_rows(result: dict[str, object]) -> None:
     mode = str(result.get("mode") or "unknown")
     evidence = result.get("evidence")
     evidence = evidence if isinstance(evidence, dict) else {}
@@ -1442,13 +1157,13 @@ def _print_trial_status_rows(result: dict[str, object]) -> None:
             "  Audit chain           "
             + ("valid" if chain.get("valid") else "CHECK REQUIRED")
         )
-    if result.get("trial_id"):
-        print(f"  Trial ID              {result['trial_id']}")
+    if result.get("migration_id"):
+        print(f"  Control ID              {result['migration_id']}")
 
 
 def _display_host(value: object) -> str:
     text = str(value or "unknown")
-    return {"openclaw": "OpenClaw", "hermes": "Hermes"}.get(text, text)
+    return {"openclaw": "OpenClaw"}.get(text, text)
 
 
 def _add_report_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1598,480 +1313,6 @@ def _emit_report(value: object, text: str, args: argparse.Namespace) -> None:
     output_path.write_text(rendered, encoding="utf-8")
 
 
-def _run_runtime(args: argparse.Namespace) -> None:
-    from aetnamem.runtime import (
-        MemoryRuntime,
-        list_presets,
-        load_config,
-        preset_config,
-    )
-
-    if args.runtime_command == "presets":
-        _print(list_presets())
-        return
-    if args.runtime_command == "init":
-        config = preset_config(
-            args.preset,
-            db_path=str(Path(args.db).expanduser()),
-            subject_id=args.subject,
-            agent_id=args.agent,
-            skill_paths=args.skill_path,
-        )
-        output = Path(args.output).expanduser()
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
-            json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        _print({"created": str(output), "preset": args.preset, "config": config})
-        return
-    if args.runtime_command == "validate":
-        config = load_config(args.config)
-        _print(
-            {
-                "valid": True,
-                "format": config["format"],
-                "preset": config.get("preset", "custom"),
-                "planes": sorted(config["planes"]),
-            }
-        )
-        return
-
-    runtime = MemoryRuntime(args.config)
-    try:
-        if args.runtime_command == "status":
-            _print(runtime.status())
-            return
-        if args.runtime_command == "prepare":
-            task_state = json.loads(args.task_state)
-            if not isinstance(task_state, dict):
-                raise ValueError("--task-state must be a JSON object")
-            scope = runtime.default_scope.to_dict()
-            scope.update(
-                {
-                    key: value
-                    for key, value in {
-                        "session_id": args.session,
-                        "task_id": args.task,
-                        "turn_id": args.turn,
-                    }.items()
-                    if value is not None
-                }
-            )
-            _print(runtime.prepare_turn(args.query, task_state=task_state, scope=scope))
-            return
-        if args.runtime_command == "outcome":
-            metrics = json.loads(args.metrics)
-            if not isinstance(metrics, dict):
-                raise ValueError("--metrics must be a JSON object")
-            _print(
-                runtime.record_outcome(
-                    args.run_id,
-                    success=bool(args.success),
-                    summary=args.summary,
-                    result_digest=args.result_digest,
-                    feedback=args.feedback,
-                    idempotency_key=args.idempotency_key,
-                    manifest_sha256=args.manifest_sha256,
-                    metrics=metrics,
-                )
-            )
-            return
-        if args.runtime_command == "promote-lesson":
-            _print(runtime.promote_lesson(args.lesson_id))
-            return
-        if args.runtime_command == "forget":
-            _print(runtime.forget(contains=args.contains, utterance=args.utterance))
-            return
-        if args.runtime_command == "mcp":
-            from aetnamem.mcp import MCPServer
-
-            MCPServer(
-                runtime.memory,
-                default_subject=runtime.default_scope.subject_id,
-                runtime=runtime,
-                tool_profile=(
-                    "impact-restricted"
-                    if args.impact_restricted
-                    else "full"
-                ),
-            ).serve()
-            return
-        raise ValueError(f"unknown runtime command: {args.runtime_command}")
-    finally:
-        runtime.close()
-
-
-def _run_impact(args: argparse.Namespace) -> None:
-    from aetnamem.impact.allocation import BalancedFactorialAllocator
-    from aetnamem.impact.controller import ImpactController, run_paid_smoke_check
-    from aetnamem.impact.lab import init_lab, load_signer
-    from aetnamem.impact.metrology import inspect_cli, write_metrology
-    from aetnamem.impact.policy import (
-        evaluate_held_out,
-        freeze_policy,
-        write_policy,
-    )
-    from aetnamem.impact.protocol import load_protocol
-    from aetnamem.impact.report import write_report
-    from aetnamem.impact.synthetic import run_calibration, write_calibration
-    from aetnamem.impact.tasks import load_task
-    from aetnamem.impact.verify import (
-        load_result_rows,
-        verify_experiment,
-    )
-
-    if args.impact_command == "init":
-        _print(init_lab(args.path))
-        return
-    if args.impact_command == "verify":
-        revealed_seed = (
-            Path(args.seed_file).read_text(encoding="utf-8").strip()
-            if args.seed_file
-            else None
-        )
-        result = verify_experiment(
-            args.results,
-            public_key_path=args.public_key,
-            revealed_seed=revealed_seed,
-        )
-        _print(result)
-        if not result["valid"]:
-            raise SystemExit(1)
-        return
-    if args.impact_command == "report":
-        verification = verify_experiment(
-            args.results, public_key_path=args.public_key
-        )
-        rows = load_result_rows(args.results)
-        calibration_path = Path(args.results) / "synthetic-calibration.json"
-        calibration = (
-            json.loads(calibration_path.read_text(encoding="utf-8"))
-            if calibration_path.is_file()
-            else None
-        )
-        write_report(args.output, rows, verification, calibration)
-        _print(
-            {
-                "created": str(Path(args.output).resolve()),
-                "runs": len(rows),
-                "verified": verification["valid"],
-            }
-        )
-        return
-    if args.impact_command != "run":
-        raise ValueError(f"unknown impact command: {args.impact_command}")
-
-    protocol_path = Path(args.protocol).resolve()
-    protocol = load_protocol(protocol_path)
-    results = (protocol_path.parent / protocol.results_dir).resolve()
-    results.mkdir(parents=True, exist_ok=True)
-    if args.stage == "synthetic":
-        result = run_calibration(
-            simulations=args.simulations,
-            blocks=args.blocks,
-        )
-        output = results / "synthetic-calibration.json"
-        write_calibration(output, result)
-        _print({**result, "output": str(output)})
-        if not result["passed"]:
-            raise SystemExit(1)
-        return
-    if not args.confirm_paid_run:
-        raise ValueError(
-            "Grok stages may incur provider cost; rerun with --confirm-paid-run"
-        )
-    if args.max_new_runs is not None and args.max_new_runs <= 0:
-        raise ValueError("--max-new-runs must be positive")
-    smoke_path = results / "paid-smoke.json"
-    if args.stage == "grok-smoke":
-        smoke = run_paid_smoke_check(protocol, output_path=smoke_path)
-        _print(smoke)
-        if not smoke["passed"]:
-            raise SystemExit(1)
-        return
-    if not smoke_path.is_file():
-        raise ValueError(
-            "paid Grok smoke gate has not passed; run stage grok-smoke first"
-        )
-    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
-    if (
-        not smoke.get("passed")
-        or smoke.get("protocol_sha256") != protocol.digest
-    ):
-        raise ValueError("paid Grok smoke gate is invalid for this protocol")
-
-    tasks = [
-        load_task(protocol_path.parent / relative)
-        for relative in protocol.task_files
-    ]
-    registered_tasks = results / "registered-tasks"
-    registered_tasks.mkdir(exist_ok=True)
-    for task in tasks:
-        destination = registered_tasks / f"{task.task_id}.json"
-        serialized = json.dumps(task.raw, indent=2, sort_keys=True) + "\n"
-        if destination.exists() and destination.read_text(encoding="utf-8") != serialized:
-            raise ValueError(f"registered task changed after scheduling: {task.task_id}")
-        destination.write_text(serialized, encoding="utf-8")
-    allocator = BalancedFactorialAllocator(
-        experiment_id=protocol.experiment_id,
-        seed=str(protocol.raw["randomization"]["seed"]),
-    )
-    assignments = allocator.schedule(
-        [task.task_id for task in tasks], repetitions=protocol.repetitions
-    )
-    signing_key = Path(
-        args.signing_key or protocol_path.parent / ".impact-host-key.pem"
-    ).resolve()
-    signer = load_signer(signing_key, key_id="memory-impact-host")
-    assignments_path = results / "assignments.json"
-    registration_path = results / "registration.json"
-    serialized_assignments = [item.to_dict() for item in assignments]
-    if assignments_path.exists():
-        if json.loads(assignments_path.read_text(encoding="utf-8")) != serialized_assignments:
-            raise ValueError("existing assignment schedule differs from protocol")
-    else:
-        assignments_path.write_text(
-            json.dumps(serialized_assignments, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    schedule_sha256 = assignments[0].schedule_sha256
-    registration = {
-        **protocol.public_registration(),
-        "schedule_sha256": schedule_sha256,
-        "signing_key_id": signer.key_id,
-    }
-    if registration_path.exists():
-        if json.loads(registration_path.read_text(encoding="utf-8")) != registration:
-            raise ValueError("existing experiment registration differs from protocol")
-    else:
-        registration_path.write_text(
-            json.dumps(registration, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    metrology = inspect_cli(
-        str(protocol.raw["model"]["command"]),
-        model=str(protocol.raw["model"]["name"]),
-        arguments=[
-            *[str(value) for value in protocol.raw["model"]["arguments"]],
-            "--max-turns",
-            "--session-id",
-            "--single",
-        ],
-        cwd=protocol_path.parent,
-    )
-    write_metrology(results / "metrology.json", metrology)
-    if not metrology["available"]:
-        raise ValueError("configured Grok CLI is not available")
-    if not metrology["model_advertised"]:
-        raise ValueError(
-            "configured model is not advertised by the authenticated Grok CLI"
-        )
-    missing_controls = [
-        name for name, present in metrology["controls"].items() if not present
-    ]
-    if missing_controls:
-        raise ValueError(
-            "Grok CLI does not advertise registered isolation controls: "
-            + ", ".join(missing_controls)
-        )
-
-    rows = load_result_rows(results)
-    if args.stage == "grok-held-out":
-        if any(row.get("task_split") == "held-out" for row in rows):
-            raise ValueError("held-out outcomes already exist; refusing to refit policy")
-        policy = freeze_policy(
-            rows,
-            max_mean_context_chars=float(
-                protocol.raw["budgets"]["max_context_chars"]
-            ),
-        )
-        write_policy(results / "frozen-policy.json", policy)
-        selected_split = "held-out"
-    else:
-        policy = None
-        selected_split = None
-
-    controller = ImpactController(
-        protocol,
-        output_root=results,
-        signer=signer,
-        signature_verifier=signer.verifier(),
-        metrology=metrology,
-    )
-    tasks_by_id = {task.task_id: task for task in tasks}
-    selected_tasks = {
-        task.task_id
-        for task in tasks
-        if (
-            task.split == "held-out"
-            if selected_split == "held-out"
-            else task.split in {"train", "validation"}
-        )
-    }
-    completed = {row["run_id"] for row in rows}
-    created = 0
-    for assignment in assignments:
-        if args.max_new_runs is not None and created >= args.max_new_runs:
-            break
-        if assignment.task_id not in selected_tasks or assignment.run_id in completed:
-            continue
-        controller.run_assignment(tasks_by_id[assignment.task_id], assignment)
-        created += 1
-    response: dict[str, Any] = {
-        "stage": args.stage,
-        "created_runs": created,
-        "results": str(results),
-        "schedule_sha256": schedule_sha256,
-        "max_new_runs": args.max_new_runs,
-    }
-    if policy is not None:
-        final_rows = load_result_rows(results)
-        held_out = evaluate_held_out(final_rows, policy)
-        (results / "held-out-evaluation.json").write_text(
-            json.dumps(held_out, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        response["held_out"] = held_out
-    _print(response)
-
-
-def _run_actions(args: argparse.Namespace) -> None:
-    from aetnamem.actions import (
-        ActionEngine,
-        ApprovalAuthority,
-        EvidenceRef,
-        FilesystemAdapter,
-        OperationProposal,
-        TransactionJournalImporter,
-        verify_action,
-    )
-
-    memory = Memory(args.path)
-    try:
-        if args.action_command == "stage":
-            evidence = [EvidenceRef(**item) for item in json.loads(args.evidence)]
-            if bool(args.authority_id) != bool(args.authority_digest):
-                raise ValueError(
-                    "--authority-id and --authority-digest must be supplied together"
-                )
-            if args.authority_id:
-                evidence.append(
-                    EvidenceRef(
-                        kind="user_task",
-                        ref_id=args.authority_id,
-                        digest=args.authority_digest,
-                        relation="authorized_by",
-                        trust_tier="trusted_user",
-                        attested=True,
-                    )
-                )
-            engine = ActionEngine(
-                memory,
-                adapters=[FilesystemAdapter(args.root)],
-                mode=args.mode,
-            )
-            patch = engine.propose(
-                args.subject_id,
-                [
-                    OperationProposal(
-                        key="operation-1",
-                        adapter=args.adapter,
-                        operation=args.operation,
-                        arguments=json.loads(args.args),
-                        evidence=tuple(evidence),
-                    )
-                ],
-                actor_id=args.actor,
-                session_id=args.session,
-                turn_id=args.turn,
-            )
-            _print(patch.to_dict())
-            return
-
-        if args.action_command == "show":
-            _print(ActionEngine(memory).get(args.transaction_id))
-            return
-        if args.action_command == "list":
-            _print(ActionEngine(memory).list(args.subject))
-            return
-        if args.action_command == "approve":
-            authority = ApprovalAuthority(_approval_secret(args.approval_key_file))
-            engine = ActionEngine(memory, approval_authority=authority)
-            transaction = engine.get(args.transaction_id)
-            approval = authority.issue(
-                transaction_id=args.transaction_id,
-                plan_hash=transaction["plan_hash"],
-                approver=args.approver_label,
-                ttl_seconds=args.ttl,
-            )
-            _print(engine.approve(approval))
-            return
-        if args.action_command == "commit":
-            authority = ApprovalAuthority(_approval_secret(args.approval_key_file))
-            engine = ActionEngine(
-                memory,
-                adapters=[FilesystemAdapter(args.root)],
-                approval_authority=authority,
-            )
-            _print(engine.commit(args.transaction_id))
-            return
-        if args.action_command == "abort":
-            _print(ActionEngine(memory).abort(args.transaction_id, actor=args.actor))
-            return
-        if args.action_command == "recover":
-            _print(ActionEngine(memory).recover(args.transaction_id, actor=args.actor))
-            return
-        if args.action_command == "verify":
-            secret = _approval_secret(args.approval_key_file, required=False)
-            authority = ApprovalAuthority(secret) if secret is not None else None
-            result = verify_action(
-                memory.store,
-                args.transaction_id,
-                approval_authority=authority,
-            )
-            _print(result)
-            if not result["valid"]:
-                raise SystemExit(1)
-            return
-        if args.action_command == "purge-payloads":
-            _print(
-                ActionEngine(memory).purge_payloads(
-                    args.transaction_id, actor=args.actor
-                )
-            )
-            return
-        if args.action_command == "import-journal":
-            _print(
-                TransactionJournalImporter(memory).import_journal(
-                    args.source_journal,
-                    subject_id=args.subject_id,
-                    source_id=args.source_id,
-                    actor=args.actor,
-                )
-            )
-            return
-        raise ValueError(f"unknown actions command: {args.action_command}")
-    finally:
-        memory.close()
-
-
-def _approval_secret(
-    key_file: str | None, *, required: bool = True
-) -> str | None:
-    if key_file:
-        value = Path(key_file).read_text(encoding="utf-8").strip()
-    else:
-        value = os.environ.get("AETNAMEM_APPROVAL_KEY", "").strip()
-    if not value:
-        if required:
-            raise ValueError(
-                "set AETNAMEM_APPROVAL_KEY or pass --approval-key-file; "
-                "keep this key outside the agent-facing process"
-            )
-        return None
-    return value
-
-
 def _run_dashboard(args: argparse.Namespace) -> None:
     if args.dashboard_command == "daemon":
         from aetnamem.dashboard_daemon import manage_dashboard_daemon
@@ -2079,7 +1320,7 @@ def _run_dashboard(args: argparse.Namespace) -> None:
         result = manage_dashboard_daemon(
             args.dashboard_daemon_command,
             port=args.port,
-            trial_state_path=args.state,
+            control_state_path=args.state,
         )
         if args.json:
             _print(result)
@@ -2102,7 +1343,7 @@ def _run_dashboard(args: argparse.Namespace) -> None:
         if result.get("opened"):
             print("\nOpened the dashboard in the default browser.")
         if result.get("removed"):
-            print("\nThe background service record was removed. Memory and trial data were preserved.")
+            print("\nThe background service record was removed. Memory and migration data were preserved.")
         return
     _serve_dashboard(
         state_path=args.state,
@@ -2119,14 +1360,14 @@ def _serve_dashboard(
 ) -> None:
     import webbrowser
 
-    from aetnamem.trial import TrialManager
-    from aetnamem.trial.manager import DEFAULT_STATE_PATH
-    from aetnamem.trial.web import TrialDashboardServer, dashboard_html
+    from aetnamem.control import ControlPlaneManager
+    from aetnamem.control.manager import DEFAULT_STATE_PATH
+    from aetnamem.control.web import ControlDashboardServer, dashboard_html
 
-    manager = TrialManager(state_path or DEFAULT_STATE_PATH)
-    # Fail before opening a port if no valid trial exists.
+    manager = ControlPlaneManager(state_path or DEFAULT_STATE_PATH)
+    # Fail before opening a port if no valid migration exists.
     manager.state()
-    server = TrialDashboardServer(
+    server = ControlDashboardServer(
         ("127.0.0.1", port),
         manager,
         html=dashboard_html(),
@@ -2147,18 +1388,18 @@ def _serve_dashboard(
         server.server_close()
 
 
-def _run_trial(args: argparse.Namespace) -> None:
-    from aetnamem.trial import TrialManager, TrialMode
-    from aetnamem.trial.manager import DEFAULT_STATE_PATH, DEFAULT_TRIAL_ROOT
-    from aetnamem.trial.server import TrialMCPServer
+def _run_control(args: argparse.Namespace) -> None:
+    from aetnamem.control import ControlPlaneManager, ControlMode
+    from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
+    from aetnamem.control.server import ControlMCPServer
 
     state_path = args.state or str(DEFAULT_STATE_PATH)
-    if args.trial_command == "start":
-        host = _detect_trial_host() if args.host == "auto" else args.host
-        manager = TrialManager.start(
+    if args.control_command == "shadow":
+        host = args.host
+        manager = ControlPlaneManager.start(
             host=host,
             state_path=state_path,
-            trial_root=args.trial_root or str(DEFAULT_TRIAL_ROOT),
+            control_root=args.control_root or str(DEFAULT_CONTROL_ROOT),
         )
         integration: dict[str, object]
         if args.no_configure:
@@ -2167,12 +1408,12 @@ def _run_trial(args: argparse.Namespace) -> None:
                 "warning": "host hook was not configured; no live turns will be observed",
             }
         else:
-            from aetnamem.trial.hosts import configure_host
+            from aetnamem.control.hosts import configure_host
 
             try:
                 integration = configure_host(manager.state(), state_path)
             except Exception:
-                manager.transition(TrialMode.OFF, actor="setup-failure")
+                manager.transition(ControlMode.OFF, actor="setup-failure")
                 raise
         status = manager.status()
         status["integration"] = integration
@@ -2180,22 +1421,22 @@ def _run_trial(args: argparse.Namespace) -> None:
             "Keep using your agent normally. Native memory is mirrored and "
             "searchable, but model context is unchanged."
             if integration.get("configured")
-            else "Configure the host hook before expecting live trial evidence."
+            else "Configure the host hook before expecting live migration evidence."
         )
-        _print_trial("start", status, json_output=args.json)
+        _print_control("shadow", status, json_output=args.json)
         return
 
-    manager = TrialManager(state_path)
-    if args.trial_command == "status":
-        _print_trial("status", manager.status(), json_output=args.json)
-    elif args.trial_command == "activate":
-        _confirm_trial_host(manager, non_interactive=args.yes)
+    manager = ControlPlaneManager(state_path)
+    if args.control_command == "status":
+        _print_control("status", manager.status(), json_output=args.json)
+    elif args.control_command == "activate":
+        _confirm_control_host(manager, non_interactive=args.yes)
         readiness = manager.status().get("readiness") or {}
         if not readiness.get("ready_for_active"):
-            raise ValueError("; ".join(readiness.get("reasons") or ["trial is not ready"]))
+            raise ValueError("; ".join(readiness.get("reasons") or ["migration is not ready"]))
         state = manager.state()
         if state.host == "openclaw":
-            from aetnamem.trial.openclaw_native import (
+            from aetnamem.control.openclaw_native import (
                 activate_takeover,
                 restore_takeover,
             )
@@ -2218,12 +1459,12 @@ def _run_trial(args: argparse.Namespace) -> None:
                 progress=activation_progress,
             )
             try:
-                state = manager.transition(TrialMode.ACTIVE)
+                state = manager.transition(ControlMode.ACTIVE)
             except Exception:
                 restore_takeover(state)
                 raise
         else:
-            state = manager.transition(TrialMode.ACTIVE)
+            state = manager.transition(ControlMode.ACTIVE)
             takeover = {
                 "activated": True,
                 "host": state.host,
@@ -2232,21 +1473,21 @@ def _run_trial(args: argparse.Namespace) -> None:
         result = state.public_status()
         result["takeover"] = takeover
         result["mirror"] = manager.status().get("mirror")
-        _print_trial(
+        _print_control(
             "activate",
             result,
             json_output=args.json,
         )
-    elif args.trial_command == "rollback":
-        from aetnamem.trial.hosts import restore_host
-        from aetnamem.trial.openclaw_native import (
+    elif args.control_command == "restore":
+        from aetnamem.control.hosts import restore_host
+        from aetnamem.control.openclaw_native import (
             restart_and_verify_gateway,
             restore_takeover,
         )
 
-        _confirm_trial_host(manager, non_interactive=args.yes)
+        _confirm_control_host(manager, non_interactive=args.yes)
         state = manager.state()
-        def rollback_progress(step: int, total: int, label: str) -> None:
+        def restore_progress(step: int, total: int, label: str) -> None:
             if args.json:
                 return
             width = 20
@@ -2260,10 +1501,10 @@ def _run_trial(args: argparse.Namespace) -> None:
 
         takeover_restore = restore_takeover(
             state,
-            progress=rollback_progress,
+            progress=restore_progress,
         )
-        if state.mode is not TrialMode.OFF:
-            state = manager.transition(TrialMode.OFF, actor="rollback")
+        if state.mode is not ControlMode.OFF:
+            state = manager.transition(ControlMode.OFF, actor="restore")
         restored = restore_host(state)
         gateway = (
             restart_and_verify_gateway()
@@ -2277,51 +1518,25 @@ def _run_trial(args: argparse.Namespace) -> None:
         )
         result = state.public_status()
         result["host_restore"] = restored
-        result["rollback_boundary"] = (
+        result["restore_boundary"] = (
             "The saved host plugin configuration was restored and future "
-            "AetnaMem injection is off. Trial evidence is preserved. Past "
+            "AetnaMem injection is off. Control evidence is preserved. Past "
             "agent outputs and provider logs are not undone."
         )
-        _print_trial("rollback", result, json_output=args.json)
-    elif args.trial_command == "capture-test":
-        _print_trial(
-            "capture-test",
-            manager.capture(
-                args.message,
-                session_id=args.session,
-                authenticated_user=True,
-            ),
-            json_output=args.json,
-        )
-    elif args.trial_command == "mcp":
-        TrialMCPServer(manager).serve()
-    elif args.trial_command == "dashboard":
+        _print_control("restore", result, json_output=args.json)
+    elif args.control_command == "mcp":
+        ControlMCPServer(manager).serve()
+    elif args.control_command == "dashboard":
         _serve_dashboard(
             state_path=state_path,
             port=args.port,
             open_browser=not args.no_open,
         )
     else:  # pragma: no cover - argparse prevents this
-        raise ValueError(f"unknown trial command: {args.trial_command}")
+        raise ValueError(f"unknown control command: {args.control_command}")
 
 
-def _detect_trial_host() -> str:
-    detected = [
-        name for name in ("openclaw", "hermes") if shutil.which(name) is not None
-    ]
-    if len(detected) == 1:
-        return detected[0]
-    if not detected:
-        raise ValueError(
-            "--host auto found neither openclaw nor hermes on PATH; "
-            "pass --host openclaw or --host hermes"
-        )
-    raise ValueError(
-        "--host auto found both openclaw and hermes; choose one explicitly"
-    )
-
-
-def _confirm_trial_host(
+def _confirm_control_host(
     manager: object, *, non_interactive: bool
 ) -> None:
     state = manager.state()  # type: ignore[attr-defined]

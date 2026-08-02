@@ -21,7 +21,7 @@ def manage_dashboard_daemon(
     action: str,
     *,
     port: int = 8766,
-    trial_state_path: str | Path | None = None,
+    control_state_path: str | Path | None = None,
     daemon_state_path: str | Path = DEFAULT_DAEMON_STATE,
 ) -> dict[str, Any]:
     state_path = Path(daemon_state_path).expanduser().resolve(strict=False)
@@ -49,7 +49,7 @@ def manage_dashboard_daemon(
         return _start(
             state_path,
             port=port,
-            trial_state_path=trial_state_path,
+            control_state_path=control_state_path,
         )
     if action == "stop":
         return _stop(state_path)
@@ -57,13 +57,13 @@ def manage_dashboard_daemon(
         prior = _read(state_path)
         selected_port = int(prior.get("port") or port) if prior else port
         selected_state = (
-            prior.get("trial_state_path") if prior else trial_state_path
+            prior.get("control_state_path") if prior else control_state_path
         )
         _stop(state_path)
         return _start(
             state_path,
             port=selected_port,
-            trial_state_path=selected_state,
+            control_state_path=selected_state,
         )
     if action == "remove":
         stopped = _stop(state_path)
@@ -86,7 +86,7 @@ def _start(
     state_path: Path,
     *,
     port: int,
-    trial_state_path: str | Path | None,
+    control_state_path: str | Path | None,
 ) -> dict[str, Any]:
     if not 1 <= int(port) <= 65535:
         raise ValueError("dashboard port must be between 1 and 65535")
@@ -117,8 +117,8 @@ def _start(
         "--port",
         str(port),
     ]
-    if trial_state_path is not None:
-        command.extend(["--state", str(Path(trial_state_path).expanduser())])
+    if control_state_path is not None:
+        command.extend(["--state", str(Path(control_state_path).expanduser())])
     with log_path.open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
             command,
@@ -134,9 +134,9 @@ def _start(
         "pid": process.pid,
         "port": int(port),
         "url": f"http://127.0.0.1:{int(port)}/",
-        "trial_state_path": (
-            str(Path(trial_state_path).expanduser().resolve(strict=False))
-            if trial_state_path is not None
+        "control_state_path": (
+            str(Path(control_state_path).expanduser().resolve(strict=False))
+            if control_state_path is not None
             else None
         ),
         "log_path": str(log_path),

@@ -1,9 +1,10 @@
 """Deterministic rules extractor.
 
-v0 extraction is intentionally pattern-based, not model-based, so benchmark
-failures are debuggable. The patterns are generic sentence shapes ("my X is
+Direct engine ingestion uses a deterministic, pattern-based fallback. The
+OpenClaw control adapter uses the host model's semantic interpretation. These
+fallback patterns are generic sentence shapes ("my X is
 Y", "use Y as my X", "remember that ...", "I avoid X") — they must never
-encode the vocabulary of a specific benchmark scenario.
+encode application-specific vocabulary.
 
 Every candidate carries a `fact_key`: the normalized fact slot ("preferred
 airport", "backup email", "favorite color") that the supersession gate keys
