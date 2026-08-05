@@ -29,6 +29,17 @@ class FakeControlPlaneManager:
         cls.instance = cls(Path(state_path), Path(control_root))
         return cls.instance
 
+    @classmethod
+    def start_or_resume_shadow(
+        cls, *, host: str, state_path: str | Path, control_root: str | Path
+    ) -> tuple["FakeControlPlaneManager", bool]:
+        assert host == "openclaw"
+        path = Path(state_path)
+        if cls.instance is not None and cls.instance.state_path == path:
+            return cls.instance, True
+        cls.instance = cls(path, Path(control_root))
+        return cls.instance, False
+
     def state(self) -> object:
         return object()
 
@@ -64,7 +75,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 1.0.0a5\n", "")
+            return CommandResult(0, "aetnamem 1.0.0a6\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:
@@ -191,6 +202,63 @@ def test_installer_owns_bridge_setup_and_starts_shadow_only_migration(
     assert all(total == 8 for _step, total, _label in progress)
     assert "memory" in progress[4][2].casefold()
     assert "mirror" in progress[-1][2].casefold()
+
+
+def test_installer_reuses_existing_shadow_without_replacing_restore_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = tmp_path / "aetnamem"
+    engine.write_text("#!/bin/sh\n", encoding="utf-8")
+    engine.chmod(0o755)
+    fake = FakeOpenClaw()
+    monkeypatch.setattr(
+        "aetnamem.openclaw_install.shutil.which",
+        lambda name: "/fake/openclaw" if name == "openclaw" else None,
+    )
+    monkeypatch.setattr(
+        "aetnamem.openclaw_install.ControlPlaneManager",
+        FakeControlPlaneManager,
+    )
+    snapshot_modes: list[bool] = []
+
+    def configure(
+        _state, state_path, *, aetnamem_executable, record_snapshot=True
+    ):
+        snapshot_modes.append(record_snapshot)
+        fake.entry = fake.entry or {"enabled": True, "config": {}}
+        config = fake.entry.setdefault("config", {})
+        config["command"] = aetnamem_executable  # type: ignore[index]
+        config["controlPlane"] = {  # type: ignore[index]
+            "enabled": True,
+            "statePath": str(state_path),
+        }
+        return {
+            "host": "openclaw",
+            "configured": True,
+            "original_snapshot_preserved": not record_snapshot,
+        }
+
+    monkeypatch.setattr("aetnamem.control.hosts.configure_host", configure)
+    first = install_openclaw(
+        state_path=tmp_path / "state.json",
+        control_root=tmp_path / "migrations",
+        runner=fake.run,
+        engine_executable=str(engine),
+    )
+    second_progress: list[str] = []
+    second = install_openclaw(
+        state_path=tmp_path / "state.json",
+        control_root=tmp_path / "migrations",
+        runner=fake.run,
+        engine_executable=str(engine),
+        progress=lambda _step, _total, label: second_progress.append(label),
+    )
+
+    assert first["existing_migration_reused"] is False
+    assert second["existing_migration_reused"] is True
+    assert second["migration_id"] == first["migration_id"]
+    assert snapshot_modes == [True, False]
+    assert any("refreshing" in label.casefold() for label in second_progress)
 
 
 def test_installer_restores_prior_state_when_gateway_verification_fails(

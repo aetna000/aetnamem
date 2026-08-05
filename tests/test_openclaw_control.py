@@ -291,7 +291,7 @@ def test_takeover_freezes_native_files_and_restore_restores_them(
             {
                 "plugin": {
                     "status": "loaded",
-                    "version": "1.0.0-experimental.5",
+                    "version": "1.0.0-experimental.6",
                     "toolNames": [
                         "memory_search",
                         "memory_get",
@@ -440,7 +440,7 @@ def test_restore_preserves_post_switch_native_files_before_restore(
             {
                 "plugin": {
                     "status": "loaded",
-                    "version": "1.0.0-experimental.5",
+                    "version": "1.0.0-experimental.6",
                     "toolNames": [
                         "memory_search",
                         "memory_get",
@@ -559,7 +559,7 @@ def test_takeover_refuses_unverifiable_native_memory_without_mutation(
         lambda _arguments: {
             "plugin": {
                 "status": "loaded",
-                "version": "1.0.0-experimental.5",
+                "version": "1.0.0-experimental.6",
             }
         },
     )

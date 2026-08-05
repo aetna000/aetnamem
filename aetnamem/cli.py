@@ -932,6 +932,14 @@ def _run_openclaw(args: argparse.Namespace) -> None:
     print(f"  Engine executable     {result['engine_executable']}")
     print(f"  OpenClaw bridge       {result['plugin_version']}")
     print(
+        "  Installation           "
+        + (
+            "existing shadow verified"
+            if result.get("existing_migration_reused")
+            else "new shadow created"
+        )
+    )
+    print(
         "  Gateway verification "
         + ("PASSED" if result.get("gateway_verified") else "FAILED")
     )

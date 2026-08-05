@@ -18,6 +18,7 @@ def configure_host(
     state_path: str | Path,
     *,
     aetnamem_executable: str | None = None,
+    record_snapshot: bool = True,
 ) -> dict[str, Any]:
     if state.host != "openclaw":
         raise ValueError(f"unsupported control-plane host: {state.host}")
@@ -25,6 +26,7 @@ def configure_host(
         state,
         state_path,
         aetnamem_executable=aetnamem_executable,
+        record_snapshot=record_snapshot,
     )
 
 
@@ -51,6 +53,7 @@ def _configure_openclaw(
     state_path: str | Path,
     *,
     aetnamem_executable: str | None = None,
+    record_snapshot: bool = True,
 ) -> dict[str, Any]:
     executable = shutil.which("openclaw")
     if executable is None:
@@ -74,7 +77,7 @@ def _configure_openclaw(
     if plugin_version is None or _version_tuple(plugin_version) < (1, 0, 0):
         raise ValueError(
             "The AetnaMem control plane requires openclaw-memory-aetnamem "
-            "1.0.0-experimental.5 or newer. "
+            "1.0.0-experimental.6 or newer. "
             "Run `aetnamem openclaw install`; it installs and verifies the "
             "matching bridge before starting the migration."
         )
@@ -88,7 +91,8 @@ def _configure_openclaw(
         "entry_sha256": sha256_hex(canonical_json(prior)) if prior is not None else None,
     }
     backup_path = Path(state.control_dir) / "openclaw-restore.json"
-    _private_json(backup_path, metadata)
+    if record_snapshot:
+        _private_json(backup_path, metadata)
     control_plane = {
         "enabled": True,
         "statePath": str(Path(state_path).expanduser().resolve(strict=False)),
@@ -143,28 +147,30 @@ def _configure_openclaw(
     except Exception:
         _restore_openclaw(metadata)
         raise
-    control_dir = Path(state.control_dir)
-    store = ControlStore(
-        control_dir / "evidence.db",
-        policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
-    )
-    try:
-        store.add_host_snapshot(
-            state.migration_id,
-            host="openclaw",
-            config_path=None,
-            config_sha256=metadata["entry_sha256"],
-            backup_path=str(backup_path),
-            metadata=metadata,
+    if record_snapshot:
+        control_dir = Path(state.control_dir)
+        store = ControlStore(
+            control_dir / "evidence.db",
+            policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
         )
-    finally:
-        store.close()
+        try:
+            store.add_host_snapshot(
+                state.migration_id,
+                host="openclaw",
+                config_path=None,
+                config_sha256=metadata["entry_sha256"],
+                backup_path=str(backup_path),
+                metadata=metadata,
+            )
+        finally:
+            store.close()
     return {
         "host": "openclaw",
         "configured": True,
         "snapshot": str(backup_path),
         "hot_reload_expected": True,
         "native_memory_changed": False,
+        "original_snapshot_preserved": not record_snapshot,
     }
 
 

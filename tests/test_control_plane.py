@@ -34,6 +34,24 @@ def _manager(tmp_path: Path) -> ControlPlaneManager:
     )
 
 
+def test_start_or_resume_shadow_is_idempotent(tmp_path: Path) -> None:
+    state_path = tmp_path / "control.json"
+    first, first_resumed = ControlPlaneManager.start_or_resume_shadow(
+        host="openclaw",
+        state_path=state_path,
+        control_root=tmp_path / "migrations",
+    )
+    second, second_resumed = ControlPlaneManager.start_or_resume_shadow(
+        host="openclaw",
+        state_path=state_path,
+        control_root=tmp_path / "migrations",
+    )
+
+    assert first_resumed is False
+    assert second_resumed is True
+    assert second.state().migration_id == first.state().migration_id
+
+
 def test_mirror_then_active_is_the_customer_transition(
     tmp_path: Path,
 ) -> None:
@@ -262,7 +280,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "1.0.0-experimental.5",
+                            "version": "1.0.0-experimental.6",
                         }
                     }
                 ),

@@ -1,6 +1,6 @@
 # AetnaMem
 
-[![Version 1.0.0a5](https://img.shields.io/badge/version-1.0.0a5--experimental-orange)](./docs/releases/v1.0.0a5.md)
+[![Version 1.0.0a6](https://img.shields.io/badge/version-1.0.0a6--experimental-orange)](./docs/releases/v1.0.0a6.md)
 [![CI](https://github.com/aetna000/aetnamem/actions/workflows/ci.yml/badge.svg)](https://github.com/aetna000/aetnamem/actions/workflows/ci.yml)
 
 **AetnaMem is an experimental Agent Black Box and reversible memory control plane for OpenClaw.**
@@ -11,7 +11,7 @@ The boundary is deliberate: AetnaMem verifies retained timeline integrity and ob
 
 Install AetnaMem beside OpenClaw, let it copy and shadow the complete native memory, inspect the result, then activate it when you are ready. Shadow mode does not change the context sent to the model. Activation freezes the verified OpenClaw memory state and replaces native supplemental-memory access with bounded AetnaMem recall. Restore puts the saved OpenClaw configuration and memory paths back.
 
-This is **Version 1.0.0a5**, an experimental prerelease. Agent Black Box capture and the automated copy, shadow, activation and restore workflow support OpenClaw first. The underlying memory engine and MCP interface remain model-agnostic.
+This is **Version 1.0.0a6**, an experimental prerelease. Agent Black Box capture and the automated copy, shadow, activation and restore workflow support OpenClaw first. The underlying memory engine and MCP interface remain model-agnostic.
 
 ## Inspect an agent flight
 
@@ -31,7 +31,7 @@ The dashboard presents recent flights, tool-request/completion closure, terminal
 
 ```bash
 # 1. Install the engine. Do not install the npm bridge separately.
-python -m pip install --pre aetnamem==1.0.0a5
+python -m pip install --pre aetnamem==1.0.0a6
 aetnamem --version
 
 # 2. Install the matching bridge and copy all existing OpenClaw memory.
@@ -50,7 +50,7 @@ aetnamem control restore --drill
 aetnamem control restore
 ```
 
-`aetnamem openclaw install` owns both packages: it installs the matching npm bridge, binds the exact Python executable, copies `MEMORY.md` and `memory/*.md` from the beginning of the OpenClaw workspace history, starts change mirroring, restarts the gateway, and verifies the loaded integration. Progress is shown for every stage. If verification fails, it restores the prior plugin configuration.
+`aetnamem openclaw install` owns both packages: it installs the matching npm bridge, binds the exact Python executable, copies `MEMORY.md` and `memory/*.md` from the beginning of the OpenClaw workspace history, starts change mirroring, restarts the gateway, and verifies the loaded integration. Progress is shown for every stage. If verification fails, it restores the prior plugin configuration. The command is safe to rerun: an existing shadow migration is refreshed and verified in place while its control ID and original restore snapshot are preserved.
 
 Read the [OpenClaw setup](docs/openclaw-setup.md) and [control-plane guarantees](docs/control-plane.md) before customer deployment.
 

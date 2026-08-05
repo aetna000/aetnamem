@@ -14,7 +14,7 @@ from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.5"
+OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.6"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 
@@ -66,6 +66,7 @@ def install_openclaw(
     )
     package_changed = False
     manager: ControlPlaneManager | None = None
+    resumed_existing_migration = False
     restore_errors: list[str] = []
 
     try:
@@ -103,19 +104,26 @@ def install_openclaw(
         if prior_plugin is None:
             _set_json(openclaw, f"{_CONFIG_KEY}.enabled", False, run)
 
-        report(5, total_steps, "Copying and indexing existing OpenClaw memory")
-        manager = ControlPlaneManager.start(
+        manager, resumed_existing_migration = ControlPlaneManager.start_or_resume_shadow(
             host="openclaw",
             state_path=state_path,
             control_root=control_root,
         )
+        report(
+            5,
+            total_steps,
+            (
+                "Refreshing the existing OpenClaw memory mirror"
+                if resumed_existing_migration
+                else "Copying and indexing existing OpenClaw memory"
+            ),
+        )
         from aetnamem.control.hosts import configure_host
 
-        integration = configure_host(
-            manager.state(),
-            state_path,
-            aetnamem_executable=engine,
-        )
+        configure_kwargs: dict[str, Any] = {"aetnamem_executable": engine}
+        if resumed_existing_migration:
+            configure_kwargs["record_snapshot"] = False
+        integration = configure_host(manager.state(), state_path, **configure_kwargs)
         report(6, total_steps, "Restarting the OpenClaw gateway")
         _require_success(
             run([openclaw, "gateway", "restart"]),
@@ -189,10 +197,11 @@ def install_openclaw(
             "native_baseline_bytes": baseline.get("total_bytes"),
             "mirror_verified": True,
             "mirror_db": mirror.get("mirror_db"),
+            "existing_migration_reused": resumed_existing_migration,
         }
     except Exception as exc:
         report(total_steps, total_steps, "Installation failed; restoring prior state")
-        if manager is not None:
+        if manager is not None and not resumed_existing_migration:
             try:
                 manager.transition(ControlMode.OFF, actor="install-restore")
             except Exception as restore_exc:  # pragma: no cover - defensive

@@ -47,6 +47,44 @@ class ControlPlaneManager:
         control_root: str | Path = DEFAULT_CONTROL_ROOT,
         subject_id: str = DEFAULT_SUBJECT,
     ) -> "ControlPlaneManager":
+        manager, _resumed = cls._start(
+            host=host,
+            state_path=state_path,
+            control_root=control_root,
+            subject_id=subject_id,
+            resume_shadow=False,
+        )
+        return manager
+
+    @classmethod
+    def start_or_resume_shadow(
+        cls,
+        *,
+        host: str,
+        state_path: str | Path = DEFAULT_STATE_PATH,
+        control_root: str | Path = DEFAULT_CONTROL_ROOT,
+        subject_id: str = DEFAULT_SUBJECT,
+    ) -> tuple["ControlPlaneManager", bool]:
+        """Start a migration or reuse the same host's existing shadow safely."""
+
+        return cls._start(
+            host=host,
+            state_path=state_path,
+            control_root=control_root,
+            subject_id=subject_id,
+            resume_shadow=True,
+        )
+
+    @classmethod
+    def _start(
+        cls,
+        *,
+        host: str,
+        state_path: str | Path,
+        control_root: str | Path,
+        subject_id: str,
+        resume_shadow: bool,
+    ) -> tuple["ControlPlaneManager", bool]:
         if host != "openclaw":
             raise ValueError("the verified host adapter in this release is openclaw")
         manager = cls(state_path)
@@ -54,6 +92,12 @@ class ControlPlaneManager:
             if manager.state_path.exists():
                 current = load_state(manager.state_path)
                 if current.mode is not ControlMode.OFF:
+                    if (
+                        resume_shadow
+                        and current.mode is ControlMode.SHADOW
+                        and current.host == host
+                    ):
+                        return manager, True
                     raise ValueError(
                         f"migration {current.migration_id} is already {current.mode.value}; "
                         "turn it off before starting another"
@@ -90,7 +134,7 @@ class ControlPlaneManager:
             finally:
                 store.close()
             write_state(manager.state_path, state)
-        return manager
+        return manager, False
 
     def effective_state(self) -> tuple[ControlState, str | None]:
         return load_effective_state(self.state_path)

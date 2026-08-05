@@ -9,12 +9,16 @@
 ## Install
 
 ```bash
-python -m pip install --pre aetnamem==1.0.0a5
+python -m pip install --pre aetnamem==1.0.0a6
 aetnamem --version
 aetnamem openclaw install
 ```
 
 Do not install `openclaw-memory-aetnamem` directly. It is a bridge, not a standalone memory engine. `aetnamem openclaw install` selects the matching bridge version, pins the exact Python executable, shows staged progress, restarts the gateway and verifies the running plugin.
+
+The installer is safe to rerun. If the same OpenClaw migration is already in
+shadow mode, AetnaMem refreshes and verifies that migration instead of creating
+a second control ID. The original pre-AetnaMem restore snapshot is preserved.
 
 ## Inspect before switching
 
