@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aetnamem"
-version = "1.0.0a4"
+version = "1.0.0a5"
 description = "Experimental Agent Black Box and reversible memory control plane for OpenClaw."
 readme = "README.md"
 requires-python = ">=3.10"

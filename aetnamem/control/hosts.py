@@ -74,7 +74,7 @@ def _configure_openclaw(
     if plugin_version is None or _version_tuple(plugin_version) < (1, 0, 0):
         raise ValueError(
             "The AetnaMem control plane requires openclaw-memory-aetnamem "
-            "1.0.0-experimental.4 or newer. "
+            "1.0.0-experimental.5 or newer. "
             "Run `aetnamem openclaw install`; it installs and verifies the "
             "matching bridge before starting the migration."
         )
@@ -92,6 +92,7 @@ def _configure_openclaw(
     control_plane = {
         "enabled": True,
         "statePath": str(Path(state_path).expanduser().resolve(strict=False)),
+        "blackboxEnabled": True,
     }
     # Route an already-enabled plugin through the fail-closed migration server
     # before touching hook permission. Enable is deliberately the final write.
@@ -131,7 +132,13 @@ def _configure_openclaw(
                 "--json",
             ]
         )
-        if observed != control_plane:
+        # Compare only the fields this installer writes, not the whole object:
+        # OpenClaw's config store fills in its own schema defaults for any
+        # property this installer omits (e.g. future controlPlane.* additions),
+        # and a strict equality check would treat that as a retention failure.
+        if not isinstance(observed, dict) or any(
+            observed.get(key) != value for key, value in control_plane.items()
+        ):
             raise ValueError("OpenClaw did not retain the control-plane configuration")
     except Exception:
         _restore_openclaw(metadata)

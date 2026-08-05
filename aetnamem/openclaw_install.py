@@ -14,7 +14,7 @@ from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.4"
+OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.5"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 

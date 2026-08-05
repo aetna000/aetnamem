@@ -1,6 +1,6 @@
 # Current product status
 
-Version 1.0.0a4 is an experimental prerelease of the AetnaMem Agent Black Box and memory control plane.
+Version 1.0.0a5 is an experimental prerelease of the AetnaMem Agent Black Box and memory control plane.
 
 | Capability | Status |
 | --- | --- |

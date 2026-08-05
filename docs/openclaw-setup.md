@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-python -m pip install --pre aetnamem==1.0.0a4
+python -m pip install --pre aetnamem==1.0.0a5
 aetnamem --version
 aetnamem openclaw install
 ```

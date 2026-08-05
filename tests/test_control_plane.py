@@ -262,7 +262,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "1.0.0-experimental.4",
+                            "version": "1.0.0-experimental.5",
                         }
                     }
                 ),
@@ -276,11 +276,22 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     return subprocess.CompletedProcess(arguments, 1, "", "missing")
                 return subprocess.CompletedProcess(arguments, 0, json.dumps(entry), "")
             if key.endswith(".config.controlPlane"):
-                value = (
+                stored = (
                     entry.get("config", {}).get("controlPlane")  # type: ignore[union-attr]
                     if entry
                     else None
                 )
+                # Real OpenClaw fills in the plugin's declared configSchema
+                # defaults for any property the caller omitted (see
+                # integrations/openclaw/openclaw.plugin.json). Replicate that
+                # here so a strict-equality regression in hosts.py is caught
+                # by this test instead of hidden by an overly obliging fake.
+                defaults = {
+                    "enabled": False,
+                    "statePath": "~/.aetnamem/control-plane.json",
+                    "blackboxEnabled": False,
+                }
+                value = {**defaults, **stored} if stored is not None else None
                 return subprocess.CompletedProcess(arguments, 0, json.dumps(value), "")
         if operation == "set":
             value = json.loads(arguments[4])
@@ -311,6 +322,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
     assert entry is not None
     assert entry["config"]["existing"] == "kept"  # type: ignore[index]
     assert entry["config"]["controlPlane"]["enabled"] is True  # type: ignore[index]
+    assert entry["config"]["controlPlane"]["blackboxEnabled"] is True  # type: ignore[index]
 
     restored = restore_host(state)
     assert restored["verified"] is True

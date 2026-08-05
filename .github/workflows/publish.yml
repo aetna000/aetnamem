@@ -171,7 +171,7 @@ jobs:
         run: |
           node -e '
             const pkg = require("./package.json");
-            const releases = {"v1.0.0a1": "1.0.0-experimental.1", "v1.0.0a2": "1.0.0-experimental.2", "v1.0.0a3": "1.0.0-experimental.3", "v1.0.0a4": "1.0.0-experimental.4"};
+            const releases = {"v1.0.0a1": "1.0.0-experimental.1", "v1.0.0a2": "1.0.0-experimental.2", "v1.0.0a3": "1.0.0-experimental.3", "v1.0.0a4": "1.0.0-experimental.4", "v1.0.0a5": "1.0.0-experimental.5"};
             const expected = releases[process.env.RELEASE_TAG];
             if (!expected || pkg.version !== expected) {
               throw new Error(`release ${process.env.RELEASE_TAG} does not match plugin ${pkg.version}`);

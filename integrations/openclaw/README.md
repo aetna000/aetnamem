@@ -5,11 +5,11 @@ This npm package is the host bridge for AetnaMem. It is not a standalone memory 
 Use the Python-owned installer:
 
 ```bash
-python -m pip install --pre aetnamem==1.0.0a4
+python -m pip install --pre aetnamem==1.0.0a5
 aetnamem openclaw install
 ```
 
-The installer pins `openclaw-memory-aetnamem@1.0.0-experimental.4`, binds the exact `aetnamem` executable, copies existing OpenClaw memory, configures shadow mode, restarts the gateway and verifies the loaded plugin. Direct npm installation cannot perform or prove those steps.
+The installer pins `openclaw-memory-aetnamem@1.0.0-experimental.5`, binds the exact `aetnamem` executable, copies existing OpenClaw memory, configures shadow mode, restarts the gateway and verifies the loaded plugin. Direct npm installation cannot perform or prove those steps.
 
 In shadow mode the bridge observes native-memory changes without injecting AetnaMem context. In active mode it exposes compatible memory search/get tools, model-semantic capture, bounded recall and native-path protection. `aetnamem control restore` restores the saved OpenClaw configuration and native memory.
 

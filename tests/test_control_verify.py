@@ -35,7 +35,7 @@ def _host(
     *,
     slot: str = "memory-native",
     version: str = "2026.7.1-2",
-    bridge_version: str = "1.0.0-experimental.4",
+    bridge_version: str = "1.0.0-experimental.5",
 ) -> dict[str, object]:
     config: dict[str, object] = {
         "plugins.slots.memory": slot,
