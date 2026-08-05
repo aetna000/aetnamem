@@ -1,7 +1,7 @@
 {
   "name": "openclaw-memory-aetnamem",
-  "version": "1.0.0-experimental.3",
-  "description": "OpenClaw bridge for the AetnaMem memory control plane",
+  "version": "1.0.0-experimental.4",
+  "description": "OpenClaw Agent Black Box and memory control-plane bridge for AetnaMem",
   "type": "module",
   "main": "./dist/index.js",
   "files": [
@@ -31,7 +31,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.5.17"
+    "openclaw": ">=2026.7.1-2"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

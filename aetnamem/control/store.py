@@ -7,27 +7,40 @@ import sqlite3
 from typing import Any, Iterator
 import uuid
 
+from aetnamem.control.evidence import ZERO_SHA256, evidence_entry_sha256
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdLock, HouseholdPolicy, connect, row_factory_for
 from aetnamem.store.sqlite import utc_now
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ControlStore:
     """Separate memory control plane evidence store; never part of live agent recall."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, *, policy: HouseholdPolicy | None = None
+    ) -> None:
         self.path = str(Path(path).expanduser().resolve())
+        self.policy = policy or HouseholdPolicy.load(path)
+        self._household_lock = HouseholdLock(self.policy).acquire()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._conn = sqlite3.connect(self.path)
-        self._conn.row_factory = sqlite3.Row
+        try:
+            self._conn = connect(self.path, policy=self.policy)
+        except Exception:
+            self._household_lock.close()
+            raise
+        self._conn.row_factory = row_factory_for(self.policy)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._init_schema()
 
     def close(self) -> None:
-        self._conn.close()
+        try:
+            self._conn.close()
+        finally:
+            self._household_lock.close()
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -130,13 +143,54 @@ class ControlStore:
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
         if row is None:
-            self._conn.execute(
-                "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?)",
-                (str(SCHEMA_VERSION),),
+            with self._conn:
+                self._create_evidence_schema()
+                self._conn.execute(
+                    "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?)",
+                    (str(SCHEMA_VERSION),),
+                )
+            return
+        try:
+            version = int(row["value"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"unsupported migration database schema: {row['value']}"
+            ) from exc
+        if version > SCHEMA_VERSION or version < 1:
+            raise ValueError(f"unsupported migration database schema: {version}")
+        if version == 1:
+            with self._conn:
+                self._create_evidence_schema()
+                self._conn.execute(
+                    "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
+                    (str(SCHEMA_VERSION),),
+                )
+            return
+        self._create_evidence_schema()
+
+    def _create_evidence_schema(self) -> None:
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evidence (
+                id TEXT PRIMARY KEY,
+                migration_id TEXT NOT NULL REFERENCES migrations(migration_id),
+                kind TEXT NOT NULL,
+                sequence INTEGER NOT NULL CHECK(sequence > 0),
+                created_at TEXT NOT NULL,
+                body_json TEXT NOT NULL,
+                body_sha256 TEXT NOT NULL,
+                prev_sha256 TEXT NOT NULL,
+                entry_sha256 TEXT NOT NULL,
+                UNIQUE(migration_id, kind, sequence)
             )
-            self._conn.commit()
-        elif int(row["value"]) != SCHEMA_VERSION:
-            raise ValueError(f"unsupported migration database schema: {row['value']}")
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS evidence_migration_kind_created
+            ON evidence(migration_id, kind, created_at, sequence)
+            """
+        )
 
     def create_migration(self, migration_id: str, host: str, subject_id: str) -> None:
         self._conn.execute(
@@ -147,6 +201,146 @@ class ControlStore:
             (migration_id, host, subject_id, utc_now()),
         )
         self._conn.commit()
+
+    def append_evidence(
+        self,
+        migration_id: str,
+        *,
+        kind: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append one canonical body to a migration- and kind-scoped chain."""
+
+        if not kind.strip():
+            raise ValueError("evidence kind is required")
+        if not isinstance(body.get("format"), str) or not body["format"]:
+            raise ValueError("evidence body requires a format")
+        body_json = canonical_json(body)
+        body_sha256 = sha256_hex(body_json)
+        evidence_id = f"ev_{uuid.uuid4().hex}"
+        created_at = utc_now()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            previous = self._conn.execute(
+                """
+                SELECT sequence, entry_sha256 FROM evidence
+                WHERE migration_id = ? AND kind = ?
+                ORDER BY sequence DESC LIMIT 1
+                """,
+                (migration_id, kind),
+            ).fetchone()
+            sequence = int(previous["sequence"]) + 1 if previous else 1
+            prev_sha256 = str(previous["entry_sha256"]) if previous else ZERO_SHA256
+            entry_sha256 = evidence_entry_sha256(
+                previous_sha256=prev_sha256,
+                migration_id=migration_id,
+                kind=kind,
+                sequence=sequence,
+                body_sha256=body_sha256,
+            )
+            self._conn.execute(
+                """
+                INSERT INTO evidence(
+                    id, migration_id, kind, sequence, created_at, body_json,
+                    body_sha256, prev_sha256, entry_sha256
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    evidence_id,
+                    migration_id,
+                    kind,
+                    sequence,
+                    created_at,
+                    body_json,
+                    body_sha256,
+                    prev_sha256,
+                    entry_sha256,
+                ),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return {
+            "id": evidence_id,
+            "migration_id": migration_id,
+            "kind": kind,
+            "sequence": sequence,
+            "created_at": created_at,
+            "body": body,
+            "body_sha256": body_sha256,
+            "prev_sha256": prev_sha256,
+            "entry_sha256": entry_sha256,
+        }
+
+    def list_evidence(self, migration_id: str, *, kind: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM evidence
+            WHERE migration_id = ? AND kind = ?
+            ORDER BY sequence
+            """,
+            (migration_id, kind),
+        ).fetchall()
+        return [
+            {**dict(row), "body": json.loads(str(row["body_json"]))}
+            for row in rows
+        ]
+
+    def latest_evidence(
+        self, migration_id: str, *, kind: str
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM evidence
+            WHERE migration_id = ? AND kind = ?
+            ORDER BY sequence DESC LIMIT 1
+            """,
+            (migration_id, kind),
+        ).fetchone()
+        if row is None:
+            return None
+        return {**dict(row), "body": json.loads(str(row["body_json"]))}
+
+    def verify_evidence_chain(self, migration_id: str, *, kind: str) -> dict[str, Any]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM evidence
+            WHERE migration_id = ? AND kind = ?
+            ORDER BY sequence
+            """,
+            (migration_id, kind),
+        ).fetchall()
+        previous = ZERO_SHA256
+        errors: list[str] = []
+        for expected_sequence, row in enumerate(rows, start=1):
+            sequence = int(row["sequence"])
+            if sequence != expected_sequence:
+                errors.append(
+                    f"sequence {sequence}: expected position {expected_sequence}"
+                )
+            body_sha256 = sha256_hex(str(row["body_json"]))
+            if row["body_sha256"] != body_sha256:
+                errors.append(f"sequence {sequence}: body digest mismatch")
+            if row["prev_sha256"] != previous:
+                errors.append(f"sequence {sequence}: previous digest mismatch")
+            expected_entry = evidence_entry_sha256(
+                previous_sha256=previous,
+                migration_id=str(row["migration_id"]),
+                kind=str(row["kind"]),
+                sequence=sequence,
+                body_sha256=body_sha256,
+            )
+            if row["entry_sha256"] != expected_entry:
+                errors.append(f"sequence {sequence}: entry digest mismatch")
+            previous = expected_entry
+        return {
+            "valid": not errors,
+            "kind": kind,
+            "events": len(rows),
+            "head": previous,
+            "errors": errors,
+        }
 
     def insert_candidate(
         self,

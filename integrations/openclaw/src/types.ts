@@ -24,15 +24,19 @@ export interface BeforePromptBuildEvent {
 }
 
 export interface AgentEndEvent {
-  success?: boolean;
-  messages?: unknown[];
+  runId?: string;
+  success: boolean;
+  error?: string;
+  durationMs?: number;
+  messages: unknown[];
 }
 
 export interface BeforeModelResolveEvent {
   prompt: string;
-  historyMessages: unknown[];
-  imagesCount: number;
-  tools?: unknown[];
+  attachments?: Array<{
+    kind: "image" | "video" | "audio" | "document" | "other";
+    mimeType?: string;
+  }>;
 }
 
 export interface MessageReceivedEvent {
@@ -77,6 +81,44 @@ export interface BeforeToolCallEvent {
   toolName: string;
   params: Record<string, unknown>;
   derivedPaths?: readonly string[];
+  runId?: string;
+  toolCallId?: string;
+  toolKind?: string;
+}
+
+export interface AfterToolCallEvent {
+  toolName: string;
+  params: Record<string, unknown>;
+  runId?: string;
+  toolCallId?: string;
+  result?: unknown;
+  error?: string;
+  durationMs?: number;
+}
+
+export interface LlmInputEvent {
+  runId: string;
+  sessionId: string;
+  provider: string;
+  model: string;
+  systemPrompt?: string;
+  prompt: string;
+  historyMessages: unknown[];
+  imagesCount: number;
+  tools?: unknown[];
+}
+
+export interface LlmOutputEvent {
+  runId: string;
+  sessionId: string;
+  provider: string;
+  model: string;
+  resolvedRef?: string;
+  harnessId?: string;
+  assistantTexts: string[];
+  usage?: Record<string, number | undefined>;
+  reasoningEffort?: string;
+  fastMode?: boolean;
 }
 
 export interface BeforeToolCallResult {
@@ -129,6 +171,14 @@ export interface OpenClawPluginApi {
       ctx: OpenClawHookCtx,
     ) => Promise<void> | void,
   ): void;
+  on(
+    event: "llm_input",
+    handler: (event: LlmInputEvent, ctx: OpenClawHookCtx) => Promise<void> | void,
+  ): void;
+  on(
+    event: "llm_output",
+    handler: (event: LlmOutputEvent, ctx: OpenClawHookCtx) => Promise<void> | void,
+  ): void;
   registerService?: (service: {
     id: string;
     start: () => void | Promise<void>;
@@ -169,5 +219,9 @@ export interface OpenClawPluginApi {
       event: BeforeToolCallEvent,
       ctx: OpenClawHookCtx,
     ) => BeforeToolCallResult | void | Promise<BeforeToolCallResult | void>,
+  ): void;
+  on(
+    event: "after_tool_call",
+    handler: (event: AfterToolCallEvent, ctx: OpenClawHookCtx) => Promise<void> | void,
   ): void;
 }

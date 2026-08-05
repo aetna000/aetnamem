@@ -14,7 +14,7 @@ from aetnamem.control.manager import DEFAULT_STATE_PATH, DEFAULT_CONTROL_ROOT
 
 OPENCLAW_PLUGIN_ID = "memory-aetnamem"
 OPENCLAW_PLUGIN_PACKAGE = "openclaw-memory-aetnamem"
-OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.3"
+OPENCLAW_PLUGIN_VERSION = "1.0.0-experimental.4"
 _CONFIG_KEY = "plugins.entries.memory-aetnamem"
 
 
@@ -134,7 +134,9 @@ def install_openclaw(
         )
         if not _gateway_verified(gateway):
             raise ValueError("OpenClaw gateway RPC verification did not pass")
-        runtime_plugin = _inspect_plugin(openclaw, run, optional=False)
+        runtime_plugin = _inspect_plugin(
+            openclaw, run, optional=False, runtime=True
+        )
         if not _plugin_runtime_healthy(runtime_plugin):
             raise ValueError("OpenClaw reported that the AetnaMem bridge is not healthy")
         observed = _get_json(
@@ -269,11 +271,13 @@ def _verify_engine(engine: str, run: Runner) -> str:
 
 
 def _inspect_plugin(
-    openclaw: str, run: Runner, *, optional: bool
+    openclaw: str, run: Runner, *, optional: bool, runtime: bool = False
 ) -> Any | None:
-    result = run(
-        [openclaw, "plugins", "inspect", OPENCLAW_PLUGIN_ID, "--json"]
-    )
+    arguments = [openclaw, "plugins", "inspect", OPENCLAW_PLUGIN_ID]
+    if runtime:
+        arguments.append("--runtime")
+    arguments.append("--json")
+    result = run(arguments)
     if result.returncode != 0 and optional:
         normalized = f"{result.stderr}\n{result.stdout}".casefold()
         if any(text in normalized for text in ("not found", "not installed", "unknown")):
@@ -337,7 +341,22 @@ def _plugin_runtime_healthy(value: Any) -> bool:
                 "fatal",
             }:
                 return False
-    return True
+    typed_hooks = {
+        str(row.get("name"))
+        for row in value.get("typedHooks", [])
+        if isinstance(row, dict)
+    }
+    required_hooks = {
+        "before_model_resolve",
+        "before_prompt_build",
+        "llm_input",
+        "llm_output",
+        "agent_end",
+        "before_message_write",
+        "before_tool_call",
+        "after_tool_call",
+    }
+    return required_hooks.issubset(typed_hooks)
 
 
 def _set_json(openclaw: str, key: str, value: Any, run: Runner) -> None:

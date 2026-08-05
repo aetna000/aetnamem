@@ -32,6 +32,9 @@ import type {
   AgentEndEvent,
   BeforeToolCallEvent,
   BeforeModelResolveEvent,
+  AfterToolCallEvent,
+  LlmInputEvent,
+  LlmOutputEvent,
   MessageReceivedEvent,
   OpenClawHookCtx,
   OpenClawPluginToolContext,
@@ -76,6 +79,7 @@ interface PluginConfig {
   controlPlane: {
     enabled: boolean;
     statePath: string;
+    blackboxEnabled: boolean;
   };
 }
 
@@ -88,6 +92,8 @@ function parseConfig(raw: Record<string, unknown> | undefined): PluginConfig {
     statePath: expandHome(
       String(cfg.controlPlane?.statePath ?? "~/.aetnamem/control-plane.json"),
     ),
+    blackboxEnabled:
+      cfg.controlPlane?.enabled === true || cfg.controlPlane?.blackboxEnabled === true,
   };
   return {
     command: String(cfg.command ?? "aetnamem"),
@@ -362,6 +368,14 @@ function register(api: OpenClawPluginApi): void {
     log: (message) => api.logger.debug?.(`${TAG} ${message}`),
     logError: (message) => api.logger.warn(`${TAG} ${message}`),
   });
+  const blackboxClient = cfg.controlPlane.enabled
+    ? client
+    : new AetnamemClient({
+        command: cfg.command,
+        args: ["control", "mcp", "--state", cfg.controlPlane.statePath],
+        log: (message) => api.logger.debug?.(`${TAG} ${message}`),
+        logError: (message) => api.logger.warn(`${TAG} ${message}`),
+      });
   // Let long-lived hosts close the stdio child during lifecycle shutdown.
   // The client's bounded idle shutdown also covers one-shot local runners.
   api.registerService?.({
@@ -369,6 +383,13 @@ function register(api: OpenClawPluginApi): void {
     start: () => client.connect(),
     stop: () => client.close(),
   });
+  if (blackboxClient !== client && cfg.controlPlane.blackboxEnabled) {
+    api.registerService?.({
+      id: "memory-aetnamem-blackbox",
+      start: () => blackboxClient.connect(),
+      stop: () => blackboxClient.close(),
+    });
+  }
 
   // Per-turn recall state. Semantic admission uses a short-lived SQLite handoff
   // because OpenClaw may run prompt hooks and agent tools in separate runtimes.
@@ -395,6 +416,59 @@ function register(api: OpenClawPluginApi): void {
     [...new Set([ctx.runId, ctx.sessionKey, ctx.sessionId].filter(
       (value): value is string => Boolean(value),
     ))];
+
+  const digestText = (value: string): string =>
+    createHash("sha256").update(value, "utf8").digest("hex");
+  const stableValue = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, item]) => [key, stableValue(item)]),
+      );
+    }
+    return value;
+  };
+  const digestJson = (value: unknown): string => {
+    try {
+      return digestText(JSON.stringify(stableValue(value)));
+    } catch {
+      return digestText(String(value));
+    }
+  };
+  const flightRunId = (
+    eventRunId: string | undefined,
+    ctx: OpenClawHookCtx,
+  ): string => eventRunId ?? ctx.runId ?? ctx.sessionKey ?? ctx.sessionId ?? "unidentified-run";
+  const recordBlackbox = async (
+    eventType: string,
+    eventRunId: string | undefined,
+    ctx: OpenClawHookCtx,
+    payload: Record<string, unknown>,
+    toolCallId?: string,
+  ): Promise<void> => {
+    if (!cfg.controlPlane.blackboxEnabled) return;
+    try {
+      await blackboxClient.callTool(
+        "control_record_blackbox_event",
+        {
+          event_type: eventType,
+          run_id: flightRunId(eventRunId, ctx),
+          session_id: ctx.sessionId ?? ctx.sessionKey,
+          tool_call_id: toolCallId,
+          payload,
+        },
+        cfg.recall.timeoutMs,
+      );
+    } catch (error) {
+      api.logger.warn(
+        `${TAG} blackbox event ${eventType} was not recorded: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
 
   const resolveInboundAttachmentSet = async (
     ctx: OpenClawHookCtx,
@@ -531,6 +605,11 @@ function register(api: OpenClawPluginApi): void {
   // is a typed per-turn input surface, not a rendered transcript or history.
   api.on("before_model_resolve", async (event: BeforeModelResolveEvent, ctx) => {
     if (!event.prompt?.trim()) return;
+    await recordBlackbox("turn.input", undefined, ctx, {
+      prompt_sha256: digestText(event.prompt),
+      prompt_chars: event.prompt.length,
+      images_count: Array.isArray(event.attachments) ? event.attachments.length : 0,
+    });
     try {
       await stageInbound(event.prompt, ctx);
     } catch (error) {
@@ -540,6 +619,37 @@ function register(api: OpenClawPluginApi): void {
         }`,
       );
     }
+  });
+
+  api.on("llm_input", async (event: LlmInputEvent, ctx) => {
+    await recordBlackbox("model.input", event.runId, ctx, {
+      provider: event.provider,
+      model: event.model,
+      prompt_sha256: digestText(event.prompt ?? ""),
+      prompt_chars: (event.prompt ?? "").length,
+      system_sha256: digestText(event.systemPrompt ?? ""),
+      system_chars: (event.systemPrompt ?? "").length,
+      history_sha256: digestJson(event.historyMessages ?? []),
+      history_count: Array.isArray(event.historyMessages) ? event.historyMessages.length : 0,
+      images_count: event.imagesCount ?? 0,
+      tools_count: Array.isArray(event.tools) ? event.tools.length : 0,
+    });
+  });
+
+  api.on("llm_output", async (event: LlmOutputEvent, ctx) => {
+    const responses = Array.isArray(event.assistantTexts) ? event.assistantTexts : [];
+    await recordBlackbox("model.output", event.runId, ctx, {
+      provider: event.provider,
+      model: event.model,
+      resolved_ref: event.resolvedRef,
+      harness_id: event.harnessId,
+      response_sha256: digestJson(responses),
+      response_chars: responses.reduce((total, value) => total + String(value).length, 0),
+      response_count: responses.length,
+      usage: event.usage ?? {},
+      reasoning_effort: event.reasoningEffort,
+      fast_mode: event.fastMode,
+    });
   });
 
   api.registerCli?.(
@@ -651,12 +761,25 @@ function register(api: OpenClawPluginApi): void {
           context?: string;
           exposure_id?: string;
           mode?: string;
+          candidate_ids?: string[];
         };
         pendingPrompts.set(sessionKey, {
           text: userText,
           ts: Date.now(),
           exposureId: prepared.exposure_id,
         });
+        await recordBlackbox(
+          prepared.inject && prepared.context ? "context.injected" : "context.prepared",
+          undefined,
+          ctx,
+          {
+            context_sha256: digestText(prepared.context ?? ""),
+            context_chars: (prepared.context ?? "").length,
+            candidate_ids: prepared.candidate_ids ?? [],
+            exposure_id: prepared.exposure_id,
+            mode: prepared.mode,
+          },
+        );
         if (prepared.inject && prepared.context) {
           api.logger.info(
             `${TAG} memory control plane ${prepared.mode ?? "active"} context exposed`,
@@ -750,18 +873,60 @@ function register(api: OpenClawPluginApi): void {
     if (Object.keys(result).length) return result;
   });
 
-  // ---- enforce takeover: native OpenClaw memory must stay frozen --------
-  if (cfg.takeoverActive) {
-    api.on("before_tool_call", (event: BeforeToolCallEvent) => {
-      if (!touchesNativeMemory(event, cfg.nativeWorkspace)) return;
-      const reason =
-        "AetnaMem takeover blocked access to OpenClaw's frozen native memory " +
-        "(MEMORY.md or memory/*). Use memory_remember for durable user facts, " +
-        "and memory_search or memory_get for recall.";
-      api.logger.warn(`${TAG} ${reason} Tool: ${event.toolName}`);
-      return { block: true, blockReason: reason };
-    });
-  }
+  // ---- flight recorder + takeover enforcement --------------------------
+  api.on("before_tool_call", async (event: BeforeToolCallEvent, ctx) => {
+    await recordBlackbox(
+      "tool.requested",
+      event.runId,
+      ctx,
+      {
+        tool_name: event.toolName,
+        tool_kind: event.toolKind,
+        params_sha256: digestJson(event.params ?? {}),
+        param_keys: Object.keys(event.params ?? {}).sort(),
+        derived_path_sha256: Array.isArray(event.derivedPaths)
+          ? event.derivedPaths.map((value) => digestText(String(value)))
+          : [],
+      },
+      event.toolCallId,
+    );
+    if (!cfg.takeoverActive || !touchesNativeMemory(event, cfg.nativeWorkspace)) return;
+    const reason =
+      "AetnaMem takeover blocked access to OpenClaw's frozen native memory " +
+      "(MEMORY.md or memory/*). Use memory_remember for durable user facts, " +
+      "and memory_search or memory_get for recall.";
+    await recordBlackbox(
+      "tool.completed",
+      event.runId,
+      ctx,
+      {
+        tool_name: event.toolName,
+        outcome: "error",
+        error_category: "blocked_by_memory_boundary",
+        result_sha256: digestText(reason),
+        duration_ms: 0,
+      },
+      event.toolCallId,
+    );
+    api.logger.warn(`${TAG} ${reason} Tool: ${event.toolName}`);
+    return { block: true, blockReason: reason };
+  });
+
+  api.on("after_tool_call", async (event: AfterToolCallEvent, ctx) => {
+    await recordBlackbox(
+      "tool.completed",
+      event.runId,
+      ctx,
+      {
+        tool_name: event.toolName,
+        result_sha256: digestJson(event.result ?? null),
+        outcome: event.error ? "error" : "completed",
+        error_category: event.error ? "tool_error" : undefined,
+        duration_ms: event.durationMs ?? 0,
+      },
+      event.toolCallId,
+    );
+  });
 
   // ---- auto-capture: user turn through the pipeline, assistant as digest -
   api.on("agent_end", async (event: AgentEndEvent, ctx) => {
@@ -860,6 +1025,15 @@ function register(api: OpenClawPluginApi): void {
       api.logger.warn(
         `${TAG} auto-capture failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      await recordBlackbox("turn.ended", event.runId, ctx, {
+        success: event.success !== false,
+        cancelled: false,
+        error_category: event.error ? "agent_error" : undefined,
+        duration_ms: event.durationMs ?? 0,
+        messages_sha256: digestJson(event.messages ?? []),
+        messages_count: Array.isArray(event.messages) ? event.messages.length : 0,
+      });
     }
   });
 

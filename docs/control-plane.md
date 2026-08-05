@@ -21,14 +21,18 @@ Before activation, AetnaMem:
 
 Activation runs a final synchronization, checks the loaded plugin and required tools, protects the frozen native-memory paths, and changes the provider only if every check succeeds. Interrupted activation is detected and must be recovered or restored; it is not silently treated as complete.
 
-Restore exports active-period AetnaMem memories, preserves unexpected divergent native files as evidence, restores the saved native paths and plugin configuration, restarts OpenClaw, and verifies the gateway. Past responses and provider logs cannot be undone. Control-plane evidence is intentionally preserved.
+Restore first validates and stages the frozen snapshot without changing live files. It then resumes through a durable step journal, preserves unexpected divergent native files as evidence, proves the restored baseline, exports active-period AetnaMem memories as a separate additions block, restores and re-reads saved configuration, restarts OpenClaw, and verifies the gateway. A successful receipt is bound into the memory audit chain as `control.restored`. Past responses and provider logs cannot be undone. Control-plane evidence is intentionally preserved.
+
+`control verify` measures the current installation without synchronizing, repairing, changing configuration, or restarting OpenClaw. Its named checks cover host and bridge versions, mirror integrity, complete active configuration, shadow safety, frozen paths, restore readiness, and gateway health. Every run has a unique report digest; identical measured state has the same evidence digest.
 
 ## Commands
 
 ```bash
 aetnamem openclaw install
 aetnamem control status
+aetnamem control verify
 aetnamem control activate
+aetnamem control restore --drill
 aetnamem control restore
 aetnamem openclaw memory status
 aetnamem openclaw memory sync
@@ -37,6 +41,8 @@ aetnamem openclaw memory trace "preferred editor"
 ```
 
 Use `--json` where offered for automation. Human-readable output is the default.
+
+The restore drill makes exactly three claims: file restoration was tested, saved configuration was readable, and live rollback was not performed. It never changes live host files or configuration.
 
 ## Honest boundary
 

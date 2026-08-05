@@ -64,7 +64,7 @@ class FakeOpenClaw:
     def run(self, arguments: list[str]) -> CommandResult:
         self.commands.append(arguments)
         if arguments[0].endswith("aetnamem"):
-            return CommandResult(0, "aetnamem 1.0.0a3\n", "")
+            return CommandResult(0, "aetnamem 1.0.0a4\n", "")
         if arguments[1:] == ["--version"]:
             return CommandResult(0, "OpenClaw 2026.7.1-2\n", "")
         if arguments[1:3] == ["plugins", "inspect"]:
@@ -79,6 +79,16 @@ class FakeOpenClaw:
                             "version": self.plugin_version,
                             "status": "loaded",
                         },
+                        "typedHooks": [
+                            {"name": "before_model_resolve"},
+                            {"name": "before_prompt_build"},
+                            {"name": "llm_input"},
+                            {"name": "llm_output"},
+                            {"name": "agent_end"},
+                            {"name": "before_message_write"},
+                            {"name": "before_tool_call"},
+                            {"name": "after_tool_call"},
+                        ],
                         "diagnostics": [],
                     }
                 ),

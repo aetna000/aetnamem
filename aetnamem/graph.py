@@ -16,6 +16,7 @@ import sqlite3
 from typing import Any
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import connect
 from aetnamem.retrieve import query_tokens
 from aetnamem.store import SQLiteStore
 
@@ -427,7 +428,7 @@ class GraphIndex:
             path = Path(partition["path"])
             object_ids = list(partition["object_ids"])
             object_placeholders = ",".join("?" for _ in object_ids)
-            archive = sqlite3.connect(path)
+            archive = connect(path, policy=self.store.policy)
             try:
                 archive.execute("PRAGMA secure_delete = ON")
                 archive.execute(
@@ -804,7 +805,7 @@ class GraphIndex:
         archived_ids: list[str] = []
         for year, partition_rows in sorted(by_year.items()):
             path = subject_dir / f"{year or 'unknown'}.db"
-            archive = sqlite3.connect(path)
+            archive = connect(path, policy=self.store.policy)
             try:
                 archive.execute(
                     """
@@ -935,7 +936,7 @@ class GraphIndex:
                 continue
             if not partition["digest_valid"]:
                 raise ValueError(f"archive partition {partition['id']} is missing or modified")
-            archive = sqlite3.connect(str(partition["path"]))
+            archive = connect(str(partition["path"]), policy=self.store.policy)
             try:
                 rows = archive.execute(
                     """

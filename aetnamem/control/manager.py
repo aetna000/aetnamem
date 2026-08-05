@@ -7,6 +7,7 @@ from typing import Any
 import uuid
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdPolicy
 from aetnamem.extract.rules import extract_facts
 from aetnamem.retrieve.rank import rank_records
 from aetnamem.store.sqlite import utc_now
@@ -73,7 +74,10 @@ class ControlPlaneManager:
                 created_at=now,
                 updated_at=now,
             )
-            store = ControlStore(control_dir / "evidence.db")
+            store = ControlStore(
+                control_dir / "evidence.db",
+                policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
+            )
             try:
                 store.create_migration(migration_id, host, state.subject_id)
                 store.append_transition(
@@ -107,6 +111,12 @@ class ControlPlaneManager:
         store = self._store(state)
         try:
             evidence = store.summary(state.migration_id)
+            latest_restore_drill = store.latest_evidence(
+                state.migration_id, kind="restore_drill"
+            )
+            latest_verification = store.latest_evidence(
+                state.migration_id, kind="verification"
+            )
         finally:
             store.close()
         mirror: dict[str, Any] | None = None
@@ -120,6 +130,12 @@ class ControlPlaneManager:
             mirror = mirror_status(state)
             takeover = takeover_status(state)
         result["evidence"] = evidence
+        result["restore_drill"] = (
+            latest_restore_drill["body"] if latest_restore_drill else None
+        )
+        result["verification"] = (
+            latest_verification["body"] if latest_verification else None
+        )
         result["mirror"] = mirror
         result["takeover"] = takeover
         result["readiness"] = self._readiness(state, evidence, mirror=mirror)
@@ -317,6 +333,103 @@ class ControlPlaneManager:
         finally:
             store.close()
 
+    def record_blackbox_event(
+        self,
+        *,
+        event_type: str,
+        run_id: str,
+        session_id: str | None = None,
+        tool_call_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append one content-minimizing host observation to the flight chain."""
+
+        from aetnamem.control.blackbox import EVIDENCE_KIND, normalize_event
+
+        state, warning = self.effective_state()
+        if warning or state.migration_id == "unavailable":
+            raise ValueError("blackbox recording requires a valid control state")
+        body = normalize_event(
+            migration_id=state.migration_id,
+            host=state.host,
+            event_type=event_type,
+            run_id=run_id,
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+            payload=payload,
+        )
+        store = self._store(state)
+        try:
+            entry = store.append_evidence(
+                state.migration_id,
+                kind=EVIDENCE_KIND,
+                body=body,
+            )
+        finally:
+            store.close()
+        return {
+            "recorded": True,
+            "event_id": entry["id"],
+            "sequence": entry["sequence"],
+            "entry_sha256": entry["entry_sha256"],
+        }
+
+    def blackbox_events(self, *, run_id: str | None = None) -> list[dict[str, Any]]:
+        from aetnamem.control.blackbox import EVIDENCE_KIND
+
+        state = self.state()
+        store = self._store(state)
+        try:
+            entries = store.list_evidence(state.migration_id, kind=EVIDENCE_KIND)
+        finally:
+            store.close()
+        if run_id is None:
+            return entries
+        return [
+            entry
+            for entry in entries
+            if str((entry.get("body") or {}).get("run_id") or "") == run_id
+        ]
+
+    def blackbox_runs(self, *, limit: int = 50) -> dict[str, Any]:
+        from aetnamem.control.blackbox import EVIDENCE_KIND, flight_runs
+
+        state = self.state()
+        store = self._store(state)
+        try:
+            entries = store.list_evidence(state.migration_id, kind=EVIDENCE_KIND)
+            chain = store.verify_evidence_chain(
+                state.migration_id, kind=EVIDENCE_KIND
+            )
+        finally:
+            store.close()
+        runs = flight_runs(entries)
+        return {
+            "format": "aetnamem-agent-blackbox-index-v1",
+            "enabled": True,
+            "host": state.host,
+            "migration_id": state.migration_id,
+            "raw_content_stored": False,
+            "chain": chain,
+            "total_runs": len(runs),
+            "total_events": len(entries),
+            "runs": runs[: max(0, min(int(limit), 500))],
+        }
+
+    def verify_blackbox_flight(self, run_id: str) -> dict[str, Any]:
+        from aetnamem.control.blackbox import EVIDENCE_KIND, verify_flight
+
+        state = self.state()
+        store = self._store(state)
+        try:
+            entries = store.list_evidence(state.migration_id, kind=EVIDENCE_KIND)
+            chain = store.verify_evidence_chain(
+                state.migration_id, kind=EVIDENCE_KIND
+            )
+        finally:
+            store.close()
+        return verify_flight(run_id=run_id, entries=entries, chain=chain)
+
     def transition(
         self,
         mode: ControlMode | str,
@@ -378,7 +491,7 @@ class ControlPlaneManager:
         mirror_ready = bool(
             mirror
             and mirror.get("synced")
-            and int(mirror.get("record_count") or 0) > 0
+            and mirror.get("audit_verified")
         )
         reasons: list[str] = []
         if not chain_valid:
@@ -393,7 +506,11 @@ class ControlPlaneManager:
         }
 
     def _store(self, state: ControlState) -> ControlStore:
-        return ControlStore(Path(state.control_dir) / "evidence.db")
+        control_dir = Path(state.control_dir)
+        return ControlStore(
+            control_dir / "evidence.db",
+            policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
+        )
 
     @staticmethod
     def _no_context(state: ControlState, reason: str) -> dict[str, Any]:

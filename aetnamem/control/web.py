@@ -50,6 +50,58 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/status":
             self._json(HTTPStatus.OK, self.server.manager.status())
             return
+        if parsed.path == "/api/blackbox/runs":
+            params = parse_qs(parsed.query)
+            try:
+                limit = int((params.get("limit") or ["50"])[0])
+                self._json(
+                    HTTPStatus.OK,
+                    self.server.manager.blackbox_runs(limit=limit),
+                )
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if parsed.path in {"/api/blackbox/flight", "/api/blackbox/export"}:
+            from aetnamem.control.blackbox import format_flight_report
+
+            params = parse_qs(parsed.query)
+            run_id = (params.get("run_id") or [""])[0].strip()
+            if not run_id:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "run_id is required"})
+                return
+            try:
+                report = self.server.manager.verify_blackbox_flight(run_id)
+            except ValueError as exc:
+                self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                return
+            if parsed.path == "/api/blackbox/flight":
+                self._json(HTTPStatus.OK, report)
+                return
+            output_format = (params.get("format") or ["json"])[0]
+            if output_format == "text":
+                content = format_flight_report(report)
+                content_type = "text/plain; charset=utf-8"
+                suffix = "txt"
+            elif output_format == "json":
+                content = json.dumps(report, indent=2, sort_keys=True) + "\n"
+                content_type = "application/json; charset=utf-8"
+                suffix = "json"
+            else:
+                self._json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "format must be json or text"},
+                )
+                return
+            safe_run = "".join(
+                char if char.isalnum() or char in {"-", "_"} else "-"
+                for char in run_id
+            )[:80]
+            self._download(
+                content,
+                filename=f"aetnamem-blackbox-{safe_run}.{suffix}",
+                content_type=content_type,
+            )
+            return
         if parsed.path == "/api/mirror/search":
             from aetnamem.control.openclaw_native import search_mirror
 
@@ -298,11 +350,7 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/restore":
-                from aetnamem.control.hosts import restore_host
-                from aetnamem.control.openclaw_native import (
-                    restart_and_verify_gateway,
-                    restore_takeover,
-                )
+                from aetnamem.control.openclaw_native import restore_takeover
 
                 state = self.server.manager.state()
                 takeover = restore_takeover(state)
@@ -310,21 +358,33 @@ class ControlDashboardHandler(BaseHTTPRequestHandler):
                     state = self.server.manager.transition(
                         ControlMode.OFF, actor="dashboard-restore"
                     )
-                host = restore_host(state)
-                gateway = (
-                    restart_and_verify_gateway()
-                    if state.host == "openclaw"
-                    else {"verified": True}
-                )
                 self._json(
                     HTTPStatus.OK,
                     {
-                        "restored": bool(host.get("verified"))
-                        and bool(gateway.get("verified")),
+                        "restored": bool(takeover.get("valid")),
                         "takeover": takeover,
-                        "host": host,
-                        "gateway": gateway,
+                        "host": {"host": state.host, "verified": bool(takeover.get("valid"))},
+                        "gateway": takeover.get("gateway"),
                     },
+                )
+                return
+            if path == "/api/restore-drill":
+                from aetnamem.control.openclaw_native import restore_drill
+
+                self._json(
+                    HTTPStatus.OK,
+                    restore_drill(self.server.manager.state()),
+                )
+                return
+            if path == "/api/verify":
+                from aetnamem.control.verify import run_verification
+
+                self._json(
+                    HTTPStatus.OK,
+                    run_verification(
+                        self.server.manager.state(),
+                        probe=bool(body.get("probe", False)),
+                    ),
                 )
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})

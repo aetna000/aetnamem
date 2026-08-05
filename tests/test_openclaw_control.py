@@ -280,7 +280,8 @@ def test_takeover_freezes_native_files_and_restore_restores_them(
     def run(arguments: list[str], *, allow_missing: bool = False):
         del allow_missing
         commands.append(arguments)
-        return subprocess.CompletedProcess(arguments, 0, "", "")
+        output = "openclaw 2026.7.1-2\n" if arguments[1:] == ["--version"] else ""
+        return subprocess.CompletedProcess(arguments, 0, output, "")
 
     monkeypatch.setattr("aetnamem.control.openclaw_native._set_json", set_json)
     monkeypatch.setattr("aetnamem.control.openclaw_native._run", run)
@@ -290,6 +291,7 @@ def test_takeover_freezes_native_files_and_restore_restores_them(
             {
                 "plugin": {
                     "status": "loaded",
+                    "version": "1.0.0-experimental.4",
                     "toolNames": [
                         "memory_search",
                         "memory_get",
@@ -297,12 +299,15 @@ def test_takeover_freezes_native_files_and_restore_restores_them(
                         "aetnamem_observe",
                     ],
                 },
-                "typedHooks": [
-                    {"name": "before_model_resolve"},
-                    {"name": "before_prompt_build"},
-                    {"name": "agent_end"},
-                    {"name": "before_message_write"},
-                    {"name": "before_tool_call"},
+                    "typedHooks": [
+                        {"name": "before_model_resolve"},
+                        {"name": "before_prompt_build"},
+                        {"name": "llm_input"},
+                        {"name": "llm_output"},
+                        {"name": "agent_end"},
+                        {"name": "before_message_write"},
+                        {"name": "before_tool_call"},
+                        {"name": "after_tool_call"},
                 ],
             }
             if "plugins" in arguments
@@ -422,7 +427,12 @@ def test_restore_preserves_post_switch_native_files_before_restore(
     )
     monkeypatch.setattr(
         "aetnamem.control.openclaw_native._run",
-        lambda arguments, **_kwargs: subprocess.CompletedProcess(arguments, 0, "", ""),
+        lambda arguments, **_kwargs: subprocess.CompletedProcess(
+            arguments,
+            0,
+            "openclaw 2026.7.1-2\n" if arguments[1:] == ["--version"] else "",
+            "",
+        ),
     )
     monkeypatch.setattr(
         "aetnamem.control.openclaw_native._json_command",
@@ -430,6 +440,7 @@ def test_restore_preserves_post_switch_native_files_before_restore(
             {
                 "plugin": {
                     "status": "loaded",
+                    "version": "1.0.0-experimental.4",
                     "toolNames": [
                         "memory_search",
                         "memory_get",
@@ -437,12 +448,15 @@ def test_restore_preserves_post_switch_native_files_before_restore(
                         "aetnamem_observe",
                     ],
                 },
-                "typedHooks": [
-                    {"name": "before_model_resolve"},
-                    {"name": "before_prompt_build"},
-                    {"name": "agent_end"},
-                    {"name": "before_message_write"},
-                    {"name": "before_tool_call"},
+                    "typedHooks": [
+                        {"name": "before_model_resolve"},
+                        {"name": "before_prompt_build"},
+                        {"name": "llm_input"},
+                        {"name": "llm_output"},
+                        {"name": "agent_end"},
+                        {"name": "before_message_write"},
+                        {"name": "before_tool_call"},
+                        {"name": "after_tool_call"},
                 ],
             }
             if "plugins" in arguments
@@ -533,7 +547,21 @@ def test_takeover_refuses_unverifiable_native_memory_without_mutation(
     )
     monkeypatch.setattr(
         "aetnamem.control.openclaw_native._run",
-        lambda arguments, **_kwargs: subprocess.CompletedProcess(arguments, 0, "", ""),
+        lambda arguments, **_kwargs: subprocess.CompletedProcess(
+            arguments,
+            0,
+            "openclaw 2026.7.1-2\n" if arguments[1:] == ["--version"] else "",
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        "aetnamem.control.openclaw_native._json_command",
+        lambda _arguments: {
+            "plugin": {
+                "status": "loaded",
+                "version": "1.0.0-experimental.4",
+            }
+        },
     )
 
     with pytest.raises(ValueError, match="symlink"):

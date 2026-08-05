@@ -8,6 +8,7 @@ import subprocess
 from typing import Any
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdPolicy
 from aetnamem.control.models import ControlState
 from aetnamem.control.store import ControlStore
 
@@ -28,7 +29,11 @@ def configure_host(
 
 
 def restore_host(state: ControlState) -> dict[str, Any]:
-    store = ControlStore(Path(state.control_dir) / "evidence.db")
+    control_dir = Path(state.control_dir)
+    store = ControlStore(
+        control_dir / "evidence.db",
+        policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
+    )
     try:
         snapshot = store.latest_snapshot(state.migration_id)
     finally:
@@ -69,7 +74,7 @@ def _configure_openclaw(
     if plugin_version is None or _version_tuple(plugin_version) < (1, 0, 0):
         raise ValueError(
             "The AetnaMem control plane requires openclaw-memory-aetnamem "
-            "1.0.0-experimental.3 or newer. "
+            "1.0.0-experimental.4 or newer. "
             "Run `aetnamem openclaw install`; it installs and verifies the "
             "matching bridge before starting the migration."
         )
@@ -131,7 +136,11 @@ def _configure_openclaw(
     except Exception:
         _restore_openclaw(metadata)
         raise
-    store = ControlStore(Path(state.control_dir) / "evidence.db")
+    control_dir = Path(state.control_dir)
+    store = ControlStore(
+        control_dir / "evidence.db",
+        policy=HouseholdPolicy.load(control_dir / "openclaw-mirror.db"),
+    )
     try:
         store.add_host_snapshot(
             state.migration_id,

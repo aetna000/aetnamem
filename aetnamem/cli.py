@@ -507,6 +507,7 @@ def main() -> None:
         ("status", "Show which memory provider is active and whether switching is safe"),
         ("activate", "Make AetnaMem the OpenClaw memory provider"),
         ("restore", "Restore OpenClaw memory; preserve AetnaMem evidence"),
+        ("verify", "Measure the migration without repairing or restarting it"),
         ("mcp", "Serve the private host-integration protocol over stdio"),
         ("dashboard", "Open the local memory mirror and switch dashboard"),
     ):
@@ -523,6 +524,47 @@ def main() -> None:
             command_parser.add_argument(
                 "--yes", action="store_true", help="Confirm non-interactively"
             )
+        if name == "restore":
+            command_parser.add_argument(
+                "--drill",
+                action="store_true",
+                help="Test file restoration and config readability without changing live state",
+            )
+        if name == "verify":
+            command_parser.add_argument(
+                "--probe",
+                action="store_true",
+                help="Attempt an isolated context comparison; skip when isolation is unavailable",
+            )
+
+    blackbox_parser = subparsers.add_parser(
+        "blackbox",
+        help="Inspect tamper-evident agent flight records",
+    )
+    blackbox_commands = blackbox_parser.add_subparsers(
+        dest="blackbox_command", required=True
+    )
+    for name, help_text in (
+        ("status", "Show recorder coverage and evidence-chain integrity"),
+        ("runs", "List recently observed agent runs"),
+        ("show", "Show one chronological agent flight"),
+        ("verify", "Verify one flight's chain and tool-event closure"),
+        ("export", "Export one portable flight investigation report"),
+    ):
+        command_parser = blackbox_commands.add_parser(name, help=help_text)
+        command_parser.add_argument("--state", default=None)
+        command_parser.add_argument(
+            "--json", action="store_true", help="Print machine-readable JSON"
+        )
+        if name in {"show", "verify", "export"}:
+            command_parser.add_argument("run_id")
+        if name in {"status", "runs"}:
+            command_parser.add_argument("--limit", type=int, default=50)
+        if name == "export":
+            command_parser.add_argument(
+                "--format", choices=("json", "text"), default="json"
+            )
+            command_parser.add_argument("--output", required=True)
 
     args = parser.parse_args()
 
@@ -536,6 +578,10 @@ def main() -> None:
 
     if args.command == "control":
         _run_control(args)
+        return
+
+    if args.command == "blackbox":
+        _run_blackbox(args)
         return
 
     if args.command == "index":
@@ -1080,13 +1126,42 @@ def _print_control(command: str, value: object, *, json_output: bool) -> None:
             print("AetnaMem is not enabled in the restored host configuration.")
         print("Past agent outputs and provider logs are unchanged.")
         return
+    if command == "restore-drill":
+        print("AetnaMem restore drill complete")
+        print(
+            "\n  File restoration      "
+            + ("tested" if result.get("files_restoration_tested") else "FAILED")
+        )
+        print(
+            "  Saved configuration   "
+            + ("readable" if result.get("saved_config_readable") else "FAILED")
+        )
+        print("  Live rollback         not performed")
+        print(
+            "  Verification          "
+            + ("PASSED" if result.get("valid") else "FAILED")
+        )
+        print(f"  Evidence digest       {result.get('evidence_sha256', 'none')}")
+        print(f"  Report digest         {result.get('report_sha256', 'none')}")
+        return
     titles = {
         "shadow": "AetnaMem shadowing started",
         "status": "OpenClaw memory status",
         "activate": "AetnaMem is active",
+        "verify": "AetnaMem control verification",
     }
     print(titles.get(command, "AetnaMem memory control plane"))
     _print_control_status_rows(result)
+    if command == "verify":
+        for row in result.get("checks") or []:
+            if isinstance(row, dict):
+                print(
+                    f"  {str(row.get('status') or 'unknown').upper():4}  "
+                    f"{row.get('name')}"
+                )
+        print(f"\n  Evidence digest       {result.get('evidence_sha256', 'none')}")
+        print(f"  Report digest         {result.get('report_sha256', 'none')}")
+        return
     if command == "shadow":
         integration = result.get("integration")
         integration = integration if isinstance(integration, dict) else {}
@@ -1159,6 +1234,20 @@ def _print_control_status_rows(result: dict[str, object]) -> None:
         )
     if result.get("migration_id"):
         print(f"  Control ID              {result['migration_id']}")
+    drill = result.get("restore_drill")
+    drill = drill if isinstance(drill, dict) else {}
+    if drill.get("valid"):
+        print(f"  File restoration       tested {drill.get('ended_at', 'unknown')}")
+        print("  Saved configuration    readable")
+        print("  Live rollback          not performed")
+    verification = result.get("verification")
+    verification = verification if isinstance(verification, dict) else {}
+    if verification.get("report_sha256"):
+        print(
+            "  Last verification      "
+            + ("PASSED" if verification.get("valid") else "FAILED")
+        )
+        print(f"  Verification evidence  {verification.get('evidence_sha256')}")
 
 
 def _display_host(value: object) -> str:
@@ -1232,7 +1321,7 @@ def _semantic_search_resources(
             f"semantic index does not exist: {index_path}; "
             "run `aetnamem index build` first"
         )
-    index = SemanticIndex(index_path)
+    index = SemanticIndex(index_path, policy=memory.policy)
     epoch = index.active_epoch(args.subject)
     if epoch is None:
         index.close()
@@ -1260,7 +1349,9 @@ def _run_index(args: argparse.Namespace) -> None:
     from aetnamem.semantic import SemanticIndex, create_embedder, default_index_path
 
     memory = Memory(args.path)
-    index = SemanticIndex(args.index_path or default_index_path(args.path))
+    index = SemanticIndex(
+        args.index_path or default_index_path(args.path), policy=memory.policy
+    )
     try:
         if args.index_command == "status":
             _print(index.status(args.subject))
@@ -1424,6 +1515,14 @@ def _run_control(args: argparse.Namespace) -> None:
     manager = ControlPlaneManager(state_path)
     if args.control_command == "status":
         _print_control("status", manager.status(), json_output=args.json)
+    elif args.control_command == "verify":
+        from aetnamem.control.verify import run_verification, verification_exit_code
+
+        report = run_verification(manager.state(), probe=args.probe)
+        _print_control("verify", report, json_output=args.json)
+        code = verification_exit_code(report)
+        if code:
+            raise SystemExit(code)
     elif args.control_command == "activate":
         _confirm_control_host(manager, non_interactive=args.yes)
         readiness = manager.status().get("readiness") or {}
@@ -1474,14 +1573,18 @@ def _run_control(args: argparse.Namespace) -> None:
             json_output=args.json,
         )
     elif args.control_command == "restore":
-        from aetnamem.control.hosts import restore_host
-        from aetnamem.control.openclaw_native import (
-            restart_and_verify_gateway,
-            restore_takeover,
-        )
+        from aetnamem.control.openclaw_native import restore_takeover
 
-        _confirm_control_host(manager, non_interactive=args.yes)
         state = manager.state()
+        if args.drill:
+            from aetnamem.control.openclaw_native import restore_drill
+
+            result = restore_drill(state)
+            _print_control("restore-drill", result, json_output=args.json)
+            if not result.get("valid"):
+                raise SystemExit(1)
+            return
+        _confirm_control_host(manager, non_interactive=args.yes)
         def restore_progress(step: int, total: int, label: str) -> None:
             if args.json:
                 return
@@ -1500,17 +1603,31 @@ def _run_control(args: argparse.Namespace) -> None:
         )
         if state.mode is not ControlMode.OFF:
             state = manager.transition(ControlMode.OFF, actor="restore")
-        restored = restore_host(state)
-        gateway = (
-            restart_and_verify_gateway()
-            if state.host == "openclaw"
-            else {"restarted": False, "verified": True}
+        plugin_row = next(
+            (
+                row
+                for row in takeover_restore.get("config", [])
+                if isinstance(row, dict)
+                and row.get("key") == "plugins.entries.memory-aetnamem"
+            ),
+            {},
         )
+        plugin_value = plugin_row.get("observed_value")
+        plugin_value = plugin_value if isinstance(plugin_value, dict) else {}
+        restored = {
+            "host": state.host,
+            "restored": bool(takeover_restore.get("valid")),
+            "verified": bool(takeover_restore.get("valid")),
+            "plugin_present": bool(plugin_row.get("observed_present")),
+            "plugin_enabled": bool(plugin_value.get("enabled")),
+            "control_plane_enabled": bool(
+                ((plugin_value.get("config") or {}).get("controlPlane") or {}).get(
+                    "enabled"
+                )
+            ),
+        }
         restored["takeover"] = takeover_restore
-        restored["gateway"] = gateway
-        restored["verified"] = bool(restored.get("verified")) and bool(
-            gateway.get("verified")
-        )
+        restored["gateway"] = takeover_restore.get("gateway")
         result = state.public_status()
         result["host_restore"] = restored
         result["restore_boundary"] = (
@@ -1529,6 +1646,67 @@ def _run_control(args: argparse.Namespace) -> None:
         )
     else:  # pragma: no cover - argparse prevents this
         raise ValueError(f"unknown control command: {args.control_command}")
+
+
+def _run_blackbox(args: argparse.Namespace) -> None:
+    from aetnamem.control.blackbox import format_flight_report
+    from aetnamem.control.manager import ControlPlaneManager, DEFAULT_STATE_PATH
+
+    manager = ControlPlaneManager(args.state or str(DEFAULT_STATE_PATH))
+    command = args.blackbox_command
+    if command in {"status", "runs"}:
+        result = manager.blackbox_runs(limit=args.limit)
+        if args.json:
+            _print(result)
+            return
+        chain = result.get("chain") or {}
+        print("AetnaMem Agent Black Box")
+        print(f"\n  Host             {result.get('host')}")
+        print(f"  Recorded runs    {result.get('total_runs', 0)}")
+        print(f"  Recorded events  {result.get('total_events', 0)}")
+        print(f"  Evidence chain   {'VALID' if chain.get('valid') else 'INVALID'}")
+        print("  Stored content   digests and bounded metadata only")
+        rows = result.get("runs") or []
+        if rows:
+            print("\nRecent flights")
+            for row in rows:
+                state = "complete" if row.get("terminal") else "incomplete"
+                print(
+                    f"  {row.get('run_id')}  {row.get('events')} events  "
+                    f"{row.get('tool_completions')}/{row.get('tool_requests')} tools  {state}"
+                )
+        else:
+            print("\nNo flights recorded yet. Use OpenClaw normally after installing AetnaMem.")
+        return
+
+    report = manager.verify_blackbox_flight(args.run_id)
+    if command == "export":
+        output = Path(args.output).expanduser().resolve(strict=False)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        content = (
+            json.dumps(report, indent=2, sort_keys=True) + "\n"
+            if args.format == "json"
+            else format_flight_report(report)
+        )
+        output.write_text(content, encoding="utf-8")
+        if args.json:
+            _print(
+                {
+                    "exported": True,
+                    "run_id": args.run_id,
+                    "format": args.format,
+                    "output": str(output),
+                    "report_sha256": report.get("report_sha256"),
+                }
+            )
+        else:
+            print(f"Agent flight exported to {output}")
+            print(f"Report SHA-256: {report.get('report_sha256')}")
+        return
+    if args.json:
+        _print(report)
+    else:
+        print(format_flight_report(report), end="")
 
 
 def _confirm_control_host(

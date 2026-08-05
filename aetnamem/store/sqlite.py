@@ -11,19 +11,33 @@ import uuid
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
 from aetnamem.core.policy import normalize_content
+from aetnamem.core.storage import HouseholdLock, HouseholdPolicy, connect, row_factory_for
 
 
 class SQLiteStore:
-    def __init__(self, path: str | Path = ":memory:") -> None:
+    def __init__(
+        self,
+        path: str | Path = ":memory:",
+        *,
+        policy: HouseholdPolicy | None = None,
+    ) -> None:
         self.path = str(path)
+        self.policy = policy or HouseholdPolicy.load(path)
+        self._household_lock = HouseholdLock(self.policy).acquire()
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         # Autocommit mode keeps transaction ownership explicit. Public write
         # methods enter ``transaction()``; an outer engine operation can wrap
         # several of them in one atomic unit without an inner method committing
         # early through sqlite3.Connection.__exit__.
-        self._conn = sqlite3.connect(self.path, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
+        try:
+            self._conn = connect(
+                self.path, policy=self.policy, isolation_level=None
+            )
+        except Exception:
+            self._household_lock.close()
+            raise
+        self._conn.row_factory = row_factory_for(self.policy)
         self._transaction_depth = 0
         self._fts_enabled = False
         self._graph_fts_enabled = False
@@ -33,7 +47,7 @@ class SQLiteStore:
         if self.path != ":memory:":
             try:
                 self._conn.execute("PRAGMA journal_mode = WAL")
-            except sqlite3.OperationalError as exc:
+            except Exception as exc:
                 # Concurrent first-open calls can race while one connection
                 # changes the persistent journal mode. BEGIN IMMEDIATE still
                 # provides correct serialization; the winning connection has
@@ -43,7 +57,10 @@ class SQLiteStore:
         self._migrate()
 
     def close(self) -> None:
-        self._conn.close()
+        try:
+            self._conn.close()
+        finally:
+            self._household_lock.close()
 
     @contextmanager
     def transaction(self, *, immediate: bool = True) -> Iterator["SQLiteStore"]:

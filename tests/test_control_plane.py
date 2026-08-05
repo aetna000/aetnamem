@@ -131,6 +131,7 @@ def test_private_mcp_exposes_no_approval_or_mode_change_tools(
         "control_sync_openclaw_memory",
         "control_prepare",
         "control_exposure_shown",
+        "control_record_blackbox_event",
         "control_status",
     }
     assert not any("approve" in name or "mode" in name for name in names)
@@ -261,7 +262,7 @@ def test_openclaw_configuration_is_snapshotted_and_restored(
                     {
                         "plugin": {
                             "id": "memory-aetnamem",
-                            "version": "1.0.0-experimental.3",
+                            "version": "1.0.0-experimental.4",
                         }
                     }
                 ),
@@ -332,6 +333,28 @@ def test_dashboard_is_direct_on_loopback_and_uses_csrf_for_mutations(
     try:
         assert opener.open(f"{base}/").read() == b"<html>safe</html>"
         assert opener.open(f"{base}/api/status").status == 200
+        manager.record_blackbox_event(
+            event_type="turn.ended",
+            run_id="dashboard-run",
+            payload={
+                "success": True,
+                "cancelled": False,
+                "messages_sha256": "a" * 64,
+                "messages_count": 1,
+            },
+        )
+        flights = json.loads(opener.open(f"{base}/api/blackbox/runs").read())
+        assert flights["runs"][0]["run_id"] == "dashboard-run"
+        flight = json.loads(
+            opener.open(
+                f"{base}/api/blackbox/flight?run_id=dashboard-run"
+            ).read()
+        )
+        assert flight["timeline_chain_valid"] is True
+        exported = opener.open(
+            f"{base}/api/blackbox/export?run_id=dashboard-run&format=text"
+        ).read()
+        assert b"AetnaMem Agent Black Box" in exported
         session = json.loads(opener.open(f"{base}/api/session").read())
 
         unprotected = Request(
@@ -414,6 +437,11 @@ def test_dashboard_ships_the_visual_control_ui_not_the_json_fallback() -> None:
     assert 'post("/api/mirror/review"' in html
     assert 'setInterval(refreshReviews,5000)' in html
     assert "Audit Explorer" in html
+    assert "Agent Black Box" in html
+    assert "/api/blackbox/runs?limit=20" in html
+    assert "/api/blackbox/flight?run_id=" in html
+    assert "/api/blackbox/export?run_id=" in html
+    assert "not raw prompts, responses, tool parameters or results" in html
     assert "/api/mirror/audit?" in html
     assert "/api/mirror/audit-export?" in html
     assert "Saved views" in html

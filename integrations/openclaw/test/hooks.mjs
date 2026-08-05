@@ -9,6 +9,8 @@ import path from "node:path";
 import plugin from "../dist/index.js";
 import { AetnamemClient } from "../dist/src/rpc-client.js";
 
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
+process.env.PYTHONPATH = [repoRoot, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
 
 function fakeApi(config, toolContext = {}) {
   const hooks = new Map();
@@ -47,6 +49,16 @@ function fakeApi(config, toolContext = {}) {
 function controlCli(...args) {
   const result = spawnSync("aetnamem", ["control", ...args, "--json"], {
     encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim() ? JSON.parse(result.stdout) : null;
+}
+
+function blackboxCli(...args) {
+  const result = spawnSync("python", ["-m", "aetnamem.cli", "blackbox", ...args, "--json"], {
+    encoding: "utf8",
+    cwd: repoRoot,
+    env: { ...process.env, PYTHONPATH: repoRoot },
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return result.stdout.trim() ? JSON.parse(result.stdout) : null;
@@ -379,16 +391,140 @@ try {
   assert.equal(controlPlane.tools.size, 0);
   const safeBefore = controlPlane.hooks.get("before_prompt_build");
   const safeEnd = controlPlane.hooks.get("agent_end");
+  const blackboxCtx = {
+    sessionKey: "migration-1",
+    sessionId: "migration-session-1",
+    runId: "run-blackbox-1",
+  };
+  await controlPlane.hooks.get("before_model_resolve")(
+    {
+      runId: "run-blackbox-1",
+      prompt: "Remember my terminal preference.",
+      historyMessages: [],
+      imagesCount: 0,
+      tools: [{ name: "memory_remember" }],
+    },
+    blackboxCtx,
+  );
+  await controlPlane.hooks.get("llm_input")(
+    {
+      runId: "run-blackbox-1",
+      sessionId: "migration-session-1",
+      provider: "openai",
+      model: "gpt-test",
+      systemPrompt: "private system prompt",
+      prompt: "Remember my terminal preference.",
+      historyMessages: [],
+      imagesCount: 0,
+      tools: [{ name: "memory_remember" }],
+    },
+    blackboxCtx,
+  );
   const captureOnly = await safeBefore(
     { prompt: "Remember that my preferred terminal is Ghostty." },
-    { sessionKey: "migration-1" },
+    blackboxCtx,
   );
   assert.equal(captureOnly, undefined);
-  await safeEnd({ success: true, messages: [] }, { sessionKey: "migration-1" });
+  await controlPlane.hooks.get("before_tool_call")(
+    {
+      toolName: "memory_search",
+      toolCallId: "blackbox-tool-1",
+      runId: "run-blackbox-1",
+      params: { query: "terminal" },
+    },
+    blackboxCtx,
+  );
+  await controlPlane.hooks.get("after_tool_call")(
+    {
+      toolName: "memory_search",
+      toolCallId: "blackbox-tool-1",
+      runId: "run-blackbox-1",
+      params: { query: "terminal" },
+      result: { found: true, private: "not stored except as a digest" },
+      durationMs: 5,
+    },
+    blackboxCtx,
+  );
+  await controlPlane.hooks.get("llm_output")(
+    {
+      runId: "run-blackbox-1",
+      sessionId: "migration-session-1",
+      provider: "openai",
+      model: "gpt-test",
+      assistantTexts: ["I remembered your terminal preference."],
+      usage: { input: 10, output: 6, total: 16 },
+    },
+    blackboxCtx,
+  );
+  await safeEnd({ runId: "run-blackbox-1", success: true, messages: [] }, blackboxCtx);
   const migrationStatus = controlCli("status", "--state", migrationState);
   assert.equal(migrationStatus.mode, "shadow");
   assert.equal(migrationStatus.changes_model_context, false);
+  const flight = blackboxCli("verify", "run-blackbox-1", "--state", migrationState);
+  assert.equal(flight.timeline_chain_valid, true);
+  assert.equal(flight.structurally_complete, true);
+  assert.equal(flight.verdict, "observed_tools_reached_terminal_events");
+  const serializedFlight = JSON.stringify(flight);
+  assert.doesNotMatch(serializedFlight, /private system prompt/);
+  assert.doesNotMatch(serializedFlight, /I remembered your terminal preference/);
   for (const service of controlPlane.services) await service.stop?.();
+
+  // Managed active mode uses the normal memory engine and a separate private
+  // control process for Black Box evidence. Recording must survive cutover.
+  const activeRecorder = fakeApi({
+    ...base,
+    takeoverActive: true,
+    nativeWorkspace: path.join(dataDir, "openclaw-workspace"),
+    controlPlane: {
+      enabled: false,
+      statePath: migrationState,
+      blackboxEnabled: true,
+    },
+  });
+  const activeCtx = {
+    sessionKey: "active-session",
+    sessionId: "active-session",
+    runId: "run-blackbox-active",
+  };
+  await activeRecorder.hooks.get("before_model_resolve")(
+    { prompt: "Check the active recorder.", attachments: [] },
+    activeCtx,
+  );
+  await activeRecorder.hooks.get("before_tool_call")(
+    {
+      toolName: "memory_search",
+      toolCallId: "active-tool-1",
+      runId: "run-blackbox-active",
+      params: { query: "recorder" },
+      derivedPaths: ["/private/example/path"],
+    },
+    activeCtx,
+  );
+  await activeRecorder.hooks.get("after_tool_call")(
+    {
+      toolName: "memory_search",
+      toolCallId: "active-tool-1",
+      runId: "run-blackbox-active",
+      params: { query: "recorder" },
+      result: { found: true },
+      durationMs: 4,
+    },
+    activeCtx,
+  );
+  await activeRecorder.hooks.get("agent_end")(
+    { runId: "run-blackbox-active", success: true, messages: [], durationMs: 9 },
+    activeCtx,
+  );
+  const activeFlight = blackboxCli(
+    "verify",
+    "run-blackbox-active",
+    "--state",
+    migrationState,
+  );
+  assert.equal(activeFlight.structurally_complete, true);
+  assert.equal(activeFlight.verdict, "observed_tools_reached_terminal_events");
+  assert.doesNotMatch(JSON.stringify(activeFlight), /private\/example\/path/);
+  for (const service of activeRecorder.services) await service.stop?.();
 
   console.log(
     "hooks: direct engine and fail-closed memory control plane paths verified",

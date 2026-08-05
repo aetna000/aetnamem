@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdPolicy
 from aetnamem.core.policy import (
     TRUST_TIER_UNTRUSTED,
     classify_source,
@@ -76,8 +77,10 @@ class Memory:
         retain_query_text: bool = False,
         graph_recall: bool = False,
         recall_candidate_limit: int = 200,
+        policy: HouseholdPolicy | None = None,
     ) -> None:
-        self.store = SQLiteStore(path)
+        self.policy = policy or HouseholdPolicy.load(path)
+        self.store = SQLiteStore(path, policy=self.policy)
         self.graph = GraphIndex(self.store)
         self.retain_query_text = retain_query_text
         self.graph_recall = graph_recall
@@ -1068,7 +1071,7 @@ class Memory:
                         "registered semantic index is missing; deletion cannot "
                         f"verify vector cleanup ({registry['index_path_sha256']})"
                     )
-                semantic_index = SemanticIndex(index_path)
+                semantic_index = SemanticIndex(index_path, policy=self.policy)
                 try:
                     if semantic_index.active_epoch(subject_id) is not None:
                         index_cleanup = semantic_index.purge(subject_id, cleanup_ids)

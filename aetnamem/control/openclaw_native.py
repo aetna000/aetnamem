@@ -11,9 +11,12 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 from typing import Any, Callable, Iterable
 
+from aetnamem.control.evidence import seal_report
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdPolicy
 from aetnamem.memory import Memory
 from aetnamem.store.sqlite import utc_now
 from aetnamem.control.models import ControlState
@@ -26,6 +29,10 @@ NATIVE_SNAPSHOT_MANIFEST_NAME = "openclaw-native-snapshot.json"
 NATIVE_BASELINE_NAME = "openclaw-native-baseline"
 NATIVE_BASELINE_MANIFEST_NAME = "openclaw-native-baseline.json"
 SHADOW_HISTORY_NAME = "openclaw-shadow-history"
+RESTORE_DRILL_NAME = "openclaw-restore-drill.json"
+RESTORE_STAGING_NAME = "openclaw-restore-staging"
+RESTORE_JOURNAL_NAME = "openclaw-restore-journal.json"
+RESTORE_RECEIPT_NAME = "openclaw-restore-receipt.json"
 DEFAULT_RECALL_CHARS = 1200
 NATIVE_MEMORY_ROOTS = (
     "MEMORY.md",
@@ -1193,11 +1200,55 @@ def activate_takeover(
     if state.host != "openclaw":
         raise ValueError("native-memory takeover is currently implemented for OpenClaw")
     status = sync_mirror(state)
-    if not status.get("synced") or int(status.get("record_count") or 0) < 1:
-        raise ValueError("OpenClaw memory mirror is empty or failed verification")
+    if not status.get("synced") or not status.get("audit_verified"):
+        raise ValueError("OpenClaw memory mirror failed verification")
     executable = shutil.which("openclaw")
     if executable is None:
         raise ValueError("OpenClaw is not on PATH")
+    from aetnamem.control.compat import evaluate_host_version, normalize_openclaw_version
+    from aetnamem.openclaw_install import OPENCLAW_PLUGIN_VERSION, _find_plugin_version
+
+    host_version = normalize_openclaw_version(
+        (_run([executable, "--version"]).stdout or "").strip()
+    )
+    host_classification = evaluate_host_version(host_version)
+    if host_classification == "untested":
+        raise ValueError(
+            f"OpenClaw {host_version} has not passed the AetnaMem compatibility matrix"
+        )
+    plugin_inspection = _json_command(
+        [executable, "plugins", "inspect", "memory-aetnamem", "--json"]
+    )
+    bridge_version = _find_plugin_version(plugin_inspection)
+    if bridge_version != OPENCLAW_PLUGIN_VERSION:
+        raise ValueError(
+            "the installed AetnaMem bridge is not the pinned version: "
+            f"found {bridge_version or 'unknown'}, expected {OPENCLAW_PLUGIN_VERSION}"
+        )
+    live_slot = _optional_json(
+        [executable, "config", "get", "plugins.slots.memory", "--json"]
+    )
+    takeover_flag = _optional_json(
+        [
+            executable,
+            "config",
+            "get",
+            "plugins.entries.memory-aetnamem.config.takeoverActive",
+            "--json",
+        ]
+    )
+    if live_slot == "none" or takeover_flag is True:
+        raise ValueError(
+            "OpenClaw is not in a safe shadow configuration; restore it before activation"
+        )
+    pre_activation_verification = {
+        "host_version": host_version,
+        "host_version_classification": host_classification,
+        "bridge_version": bridge_version,
+        "native_provider_selected": live_slot != "none",
+        "takeover_inactive": takeover_flag is not True,
+        "verified": True,
+    }
     report(2, total_steps, "Checking OpenClaw memory capabilities")
     capability_report = inspect_native_memory_capabilities(executable)
     if not capability_report["safe_to_switch"]:
@@ -1266,6 +1317,7 @@ def activate_takeover(
         "relocated": [],
         "approved_candidates_merged": 0,
         "native_capability_report": capability_report,
+        "pre_activation_verification": pre_activation_verification,
         "created_at": utc_now(),
     }
     _private_json(cutover_path, cutover)
@@ -1276,7 +1328,7 @@ def activate_takeover(
         _run([executable, "gateway", "stop"])
         report(4, total_steps, "Taking the final searchable memory snapshot")
         status = sync_mirror(state, workspace=workspace)
-        if not status.get("synced") or int(status.get("record_count") or 0) < 1:
+        if not status.get("synced") or not status.get("audit_verified"):
             raise ValueError("final OpenClaw memory mirror failed verification")
         promoted_candidates = _merge_approved_control_candidates(
             state, status["mirror_db"]
@@ -1323,10 +1375,57 @@ def activate_takeover(
                 source.unlink()
 
         report(6, total_steps, "Configuring AetnaMem as the memory provider")
+        existing_tools = (
+            [str(value) for value in prior_tools_also_allow]
+            if isinstance(prior_tools_also_allow, list)
+            else []
+        )
+        applied_tools = list(
+            dict.fromkeys(
+                [*existing_tools, "memory_remember", "aetnamem_observe"]
+            )
+        )
+        base = "plugins.entries.memory-aetnamem"
+        applied_configuration = {
+            "plugins.slots.memory": "none",
+            "hooks.internal.entries.session-memory": {"enabled": False},
+            f"{base}.config.controlPlane": {
+                "enabled": False,
+                "statePath": str(Path(state_path).expanduser().resolve(strict=False)),
+                "blackboxEnabled": True,
+            },
+            f"{base}.config.takeoverActive": True,
+            f"{base}.config.nativeWorkspace": str(workspace),
+            f"{base}.config.dbPath": status["mirror_db"],
+            f"{base}.config.subject": state.subject_id,
+            f"{base}.hooks.allowConversationAccess": True,
+            f"{base}.config.capture": {
+                "enabled": True,
+                "captureAssistant": True,
+            },
+            f"{base}.config.recall": {
+                "enabled": True,
+                "maxRecords": 3,
+                "maxChars": DEFAULT_RECALL_CHARS,
+                "minScore": 0.3,
+                "timeoutMs": 4000,
+            },
+            f"{base}.enabled": True,
+            "tools.alsoAllow": applied_tools,
+        }
+        cutover["applied_configuration"] = applied_configuration
+        _private_json(cutover_path, cutover)
         _run([executable, "hooks", "disable", "session-memory"], allow_missing=True)
         _set_json(executable, "plugins.slots.memory", "none")
-        base = "plugins.entries.memory-aetnamem"
-        _set_json(executable, f"{base}.config.controlPlane", {"enabled": False})
+        _set_json(
+            executable,
+            f"{base}.config.controlPlane",
+            {
+                "enabled": False,
+                "statePath": str(Path(state_path).expanduser().resolve(strict=False)),
+                "blackboxEnabled": True,
+            },
+        )
         _set_json(executable, f"{base}.config.takeoverActive", True)
         _set_json(executable, f"{base}.config.nativeWorkspace", str(workspace))
         _set_json(executable, f"{base}.config.dbPath", status["mirror_db"])
@@ -1352,19 +1451,10 @@ def activate_takeover(
             },
         )
         _set_json(executable, f"{base}.enabled", True)
-        existing_tools = (
-            [str(value) for value in prior_tools_also_allow]
-            if isinstance(prior_tools_also_allow, list)
-            else []
-        )
         _set_json(
             executable,
             "tools.alsoAllow",
-            list(
-                dict.fromkeys(
-                    [*existing_tools, "memory_remember", "aetnamem_observe"]
-                )
-            ),
+            applied_tools,
         )
         report(7, total_steps, "Restarting OpenClaw")
         _run([executable, "gateway", "restart"])
@@ -1404,9 +1494,12 @@ def activate_takeover(
         required_hooks = {
             "before_model_resolve",
             "before_prompt_build",
+            "llm_input",
+            "llm_output",
             "agent_end",
             "before_message_write",
             "before_tool_call",
+            "after_tool_call",
         }
         protected_workspace = _optional_json(
             [
@@ -1460,41 +1553,645 @@ def activate_takeover(
         raise
 
 
+def _restore_expected_entries(cutover: dict[str, Any]) -> list[dict[str, Any]]:
+    snapshot = cutover.get("native_snapshot")
+    if not isinstance(snapshot, dict):
+        raise ValueError("cutover has no verified native-memory snapshot")
+    entries = snapshot.get("entries")
+    if not isinstance(entries, list) or not all(isinstance(row, dict) for row in entries):
+        raise ValueError("cutover native-memory snapshot is malformed")
+    expected_digest = str(snapshot.get("snapshot_sha256") or "")
+    if not expected_digest or _native_snapshot_digest(entries) != expected_digest:
+        raise ValueError("cutover native-memory snapshot digest mismatch")
+    roots = tuple(str(value) for value in cutover.get("relocated") or ())
+    return _entries_for_roots(entries, roots)
+
+
+def _manifest_diff(
+    expected: list[dict[str, Any]],
+    root: Path,
+    *,
+    roots: Iterable[str],
+) -> list[dict[str, Any]]:
+    """Describe exact expected/actual differences without mutating either tree."""
+
+    actual_rows = _tree_manifest(root, roots)
+    expected_by_key = {
+        (str(row.get("path")), str(row.get("type"))): row for row in expected
+    }
+    actual_by_key = {
+        (str(row.get("path")), str(row.get("type"))): row for row in actual_rows
+    }
+    differences: list[dict[str, Any]] = []
+    for key in sorted(set(expected_by_key) | set(actual_by_key)):
+        expected_row = expected_by_key.get(key)
+        actual_row = actual_by_key.get(key)
+        matched = expected_row == actual_row
+        differences.append(
+            {
+                "path": key[0],
+                "type": key[1],
+                "expected_sha256": (
+                    expected_row.get("sha256") if expected_row else None
+                ),
+                "actual_sha256": actual_row.get("sha256") if actual_row else None,
+                "expected_bytes": expected_row.get("bytes") if expected_row else None,
+                "actual_bytes": actual_row.get("bytes") if actual_row else None,
+                "missing": expected_row is not None and actual_row is None,
+                "unexpected": expected_row is None and actual_row is not None,
+                "matched": matched,
+            }
+        )
+    return differences
+
+
+def _stage_restore_tree(
+    cutover: dict[str, Any], staging_root: Path
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Copy the frozen restore roots into a private staging tree and verify."""
+
+    archive = Path(str(cutover.get("archive") or ""))
+    roots = tuple(str(value) for value in cutover.get("relocated") or ())
+    expected = _restore_expected_entries(cutover)
+    archive_diff = _manifest_diff(expected, archive, roots=roots)
+    if any(not row["matched"] for row in archive_diff):
+        raise ValueError("frozen OpenClaw snapshot failed restore preflight")
+    if staging_root.exists():
+        shutil.rmtree(staging_root)
+    staging_root.mkdir(parents=True, mode=0o700)
+    for relative in roots:
+        source = archive / relative
+        if source.exists():
+            _copy_native_path(source, staging_root / relative)
+    staged_diff = _manifest_diff(expected, staging_root, roots=roots)
+    if any(not row["matched"] for row in staged_diff):
+        raise ValueError("staged OpenClaw restore tree failed manifest verification")
+    return expected, staged_diff
+
+
+def _saved_config_readability(cutover: dict[str, Any], executable: str) -> list[dict[str, Any]]:
+    checks: list[tuple[str, Any]] = [
+        ("plugins.slots.memory", cutover.get("prior_memory_slot")),
+        (
+            "hooks.internal.entries.session-memory",
+            cutover.get("prior_session_memory_hook"),
+        ),
+        ("plugins.entries.memory-aetnamem", cutover.get("prior_plugin_entry")),
+        ("tools.alsoAllow", cutover.get("prior_tools_also_allow")),
+    ]
+    rows: list[dict[str, Any]] = []
+    for key, saved in checks:
+        observed = _optional_json([executable, "config", "get", key, "--json"])
+        rows.append(
+            {
+                "key": key,
+                "saved_present": saved is not None,
+                "saved_type": type(saved).__name__ if saved is not None else None,
+                "readable": observed is None or isinstance(
+                    observed, (dict, list, str, int, float, bool)
+                ),
+            }
+        )
+    return rows
+
+
+def restore_drill(state: ControlState) -> dict[str, Any]:
+    """Prove file staging and config readability without changing live state."""
+
+    started = time.monotonic()
+    started_at = utc_now()
+    control_dir = Path(state.control_dir)
+    cutover = _read_json(control_dir / CUTOVER_NAME)
+    if not cutover:
+        raise ValueError("no OpenClaw cutover snapshot is available for a restore drill")
+    executable = shutil.which("openclaw")
+    if executable is None:
+        raise ValueError("OpenClaw is not on PATH; saved configuration was not checked")
+    staging_root = control_dir / RESTORE_STAGING_NAME / "drill"
+    try:
+        _expected, files = _stage_restore_tree(cutover, staging_root)
+        config = _saved_config_readability(cutover, executable)
+        from aetnamem.control.compat import normalize_openclaw_version
+
+        host_version = normalize_openclaw_version(
+            (_run([executable, "--version"]).stdout or "").strip()
+        )
+        files_ok = all(bool(row["matched"]) for row in files)
+        config_ok = all(bool(row["readable"]) for row in config)
+        ended_at = utc_now()
+        body = {
+            "format": "aetnamem-restore-drill-v1",
+            "migration_id": state.migration_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+            "host_version": host_version,
+            "files_restoration_tested": files_ok,
+            "saved_config_readable": config_ok,
+            "live_rollback_performed": False,
+            "host_version": host_version,
+            "files": files,
+            "config": config,
+            "valid": files_ok and config_ok,
+        }
+        stable = {
+            "format": body["format"],
+            "migration_id": body["migration_id"],
+            "files_restoration_tested": body["files_restoration_tested"],
+            "saved_config_readable": body["saved_config_readable"],
+            "live_rollback_performed": False,
+            "files": files,
+            "config": config,
+            "valid": body["valid"],
+        }
+        report = seal_report(body, stable_evidence=stable)
+        _private_json(control_dir / RESTORE_DRILL_NAME, report)
+        store = ControlStore(
+            control_dir / "evidence.db",
+            policy=HouseholdPolicy.load(control_dir / MIRROR_DB_NAME),
+        )
+        try:
+            stored = store.append_evidence(
+                state.migration_id, kind="restore_drill", body=report
+            )
+        finally:
+            store.close()
+        return {**report, "evidence_entry_sha256": stored["entry_sha256"]}
+    finally:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
+
+
+def _restore_step_done(journal: dict[str, Any], name: str) -> bool:
+    step = (journal.get("steps") or {}).get(name)
+    return isinstance(step, dict) and step.get("completed") is True
+
+
+def _complete_restore_step(
+    journal: dict[str, Any], journal_path: Path, name: str, evidence: Any
+) -> None:
+    steps = journal.setdefault("steps", {})
+    steps[name] = {
+        "completed": True,
+        "completed_at": utc_now(),
+        "evidence": evidence,
+    }
+    journal["updated_at"] = utc_now()
+    _private_json(journal_path, journal)
+
+
+def _restore_config_plan(
+    state: ControlState, cutover: dict[str, Any]
+) -> list[dict[str, Any]]:
+    plugin_present = "prior_plugin_entry" in cutover and cutover.get(
+        "prior_plugin_entry"
+    ) is not None
+    plugin_value = cutover.get("prior_plugin_entry")
+    control_dir = Path(state.control_dir)
+    store = ControlStore(
+        control_dir / "evidence.db",
+        policy=HouseholdPolicy.load(control_dir / MIRROR_DB_NAME),
+    )
+    try:
+        snapshot = store.latest_snapshot(state.migration_id)
+    finally:
+        store.close()
+    if snapshot is not None:
+        try:
+            metadata = json.loads(str(snapshot["metadata_json"]))
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("saved OpenClaw host snapshot is malformed") from exc
+        if isinstance(metadata, dict):
+            plugin_present = bool(metadata.get("present"))
+            plugin_value = metadata.get("entry")
+    return [
+        {
+            "key": "plugins.slots.memory",
+            "present": cutover.get("prior_memory_slot") is not None,
+            "value": cutover.get("prior_memory_slot"),
+        },
+        {
+            "key": "hooks.internal.entries.session-memory",
+            "present": cutover.get("prior_session_memory_hook") is not None,
+            "value": cutover.get("prior_session_memory_hook"),
+        },
+        {
+            "key": "plugins.entries.memory-aetnamem",
+            "present": plugin_present,
+            "value": plugin_value,
+        },
+        {
+            "key": "tools.alsoAllow",
+            "present": cutover.get("prior_tools_also_allow") is not None,
+            "value": cutover.get("prior_tools_also_allow"),
+        },
+    ]
+
+
+def _apply_restore_config(
+    executable: str,
+    plan: list[dict[str, Any]],
+    journal: dict[str, Any],
+    journal_path: Path,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for row in plan:
+        key = str(row["key"])
+        step_name = f"config:{key}"
+        if not _restore_step_done(journal, step_name):
+            if row["present"]:
+                _set_json(executable, key, row["value"])
+            else:
+                _run([executable, "config", "unset", key], allow_missing=True)
+            _complete_restore_step(
+                journal,
+                journal_path,
+                step_name,
+                {"key": key, "present": bool(row["present"])},
+            )
+        observed = _optional_json([executable, "config", "get", key, "--json"])
+        matched = observed == row["value"] if row["present"] else observed is None
+        results.append(
+            {
+                "key": key,
+                "saved_present": bool(row["present"]),
+                "saved_value": row["value"] if row["present"] else None,
+                "observed_present": observed is not None,
+                "observed_value": observed,
+                "matched": matched,
+            }
+        )
+    return results
+
+
+def _restore_staged_files(
+    cutover: dict[str, Any],
+    staging_root: Path,
+    journal: dict[str, Any],
+    journal_path: Path,
+) -> list[dict[str, Any]]:
+    workspace = Path(str(cutover["workspace"]))
+    control_dir = journal_path.parent
+    expected = _restore_expected_entries(cutover)
+    preserved: list[dict[str, Any]] = list(
+        cutover.get("post_switch_native_preserved") or []
+    )
+    preservation_root_value = cutover.get("post_switch_native_preservation_root")
+    preservation_root = (
+        Path(str(preservation_root_value)) if preservation_root_value else None
+    )
+    roots = tuple(str(value) for value in cutover.get("relocated") or ())
+    for relative in roots:
+        step_name = f"file:{relative}"
+        expected_root = _entries_for_roots(expected, (relative,))
+        destination = workspace / relative
+        if not _restore_step_done(journal, step_name):
+            if destination.exists():
+                live_diff = _manifest_diff(expected_root, workspace, roots=(relative,))
+                if any(not row["matched"] for row in live_diff):
+                    if preservation_root is None:
+                        preservation_root = _new_preservation_root(control_dir)
+                    preserved_path = preservation_root / relative
+                    preserved_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    shutil.move(str(destination), str(preserved_path))
+                    preserved.append(
+                        {
+                            "relative_path": relative,
+                            "preserved_path": str(preserved_path),
+                            "entries": _tree_manifest(preservation_root, (relative,)),
+                        }
+                    )
+            source = staging_root / relative
+            if source.exists() and not destination.exists():
+                temporary = workspace / f".aetnamem-restore-{sha256_hex(relative)[:12]}"
+                if temporary.exists():
+                    if temporary.is_dir():
+                        shutil.rmtree(temporary)
+                    else:
+                        temporary.unlink()
+                _copy_native_path(source, temporary)
+                os.replace(temporary, destination)
+            root_diff = _manifest_diff(expected_root, workspace, roots=(relative,))
+            if any(not row["matched"] for row in root_diff):
+                raise ValueError(f"restored OpenClaw path failed verification: {relative}")
+            _complete_restore_step(
+                journal, journal_path, step_name, {"relative_path": relative}
+            )
+    if preservation_root is not None:
+        cutover["post_switch_native_preservation_root"] = str(preservation_root)
+    cutover["post_switch_native_preserved"] = preserved
+    return preserved
+
+
+def _active_export_with_additions(
+    cutover: dict[str, Any], *, subject_id: str
+) -> dict[str, Any]:
+    result = _export_active_memories_to_native(cutover, subject_id=subject_id)
+    additions: list[dict[str, Any]] = []
+    path_value = result.get("path")
+    if path_value:
+        path = Path(str(path_value))
+        additions.append(
+            {
+                "path_sha256": sha256_hex(str(path)),
+                "content_sha256": sha256_hex(path.read_bytes()),
+                "bytes": path.stat().st_size,
+            }
+        )
+    summary = {**result, "additions": additions}
+    summary["summary_sha256"] = sha256_hex(canonical_json(summary))
+    return summary
+
+
+def _persist_restore_receipt(
+    state: ControlState,
+    *,
+    body: dict[str, Any],
+    stable: dict[str, Any],
+) -> dict[str, Any]:
+    control_dir = Path(state.control_dir)
+    receipt = seal_report(body, stable_evidence=stable)
+    _private_json(control_dir / RESTORE_RECEIPT_NAME, receipt)
+    store = ControlStore(
+        control_dir / "evidence.db",
+        policy=HouseholdPolicy.load(control_dir / MIRROR_DB_NAME),
+    )
+    try:
+        stored = store.append_evidence(
+            state.migration_id, kind="restore", body=receipt
+        )
+    finally:
+        store.close()
+    return {**receipt, "evidence_entry_sha256": stored["entry_sha256"]}
+
+
+def _bind_restore_receipt_to_audit(
+    state: ControlState, receipt: dict[str, Any]
+) -> str:
+    """Idempotently bind a successful restore receipt into memory evidence."""
+
+    receipt_sha256 = str(receipt["report_sha256"])
+    memory = Memory(Path(state.control_dir) / MIRROR_DB_NAME)
+    try:
+        for event in memory.store.list_audit_events(state.subject_id):
+            if event.get("event_type") != "control.restored":
+                continue
+            payload = event.get("payload")
+            if isinstance(payload, dict) and payload.get("receipt_sha256") == receipt_sha256:
+                return str(event["event_id"])
+        return memory.store.append_audit_event(
+            subject_id=state.subject_id,
+            event_type="control.restored",
+            actor="aetnamem-control-plane",
+            payload={
+                "migration_id": state.migration_id,
+                "receipt_sha256": receipt_sha256,
+                "evidence_sha256": receipt.get("evidence_sha256"),
+                "valid": True,
+            },
+        )
+    finally:
+        memory.close()
+
+
 def restore_takeover(
     state: ControlState,
     *,
     progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
-    report = progress or (lambda _step, _total, _label: None)
-    total_steps = 4
-    report(1, total_steps, "Checking the frozen OpenClaw snapshot")
-    cutover_path = Path(state.control_dir) / CUTOVER_NAME
+    progress_report = progress or (lambda _step, _total, _label: None)
+    total_steps = 7
+    started_at = utc_now()
+    started = time.monotonic()
+    control_dir = Path(state.control_dir)
+    cutover_path = control_dir / CUTOVER_NAME
     cutover = _read_json(cutover_path)
     if not cutover:
         return {"restored": True, "takeover_present": False}
     executable = shutil.which("openclaw")
     if executable is None:
         raise ValueError("OpenClaw is not on PATH; native memory was not restored")
-    report(2, total_steps, "Preserving any post-switch native files")
-    _restore_cutover(cutover, executable=executable)
-    report(3, total_steps, "Returning active-period memories to OpenClaw")
-    active_export = _export_active_memories_to_native(
-        cutover,
-        subject_id=state.subject_id,
-    )
-    cutover["active_memory_export"] = active_export
-    cutover["status"] = "rolled_back"
-    cutover["rolled_back_at"] = utc_now()
-    _private_json(cutover_path, cutover)
-    report(4, total_steps, "OpenClaw native memory restored and verified")
-    return {
-        "restored": True,
-        "takeover_present": True,
-        "native_memory_restored": True,
-        "manifest_sha256": cutover.get("manifest_sha256"),
-        "active_memory_export": active_export,
-        "post_switch_native_preserved": cutover.get("post_switch_native_preserved", []),
+    journal_path = control_dir / RESTORE_JOURNAL_NAME
+    receipt_path = control_dir / RESTORE_RECEIPT_NAME
+    journal = _read_json(journal_path)
+    if journal and journal.get("status") == "completed" and receipt_path.is_file():
+        existing = _read_json(receipt_path)
+        if existing and existing.get("valid") is True:
+            return existing
+    if journal and receipt_path.is_file():
+        existing = _read_json(receipt_path)
+        if (
+            existing
+            and existing.get("valid") is True
+            and journal.get("receipt_sha256") == existing.get("report_sha256")
+        ):
+            audit_event_id = _bind_restore_receipt_to_audit(state, existing)
+            journal["audit_event_id"] = audit_event_id
+            journal["status"] = "completed"
+            journal["updated_at"] = utc_now()
+            _private_json(journal_path, journal)
+            return existing
+    resumed = bool(journal)
+    if not journal:
+        journal = {
+            "format": "aetnamem-restore-journal-v1",
+            "migration_id": state.migration_id,
+            "status": "running",
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+            "steps": {},
+            "resume_count": 0,
+        }
+    else:
+        if journal.get("migration_id") != state.migration_id:
+            raise ValueError("restore journal belongs to another migration")
+        journal["resume_count"] = int(journal.get("resume_count") or 0) + 1
+        journal["status"] = "running"
+    _private_json(journal_path, journal)
+
+    files: list[dict[str, Any]] = []
+    config: list[dict[str, Any]] = []
+    active_export: dict[str, Any] = {
+        "format": "aetnamem-openclaw-active-export-v1",
+        "record_count": 0,
+        "record_ids": [],
+        "path": None,
+        "sha256": None,
+        "additions": [],
     }
+    gateway: dict[str, Any] = {"restarted": False, "verified": False}
+    mirror_integrity: dict[str, Any] = {"valid": False, "error": "not measured"}
+    staging_root = control_dir / RESTORE_STAGING_NAME / "live"
+    try:
+        progress_report(1, total_steps, "Validating the frozen OpenClaw snapshot")
+        if not _restore_step_done(journal, "preflight"):
+            expected, staged = _stage_restore_tree(cutover, staging_root)
+            _complete_restore_step(
+                journal,
+                journal_path,
+                "preflight",
+                {"entries": len(expected), "matched": all(row["matched"] for row in staged)},
+            )
+        else:
+            expected, _staged = _stage_restore_tree(cutover, staging_root)
+
+        progress_report(2, total_steps, "Restoring the frozen native files")
+        preserved = _restore_staged_files(
+            cutover, staging_root, journal, journal_path
+        )
+        progress_report(3, total_steps, "Restoring the saved OpenClaw configuration")
+        config = _apply_restore_config(
+            executable,
+            _restore_config_plan(state, cutover),
+            journal,
+            journal_path,
+        )
+        if not all(row["matched"] for row in config):
+            raise ValueError("restored OpenClaw configuration failed verification")
+
+        progress_report(4, total_steps, "Verifying the restored baseline")
+        roots = tuple(str(value) for value in cutover.get("relocated") or ())
+        files = _manifest_diff(expected, Path(str(cutover["workspace"])), roots=roots)
+        if any(not row["matched"] for row in files):
+            raise ValueError("restored OpenClaw baseline failed verification")
+        if not _restore_step_done(journal, "baseline"):
+            _complete_restore_step(
+                journal, journal_path, "baseline", {"entries": len(files)}
+            )
+
+        progress_report(5, total_steps, "Returning active-period memories to OpenClaw")
+        active_export = _active_export_with_additions(
+            cutover, subject_id=state.subject_id
+        )
+        cutover["active_memory_export"] = active_export
+        if not _restore_step_done(journal, "active-memory-export"):
+            _complete_restore_step(
+                journal,
+                journal_path,
+                "active-memory-export",
+                {
+                    "record_count": active_export["record_count"],
+                    "summary_sha256": active_export["summary_sha256"],
+                },
+            )
+
+        from aetnamem.control.verify import _audit_integrity
+
+        mirror_integrity = _audit_integrity(
+            Path(str(cutover["mirror_db"])), state.subject_id
+        )
+        if not mirror_integrity.get("valid"):
+            raise ValueError("AetnaMem mirror integrity failed during restore verification")
+
+        progress_report(6, total_steps, "Restarting and checking OpenClaw")
+        gateway = restart_and_verify_gateway()
+        if not _restore_step_done(journal, "gateway"):
+            _complete_restore_step(journal, journal_path, "gateway", gateway)
+
+        valid = (
+            all(row["matched"] for row in files)
+            and all(row["matched"] for row in config)
+            and bool(mirror_integrity.get("valid"))
+            and bool(gateway.get("verified"))
+        )
+        cutover["status"] = "rolled_back" if valid else "restore_verification_failed"
+        cutover["rolled_back_at"] = utc_now()
+        _private_json(cutover_path, cutover)
+        journal["status"] = "receipt_pending" if valid else "failed"
+        journal["updated_at"] = utc_now()
+        _private_json(journal_path, journal)
+        public_steps = [
+            {"name": name, "completed": bool(value.get("completed"))}
+            for name, value in sorted((journal.get("steps") or {}).items())
+        ]
+        body = {
+            "format": "aetnamem-restore-receipt-v1",
+            "migration_id": state.migration_id,
+            "started_at": started_at,
+            "ended_at": utc_now(),
+            "duration_ms": round((time.monotonic() - started) * 1000),
+            "restored": valid,
+            "takeover_present": True,
+            "native_memory_restored": all(row["matched"] for row in files),
+            "manifest_sha256": cutover.get("manifest_sha256"),
+            "files": files,
+            "divergent_preserved": preserved,
+            "post_switch_native_preserved": preserved,
+            "config": config,
+            "active_memory_export": active_export,
+            "mirror_integrity": mirror_integrity,
+            "gateway": gateway,
+            "journal": {"resumed": resumed, "steps": public_steps},
+            "valid": valid,
+        }
+        stable = {
+            key: body[key]
+            for key in (
+                "format",
+                "migration_id",
+                "restored",
+                "takeover_present",
+                "native_memory_restored",
+                "manifest_sha256",
+                "files",
+                "divergent_preserved",
+                "config",
+                "active_memory_export",
+                "mirror_integrity",
+                "gateway",
+                "valid",
+            )
+        }
+        receipt = _persist_restore_receipt(state, body=body, stable=stable)
+        journal["receipt_sha256"] = receipt["report_sha256"]
+        journal["audit_event_id"] = _bind_restore_receipt_to_audit(state, receipt)
+        journal["status"] = "completed"
+        journal["updated_at"] = utc_now()
+        _private_json(journal_path, journal)
+        progress_report(7, total_steps, "OpenClaw native memory restored and verified")
+        return receipt
+    except Exception as exc:
+        cutover["status"] = "restore_verification_failed"
+        cutover["restore_error"] = str(exc)
+        _private_json(cutover_path, cutover)
+        journal["status"] = "failed"
+        journal["error"] = str(exc)
+        journal["updated_at"] = utc_now()
+        _private_json(journal_path, journal)
+        public_steps = [
+            {"name": name, "completed": bool(value.get("completed"))}
+            for name, value in sorted((journal.get("steps") or {}).items())
+        ]
+        body = {
+            "format": "aetnamem-restore-receipt-v1",
+            "migration_id": state.migration_id,
+            "started_at": started_at,
+            "ended_at": utc_now(),
+            "duration_ms": round((time.monotonic() - started) * 1000),
+            "restored": False,
+            "takeover_present": True,
+            "native_memory_restored": False,
+            "manifest_sha256": cutover.get("manifest_sha256"),
+            "files": files,
+            "divergent_preserved": cutover.get("post_switch_native_preserved", []),
+            "config": config,
+            "active_memory_export": active_export,
+            "mirror_integrity": mirror_integrity,
+            "gateway": gateway,
+            "journal": {"resumed": resumed, "steps": public_steps},
+            "error": str(exc),
+            "valid": False,
+        }
+        stable = {
+            key: body[key]
+            for key in body
+            if key not in {"started_at", "ended_at", "duration_ms"}
+        }
+        _persist_restore_receipt(state, body=body, stable=stable)
+        raise
+    finally:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
 
 
 def emergency_off_takeover(state: ControlState) -> dict[str, Any]:
@@ -1845,7 +2542,11 @@ def _source_row(source: NativeSource) -> dict[str, Any]:
 
 
 def _merge_approved_control_candidates(state: ControlState, mirror_db: str | Path) -> int:
-    store = ControlStore(Path(state.control_dir) / "evidence.db")
+    control_dir = Path(state.control_dir)
+    store = ControlStore(
+        control_dir / "evidence.db",
+        policy=HouseholdPolicy.load(control_dir / MIRROR_DB_NAME),
+    )
     try:
         approved = store.list_candidates(state.migration_id, statuses=("approved",))
     finally:

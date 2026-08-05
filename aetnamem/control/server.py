@@ -117,6 +117,14 @@ class ControlMCPServer:
                     str(arguments["exposure_id"])
                 )
             }
+        elif name == "control_record_blackbox_event":
+            value = self.manager.record_blackbox_event(
+                event_type=str(arguments["event_type"]),
+                run_id=str(arguments["run_id"]),
+                session_id=arguments.get("session_id"),
+                tool_call_id=arguments.get("tool_call_id"),
+                payload=arguments.get("payload") or {},
+            )
         elif name == "control_status":
             value = self.manager.status()
         else:
@@ -175,6 +183,22 @@ def _tools() -> list[dict[str, Any]]:
                 "type": "object",
                 "properties": {"exposure_id": {"type": "string"}},
                 "required": ["exposure_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "control_record_blackbox_event",
+            "description": "Append one content-minimizing host observation to the tamper-evident agent flight record.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "event_type": {"type": "string"},
+                    "run_id": {"type": "string"},
+                    "session_id": {"type": "string"},
+                    "tool_call_id": {"type": "string"},
+                    "payload": {"type": "object"},
+                },
+                "required": ["event_type", "run_id"],
                 "additionalProperties": False,
             },
         },

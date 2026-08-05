@@ -1,6 +1,6 @@
 {
   "product": "memory_control_plane",
-  "version": "1.0.0a3",
+  "version": "1.0.0a4",
   "release_status": "experimental_prerelease",
   "engine": "model_agnostic",
   "reversible_switch_hosts": ["openclaw"],
@@ -10,5 +10,9 @@
   "semantic_search": "optional_derived_verified_index",
   "audit_search_and_export": "implemented",
   "multimodal_bytes_stored": false,
-  "multimodal_text_observations": "implemented_quarantined_by_default"
+  "multimodal_text_observations": "implemented_quarantined_by_default",
+  "agent_blackbox": "experimental_openclaw_hooks",
+  "blackbox_raw_content_stored": false,
+  "blackbox_verifies": "timeline_integrity_and_observed_hook_closure",
+  "blackbox_external_outcome_proof": false
 }

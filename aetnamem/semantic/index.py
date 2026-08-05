@@ -13,6 +13,7 @@ from typing import Any, Iterator, Sequence
 import uuid
 
 from aetnamem.core.canonical import canonical_json, sha256_hex
+from aetnamem.core.storage import HouseholdLock, HouseholdPolicy, connect, row_factory_for
 from aetnamem.memory import Memory
 from aetnamem.semantic.providers import Embedder
 from aetnamem.store.sqlite import utc_now
@@ -35,11 +36,21 @@ def default_index_path(memory_path: str | Path) -> Path:
 
 
 class SemanticIndex:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, *, policy: HouseholdPolicy | None = None
+    ) -> None:
         self.path = str(Path(path).expanduser().resolve())
+        self.policy = policy or HouseholdPolicy.load(path)
+        self._household_lock = HouseholdLock(self.policy).acquire()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
+        try:
+            self._conn = connect(
+                self.path, policy=self.policy, isolation_level=None
+            )
+        except Exception:
+            self._household_lock.close()
+            raise
+        self._conn.row_factory = row_factory_for(self.policy)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -47,7 +58,10 @@ class SemanticIndex:
         self._migrate()
 
     def close(self) -> None:
-        self._conn.close()
+        try:
+            self._conn.close()
+        finally:
+            self._household_lock.close()
 
     @contextmanager
     def transaction(self) -> Iterator[None]:

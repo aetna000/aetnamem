@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-python -m pip install --pre aetnamem==1.0.0a3
+python -m pip install --pre aetnamem==1.0.0a4
 aetnamem --version
 aetnamem openclaw install
 ```
@@ -20,11 +20,22 @@ Do not install `openclaw-memory-aetnamem` directly. It is a bridge, not a standa
 
 ```bash
 aetnamem control status
+aetnamem control verify
 aetnamem openclaw memory status
 aetnamem dashboard daemon start
 ```
 
 The dashboard must report OpenClaw as the provider, a verified native baseline, a valid mirror and no activation blockers. Search a known memory and inspect its source path and history.
+
+Use OpenClaw normally, then inspect the host-observed Agent Black Box flights:
+
+```bash
+aetnamem blackbox status
+aetnamem blackbox runs
+aetnamem blackbox verify RUN_ID
+```
+
+Flight recording stores content digests and bounded lifecycle metadata, not raw prompts, responses, tool parameters or results. See [agent-blackbox.md](agent-blackbox.md) before interpreting a verdict.
 
 ## Activate or restore
 
@@ -32,10 +43,13 @@ The dashboard must report OpenClaw as the provider, a verified native baseline, 
 aetnamem control activate
 aetnamem control status
 
+# Non-destructively stage and verify the saved restore material:
+aetnamem control restore --drill
+
 # Return to the saved OpenClaw memory configuration:
 aetnamem control restore
 ```
 
-Both destructive state transitions require confirmation in an interactive terminal unless `--yes` is supplied deliberately. A failed activation does not claim success. A restore preserves AetnaMem evidence and does not undo past agent outputs.
+Both destructive state transitions require confirmation in an interactive terminal unless `--yes` is supplied deliberately. `control verify` and `restore --drill` are non-destructive. A failed activation does not claim success. A restore preserves AetnaMem evidence and does not undo past agent outputs.
 
 For dashboard lifecycle and its loopback-only boundary, see the [main README](../README.md). For the exact switch guarantees, see [control-plane.md](control-plane.md).
